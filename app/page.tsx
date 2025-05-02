@@ -12,10 +12,13 @@ import { ActiveTracking } from "@/components/active-tracking"
 import { WellnessProvider } from "@/context/wellness-context"
 import { TrackingProvider } from "@/context/tracking-context"
 import type { WellnessEntryData } from "@/types/wellness"
+import { Button } from "@/components/ui/button"
+import { BarChart3, Grid2X2 } from "lucide-react"
 
 export default function Dashboard() {
   const [isAddEntryOpen, setIsAddEntryOpen] = useState(false)
   const [entryToEdit, setEntryToEdit] = useState<WellnessEntryData | null>(null)
+  const [comparisonMode, setComparisonMode] = useState(false)
 
   // Open the form for a new entry
   const handleAddNewEntry = () => {
@@ -29,10 +32,15 @@ export default function Dashboard() {
     setIsAddEntryOpen(true)
   }
 
+  // Toggle comparison mode
+  const toggleComparisonMode = () => {
+    setComparisonMode(!comparisonMode)
+  }
+
   return (
     <WellnessProvider>
       <TrackingProvider>
-        <div className="min-h-screen bg-gray-50">
+        <div className="min-h-screen bg-surface-50 text-surface-900">
           <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
             <div className="space-y-6">
               <DashboardHeader onAddEntry={handleAddNewEntry} />
@@ -44,8 +52,42 @@ export default function Dashboard() {
                 </section>
 
                 <section>
-                  <h2 className="mb-3 text-sm font-medium">Category Performance</h2>
-                  <CategoryOverview />
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-sm font-medium">Category Performance</h2>
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs text-muted-foreground mr-2">
+                        {comparisonMode ? "Comparison Mode" : "Daily Progress"}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1"
+                        onClick={toggleComparisonMode}
+                        aria-pressed={comparisonMode}
+                        aria-label={comparisonMode ? "Switch to standard view" : "Switch to comparison view"}
+                      >
+                        {comparisonMode ? (
+                          <>
+                            <Grid2X2 className="h-4 w-4" />
+                            <span className="hidden sm:inline">Standard View</span>
+                          </>
+                        ) : (
+                          <>
+                            <BarChart3 className="h-4 w-4" />
+                            <span className="hidden sm:inline">Compare Categories</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                  <CategoryOverview
+                    showGoals={true}
+                    showTimeAllocations={true}
+                    showSubcategoryProgress={true}
+                    interactive={!comparisonMode}
+                    maxCategories={7}
+                    comparisonMode={comparisonMode}
+                  />
                 </section>
 
                 <section>

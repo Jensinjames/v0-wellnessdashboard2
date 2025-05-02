@@ -10,10 +10,11 @@ export function VisuallyHidden({ children, className }: VisuallyHiddenProps) {
   return (
     <span
       className={cn(
-        "absolute h-px w-px overflow-hidden whitespace-nowrap border-0 p-0",
-        "clip-[rect(0,0,0,0)] [clip-path:inset(100%)]",
+        "absolute w-px h-px p-0 -m-px overflow-hidden whitespace-nowrap border-0",
+        "!-top-px !-left-px",
         className,
       )}
+      style={{ clip: "rect(0, 0, 0, 0)" }}
     >
       {children}
     </span>

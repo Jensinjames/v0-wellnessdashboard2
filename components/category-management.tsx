@@ -2,11 +2,11 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { Plus, Edit, Trash2, Settings, GripVertical } from "lucide-react"
+import { Plus, Edit, Trash2, Settings, GripVertical, Key } from "lucide-react"
 import * as LucideIcons from "lucide-react"
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd"
 
@@ -28,13 +28,12 @@ import { Badge } from "@/components/ui/badge"
 import { toast } from "@/components/ui/use-toast"
 import { useWellness } from "@/context/wellness-context"
 import type { WellnessCategory, WellnessMetric } from "@/types/wellness"
+import { generateUniqueId } from "@/utils/id-generator"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { cn } from "@/lib/utils"
 
 // Schema for category form
 const categoryFormSchema = z.object({
-  id: z
-    .string()
-    .min(1, "ID is required")
-    .regex(/^[a-z0-9-]+$/, "ID must contain only lowercase letters, numbers, and hyphens"),
   name: z.string().min(1, "Name is required"),
   description: z.string().min(1, "Description is required"),
   icon: z.string().min(1, "Icon is required"),
@@ -43,10 +42,6 @@ const categoryFormSchema = z.object({
 
 // Schema for metric form
 const metricFormSchema = z.object({
-  id: z
-    .string()
-    .min(1, "ID is required")
-    .regex(/^[a-z0-9-]+$/, "ID must contain only lowercase letters, numbers, and hyphens"),
   name: z.string().min(1, "Name is required"),
   description: z.string().min(1, "Description is required"),
   unit: z.string().min(1, "Unit is required"),
@@ -93,6 +88,63 @@ const availableUnits = [
   { name: "Custom", value: "custom" },
 ]
 
+// Color class mapping functions
+const getCategoryBgClass = (color: string) => {
+  const colorMap: Record<string, string> = {
+    slate: "bg-slate-600",
+    gray: "bg-gray-600",
+    zinc: "bg-zinc-600",
+    neutral: "bg-neutral-600",
+    stone: "bg-stone-600",
+    red: "bg-red-600",
+    orange: "bg-orange-600",
+    amber: "bg-amber-600",
+    yellow: "bg-yellow-600",
+    lime: "bg-lime-600",
+    green: "bg-green-600",
+    emerald: "bg-emerald-600",
+    teal: "bg-teal-600",
+    cyan: "bg-cyan-600",
+    sky: "bg-sky-600",
+    blue: "bg-blue-600",
+    indigo: "bg-indigo-600",
+    violet: "bg-violet-600",
+    purple: "bg-purple-600",
+    fuchsia: "bg-fuchsia-600",
+    pink: "bg-pink-600",
+    rose: "bg-rose-600",
+  }
+  return colorMap[color] || "bg-blue-600" // Default to blue if color not found
+}
+
+const getColorSwatch = (color: string) => {
+  const colorMap: Record<string, string> = {
+    slate: "bg-slate-500",
+    gray: "bg-gray-500",
+    zinc: "bg-zinc-500",
+    neutral: "bg-neutral-500",
+    stone: "bg-stone-500",
+    red: "bg-red-500",
+    orange: "bg-orange-500",
+    amber: "bg-amber-500",
+    yellow: "bg-yellow-500",
+    lime: "bg-lime-500",
+    green: "bg-green-500",
+    emerald: "bg-emerald-500",
+    teal: "bg-teal-500",
+    cyan: "bg-cyan-500",
+    sky: "bg-sky-500",
+    blue: "bg-blue-500",
+    indigo: "bg-indigo-500",
+    violet: "bg-violet-500",
+    purple: "bg-purple-500",
+    fuchsia: "bg-fuchsia-500",
+    pink: "bg-pink-500",
+    rose: "bg-rose-500",
+  }
+  return colorMap[color] || "bg-blue-500" // Default to blue if color not found
+}
+
 export function CategoryManagement() {
   const { categories, addCategory, updateCategory, removeCategory, reorderCategories } = useWellness()
   const [open, setOpen] = useState(false)
@@ -101,6 +153,10 @@ export function CategoryManagement() {
   const [showAddMetric, setShowAddMetric] = useState(false)
   const [editingMetric, setEditingMetric] = useState<{ categoryId: string; metric: WellnessMetric } | null>(null)
   const [expandedItems, setExpandedItems] = useState<string[]>([])
+
+  // New state for generated IDs
+  const [generatedCategoryId, setGeneratedCategoryId] = useState<string>("")
+  const [generatedMetricId, setGeneratedMetricId] = useState<string>("")
 
   // Get all available Lucide icons
   const availableIcons = Object.keys(LucideIcons)
@@ -111,7 +167,6 @@ export function CategoryManagement() {
   const categoryForm = useForm<z.infer<typeof categoryFormSchema>>({
     resolver: zodResolver(categoryFormSchema),
     defaultValues: {
-      id: "",
       name: "",
       description: "",
       icon: "Activity",
@@ -123,7 +178,6 @@ export function CategoryManagement() {
   const metricForm = useForm<z.infer<typeof metricFormSchema>>({
     resolver: zodResolver(metricFormSchema),
     defaultValues: {
-      id: "",
       name: "",
       description: "",
       unit: "minutes",
@@ -135,16 +189,43 @@ export function CategoryManagement() {
     },
   })
 
+  // Generate category ID when name changes
+  useEffect(() => {
+    const subscription = categoryForm.watch((value) => {
+      if (value.name && !editingCategory) {
+        const existingIds = categories.map((c) => c.id)
+        const newId = generateUniqueId(value.name, existingIds)
+        setGeneratedCategoryId(newId)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [categoryForm, categories, editingCategory])
+
+  // Generate metric ID when name changes
+  useEffect(() => {
+    const subscription = metricForm.watch((value) => {
+      if (value.name && !editingMetric && showAddMetric) {
+        const category = categories.find((c) => c.id === showAddMetric)
+        const existingIds = category ? category.metrics.map((m) => m.id) : []
+        const newId = generateUniqueId(value.name, existingIds)
+        setGeneratedMetricId(newId)
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [metricForm, categories, editingMetric, showAddMetric])
+
   // Reset and initialize category form for adding a new category
   const handleAddCategory = () => {
     setEditingCategory(null)
     categoryForm.reset({
-      id: "",
       name: "",
       description: "",
       icon: "Activity",
       color: "blue",
     })
+    setGeneratedCategoryId("")
     setOpen(true)
   }
 
@@ -152,19 +233,30 @@ export function CategoryManagement() {
   const handleEditCategory = (category: WellnessCategory) => {
     setEditingCategory(category)
     categoryForm.reset({
-      id: category.id,
       name: category.name,
       description: category.description,
       icon: category.icon,
       color: category.color,
     })
+    setGeneratedCategoryId(category.id)
     setOpen(true)
   }
 
   // Handle category form submission
   const onCategorySubmit = (data: z.infer<typeof categoryFormSchema>) => {
+    // For new categories, use the generated ID
+    const categoryId = editingCategory ? editingCategory.id : generatedCategoryId
+
+    // If no ID was generated (should not happen with our implementation), generate one now
+    const finalId =
+      categoryId ||
+      generateUniqueId(
+        data.name,
+        categories.map((c) => c.id),
+      )
+
     const categoryData: WellnessCategory = {
-      id: data.id,
+      id: finalId,
       name: data.name,
       description: data.description,
       icon: data.icon,
@@ -175,28 +267,43 @@ export function CategoryManagement() {
 
     if (editingCategory) {
       // Update existing category
-      updateCategory(editingCategory.id, categoryData)
-      toast({
-        title: "Category updated",
-        description: `The category "${data.name}" has been updated.`,
-      })
+      const result = updateCategory(editingCategory.id, categoryData)
+      if (result.success) {
+        toast({
+          title: "Category updated",
+          description: `The category "${data.name}" has been updated.`,
+        })
+        setOpen(false)
+      } else {
+        toast({
+          title: "Update failed",
+          description: result.message,
+          variant: "destructive",
+        })
+      }
     } else {
       // Add new category
-      addCategory(categoryData)
-      toast({
-        title: "Category added",
-        description: `The category "${data.name}" has been added.`,
-      })
+      const result = addCategory(categoryData)
+      if (result.success) {
+        toast({
+          title: "Category added",
+          description: `The category "${data.name}" has been added with ID "${finalId}".`,
+        })
+        setOpen(false)
+      } else {
+        toast({
+          title: "Addition failed",
+          description: result.message,
+          variant: "destructive",
+        })
+      }
     }
-
-    setOpen(false)
   }
 
   // Initialize metric form for adding a new metric
   const handleAddMetric = (categoryId: string) => {
     setEditingMetric(null)
     metricForm.reset({
-      id: "",
       name: "",
       description: "",
       unit: "minutes",
@@ -206,6 +313,7 @@ export function CategoryManagement() {
       defaultValue: 0,
       defaultGoal: 50,
     })
+    setGeneratedMetricId("")
     setShowAddMetric(categoryId)
   }
 
@@ -213,7 +321,6 @@ export function CategoryManagement() {
   const handleEditMetric = (categoryId: string, metric: WellnessMetric) => {
     setEditingMetric({ categoryId, metric })
     metricForm.reset({
-      id: metric.id,
       name: metric.name,
       description: metric.description || "",
       unit: metric.unit,
@@ -223,13 +330,27 @@ export function CategoryManagement() {
       defaultValue: metric.defaultValue,
       defaultGoal: metric.defaultGoal,
     })
+    setGeneratedMetricId(metric.id)
     setShowAddMetric(categoryId)
   }
 
   // Handle metric form submission
   const onMetricSubmit = (data: z.infer<typeof metricFormSchema>) => {
+    const categoryId = showAddMetric
+    if (!categoryId) return
+
+    const category = categories.find((c) => c.id === categoryId)
+    if (!category) return
+
+    // For new metrics, use the generated ID
+    const metricId = editingMetric ? editingMetric.metric.id : generatedMetricId
+
+    // If no ID was generated (should not happen with our implementation), generate one now
+    const existingIds = category.metrics.map((m) => m.id)
+    const finalId = metricId || generateUniqueId(data.name, existingIds)
+
     const metricData: WellnessMetric = {
-      id: data.id,
+      id: finalId,
       name: data.name,
       description: data.description,
       unit: data.unit,
@@ -240,34 +361,39 @@ export function CategoryManagement() {
       defaultGoal: data.defaultGoal,
     }
 
-    const categoryId = showAddMetric
-
-    if (!categoryId) return
-
-    const category = categories.find((c) => c.id === categoryId)
-    if (!category) return
-
     let updatedMetrics: WellnessMetric[]
 
     if (editingMetric) {
       // Update existing metric
       updatedMetrics = category.metrics.map((m) => (m.id === editingMetric.metric.id ? metricData : m))
-      toast({
-        title: "Metric updated",
-        description: `The metric "${data.name}" has been updated.`,
-      })
     } else {
       // Add new metric
       updatedMetrics = [...category.metrics, metricData]
-      toast({
-        title: "Metric added",
-        description: `The metric "${data.name}" has been added to the "${category.name}" category.`,
-      })
     }
 
-    updateCategory(categoryId, { metrics: updatedMetrics })
-    setShowAddMetric("")
-    setEditingMetric(null)
+    const result = updateCategory(categoryId, { metrics: updatedMetrics })
+
+    if (result.success) {
+      if (editingMetric) {
+        toast({
+          title: "Metric updated",
+          description: `The metric "${data.name}" has been updated.`,
+        })
+      } else {
+        toast({
+          title: "Metric added",
+          description: `The metric "${data.name}" has been added to the "${category.name}" category with ID "${finalId}".`,
+        })
+      }
+      setShowAddMetric("")
+      setEditingMetric(null)
+    } else {
+      toast({
+        title: "Operation failed",
+        description: result.message,
+        variant: "destructive",
+      })
+    }
   }
 
   // Handle metric deletion
@@ -354,7 +480,7 @@ export function CategoryManagement() {
                 <div
                   {...provided.droppableProps}
                   ref={provided.innerRef}
-                  className={`space-y-2 ${snapshot.isDraggingOver ? "bg-muted/50 rounded-md p-2" : ""}`}
+                  className={cn("space-y-2", snapshot.isDraggingOver ? "bg-muted/50 rounded-md p-2" : "")}
                 >
                   {categories.map((category, index) => (
                     <Draggable key={category.id} draggableId={category.id} index={index}>
@@ -362,9 +488,10 @@ export function CategoryManagement() {
                         <div
                           ref={provided.innerRef}
                           {...provided.draggableProps}
-                          className={`rounded-md border ${
-                            snapshot.isDragging ? "border-primary shadow-md" : "border-border"
-                          }`}
+                          className={cn(
+                            "rounded-md border",
+                            snapshot.isDragging ? "border-primary shadow-md" : "border-border",
+                          )}
                         >
                           <div className="flex items-center p-4">
                             <div
@@ -376,14 +503,20 @@ export function CategoryManagement() {
                             </div>
 
                             <div
-                              className={`mr-3 flex h-8 w-8 items-center justify-center rounded-md bg-${category.color}-600`}
+                              className={cn(
+                                "mr-3 flex h-8 w-8 items-center justify-center rounded-md",
+                                getCategoryBgClass(category.color),
+                              )}
                             >
                               {getIconByName(category.icon)}
                             </div>
 
                             <div className="flex-1">
                               <h3 className="font-medium">{category.name}</h3>
-                              <p className="text-sm text-muted-foreground">{category.description}</p>
+                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                <Key className="h-3 w-3" />
+                                <span>{category.id}</span>
+                              </div>
                             </div>
 
                             <Badge variant="outline" className="mr-4">
@@ -435,7 +568,11 @@ export function CategoryManagement() {
                                     >
                                       <div>
                                         <div className="font-medium">{metric.name}</div>
-                                        <div className="text-sm text-muted-foreground">{metric.description}</div>
+                                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                          <Key className="h-3 w-3" />
+                                          <span>{metric.id}</span>
+                                        </div>
+                                        <div className="text-sm text-muted-foreground mt-1">{metric.description}</div>
                                         <div className="flex gap-2 mt-1">
                                           <Badge variant="outline">{metric.unit}</Badge>
                                           <Badge variant="outline">
@@ -511,51 +648,43 @@ export function CategoryManagement() {
 
           <Form {...categoryForm}>
             <form onSubmit={categoryForm.handleSubmit(onCategorySubmit)} className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={categoryForm.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Name</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Fitness" {...field} />
-                      </FormControl>
-                      <FormDescription>The display name for this category.</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              <FormField
+                control={categoryForm.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., Fitness" {...field} />
+                    </FormControl>
+                    <FormDescription>The display name for this category.</FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-                <FormField
-                  control={categoryForm.control}
-                  name="id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>ID</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="e.g., fitness"
-                          {...field}
-                          disabled={!!editingCategory}
-                          onChange={(e) => {
-                            // Auto-generate ID from name if empty
-                            if (!editingCategory) {
-                              field.onChange(
-                                e.target.value
-                                  .toLowerCase()
-                                  .replace(/\s+/g, "-")
-                                  .replace(/[^a-z0-9-]/g, ""),
-                              )
-                            }
-                          }}
-                        />
-                      </FormControl>
-                      <FormDescription>Unique identifier (lowercase, no spaces).</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              {/* Display the generated ID (read-only) */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium">ID</div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center text-xs text-muted-foreground cursor-help">
+                          <Key className="h-3 w-3 mr-1" />
+                          <span>Auto-generated</span>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>IDs are automatically generated based on the name to ensure uniqueness</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm">
+                  {editingCategory ? editingCategory.id : generatedCategoryId}
+                </div>
+                <div className="text-xs text-muted-foreground">Unique identifier used in the system</div>
               </div>
 
               <FormField
@@ -617,7 +746,7 @@ export function CategoryManagement() {
                           {availableColors.map((color) => (
                             <SelectItem key={color.value} value={color.value}>
                               <div className="flex items-center gap-2">
-                                <div className={`w-4 h-4 rounded-full bg-${color.value}-500`}></div>
+                                <div className={cn("w-4 h-4 rounded-full", getColorSwatch(color.value))}></div>
                                 <span>{color.name}</span>
                               </div>
                             </SelectItem>
@@ -655,50 +784,42 @@ export function CategoryManagement() {
 
           <Form {...metricForm}>
             <form onSubmit={metricForm.handleSubmit(onMetricSubmit)} className="space-y-6">
-              <div className="grid grid-cols-2 gap-4">
-                <FormField
-                  control={metricForm.control}
-                  name="name"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Name</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Daily Steps" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              <FormField
+                control={metricForm.control}
+                name="name"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Name</FormLabel>
+                    <FormControl>
+                      <Input placeholder="e.g., Daily Steps" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
 
-                <FormField
-                  control={metricForm.control}
-                  name="id"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>ID</FormLabel>
-                      <FormControl>
-                        <Input
-                          placeholder="e.g., daily-steps"
-                          {...field}
-                          disabled={!!editingMetric}
-                          onChange={(e) => {
-                            // Auto-generate ID from name if empty
-                            if (!editingMetric) {
-                              field.onChange(
-                                e.target.value
-                                  .toLowerCase()
-                                  .replace(/\s+/g, "-")
-                                  .replace(/[^a-z0-9-]/g, ""),
-                              )
-                            }
-                          }}
-                        />
-                      </FormControl>
-                      <FormDescription>Unique identifier (lowercase, no spaces).</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+              {/* Display the generated ID (read-only) */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <div className="text-sm font-medium">ID</div>
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex items-center text-xs text-muted-foreground cursor-help">
+                          <Key className="h-3 w-3 mr-1" />
+                          <span>Auto-generated</span>
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        <p>IDs are automatically generated based on the name to ensure uniqueness</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
+                </div>
+                <div className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm">
+                  {editingMetric ? editingMetric.metric.id : generatedMetricId}
+                </div>
+                <div className="text-xs text-muted-foreground">Unique identifier used in the system</div>
               </div>
 
               <FormField

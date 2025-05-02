@@ -14,8 +14,8 @@ interface WellnessContextType {
   categories: WellnessCategory[]
   goals: WellnessGoal[]
   entries: WellnessEntryData[]
-  addCategory: (category: WellnessCategory) => void
-  updateCategory: (categoryId: CategoryId, updates: Partial<WellnessCategory>) => void
+  addCategory: (category: WellnessCategory) => any
+  updateCategory: (categoryId: CategoryId, updates: Partial<WellnessCategory>) => any
   removeCategory: (categoryId: CategoryId) => void
   setGoal: (goal: WellnessGoal) => void
   updateGoals: (goals: WellnessGoal[]) => void
@@ -25,6 +25,8 @@ interface WellnessContextType {
   getCategoryById: (categoryId: CategoryId) => WellnessCategory | undefined
   getGoalByCategoryAndMetric: (categoryId: CategoryId, metricId: string) => number
   reorderCategories: (startIndex: number, endIndex: number) => void
+  categoryIdExists: (id: string) => boolean
+  metricIdExistsInCategory: (categoryId: string, metricId: string) => boolean
 }
 
 const WellnessContext = createContext<WellnessContextType | undefined>(undefined)
@@ -116,12 +118,58 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
   }, [entries])
 
   // Category management functions
+  const categoryIdExists = (id: string): boolean => {
+    return categories.some((cat) => cat.id === id)
+  }
+
+  const metricIdExistsInCategory = (categoryId: string, metricId: string): boolean => {
+    const category = categories.find((cat) => cat.id === categoryId)
+    return category ? category.metrics.some((metric) => metric.id === metricId) : false
+  }
+
+  // Category management functions
   const addCategory = (category: WellnessCategory) => {
+    // Check if category ID already exists
+    if (categoryIdExists(category.id)) {
+      return {
+        success: false,
+        message: `A category with ID "${category.id}" already exists.`,
+      }
+    }
+
+    // Check for duplicate metric IDs within the category
+    const metricIds = new Set<string>()
+    for (const metric of category.metrics) {
+      if (metricIds.has(metric.id)) {
+        return {
+          success: false,
+          message: `Duplicate metric ID "${metric.id}" found in the category.`,
+        }
+      }
+      metricIds.add(metric.id)
+    }
+
     setCategories((prev) => [...prev, category])
+    return { success: true }
   }
 
   const updateCategory = (categoryId: CategoryId, updates: Partial<WellnessCategory>) => {
+    // If we're updating metrics, check for duplicates
+    if (updates.metrics) {
+      const metricIds = new Set<string>()
+      for (const metric of updates.metrics) {
+        if (metricIds.has(metric.id)) {
+          return {
+            success: false,
+            message: `Duplicate metric ID "${metric.id}" found in the updated metrics.`,
+          }
+        }
+        metricIds.add(metric.id)
+      }
+    }
+
     setCategories((prev) => prev.map((cat) => (cat.id === categoryId ? { ...cat, ...updates } : cat)))
+    return { success: true }
   }
 
   const removeCategory = (categoryId: CategoryId) => {
@@ -285,6 +333,8 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
     getCategoryById,
     getGoalByCategoryAndMetric,
     reorderCategories,
+    categoryIdExists,
+    metricIdExistsInCategory,
   }
 
   return <WellnessContext.Provider value={value}>{children}</WellnessContext.Provider>
