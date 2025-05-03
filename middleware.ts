@@ -5,14 +5,37 @@ import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs"
 // Define public routes that don't require authentication
 const publicRoutes = ["/login", "/signup", "/forgot-password", "/reset-password", "/"]
 
+// Define routes that require authentication
+const protectedRoutes = [
+  "/dashboard",
+  "/profile",
+  "/settings",
+  "/activity",
+  "/categories",
+  "/activity-patterns",
+  "/category-management",
+  "/data-management",
+  "/optimistic-ui-demo",
+  "/optimistic-entry-demo",
+  "/optimization-demo",
+  "/error-boundary-demo",
+]
+
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
 
   // Create supabase middleware client
   const supabase = createMiddlewareClient({ req, res })
 
-  // Check if the route requires authentication
-  const isPublicRoute = publicRoutes.some((route) => req.nextUrl.pathname === route)
+  // Check if the route is protected
+  const isProtectedRoute = protectedRoutes.some(
+    (route) => req.nextUrl.pathname === route || req.nextUrl.pathname.startsWith(`${route}/`),
+  )
+
+  // Check if the route is public
+  const isPublicRoute = publicRoutes.some(
+    (route) => req.nextUrl.pathname === route || req.nextUrl.pathname.startsWith(`${route}/`),
+  )
 
   // For API routes, let the route handler check auth
   if (req.nextUrl.pathname.startsWith("/api/")) {
@@ -20,7 +43,7 @@ export async function middleware(req: NextRequest) {
   }
 
   // For public routes, no need to check auth
-  if (isPublicRoute) {
+  if (isPublicRoute && !isProtectedRoute) {
     return res
   }
 
@@ -30,11 +53,17 @@ export async function middleware(req: NextRequest) {
       data: { session },
     } = await supabase.auth.getSession()
 
-    // If no session and not on a public route, redirect to login
-    if (!session && !isPublicRoute) {
+    // If no session and trying to access protected route, redirect to login
+    if (!session && isProtectedRoute) {
       const loginUrl = new URL("/login", req.url)
       loginUrl.searchParams.set("redirect", req.nextUrl.pathname)
       return NextResponse.redirect(loginUrl)
+    }
+
+    // If session exists and trying to access auth routes (login, signup, etc.)
+    if (session && isPublicRoute && req.nextUrl.pathname !== "/") {
+      // Redirect to dashboard
+      return NextResponse.redirect(new URL("/dashboard", req.url))
     }
 
     // Continue with the request
@@ -42,8 +71,8 @@ export async function middleware(req: NextRequest) {
   } catch (error) {
     console.error("Auth middleware error:", error)
 
-    // On error, redirect to login
-    if (!isPublicRoute) {
+    // On error, redirect to login if trying to access protected route
+    if (isProtectedRoute) {
       const loginUrl = new URL("/login", req.url)
       return NextResponse.redirect(loginUrl)
     }

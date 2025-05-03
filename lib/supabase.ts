@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js"
+import type { Database } from "@/types/supabase"
 
 // Initialize the Supabase client with environment variables
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -10,7 +11,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 }
 
 // Create the Supabase client with auto refresh
-export const supabase = createClient(supabaseUrl || "", supabaseAnonKey || "", {
+export const supabase = createClient<Database>(supabaseUrl || "", supabaseAnonKey || "", {
   auth: {
     autoRefreshToken: true,
     persistSession: true,
@@ -70,4 +71,17 @@ export async function refreshSession() {
       error,
     }
   }
+}
+
+// Helper function to handle Supabase errors consistently
+export function handleSupabaseError(error: unknown): string {
+  if (typeof error === "object" && error !== null && "message" in error) {
+    return (error as { message: string }).message
+  }
+
+  if (typeof error === "string") {
+    return error
+  }
+
+  return "An unknown error occurred"
 }

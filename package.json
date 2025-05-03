@@ -63,6 +63,9 @@
     "@babel/parser": "latest",
     "@babel/traverse": "latest",
     "@babel/generator": "latest",
+    "fs": "latest",
+    "path": "latest",
+    "@supabase/ssr": "latest",
     "@supabase/auth-helpers-nextjs": "latest"
   },
   "devDependencies": {

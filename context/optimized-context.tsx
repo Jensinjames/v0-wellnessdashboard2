@@ -249,18 +249,17 @@ export function useOptimizedSelector<T>(
   dependencies: React.DependencyList = [],
 ) {
   const store = useOptimizedStore()
-  const [state, setState] = useState<T>(selector(store))
+  const selectorRef = useRef(selector)
+  const [, forceUpdate] = useState({}) // Used to force a re-render
 
   // Memoize the selector
-  const selectorRef = useRef(selector)
-
   useEffect(() => {
     selectorRef.current = selector
   }, [selector, ...dependencies])
 
   useEffect(() => {
     // Initial state
-    setState(selectorRef.current(store))
+    let currentState = selectorRef.current(store)
 
     // Subscribe to changes
     const unsubscribe = store.subscribe(
@@ -268,12 +267,18 @@ export function useOptimizedSelector<T>(
       // you would determine which keys to subscribe to based on the selector
       ["user", "ui", "data"] as any,
       () => {
-        setState(selectorRef.current(store))
+        const newState = selectorRef.current(store)
+        if (newState !== currentState) {
+          currentState = newState
+          forceUpdate({}) // Force re-render
+        }
       },
     )
 
-    return unsubscribe
+    return () => {
+      unsubscribe()
+    }
   }, [store, ...dependencies])
 
-  return state
+  return selectorRef.current(store)
 }

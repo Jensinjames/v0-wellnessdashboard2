@@ -240,7 +240,7 @@ export function useOptimisticUpdates<T extends { id: string }>(): UseOptimisticU
 
   // Batch operations
   const optimisticBatch = useCallback(async <R>(\
-    operations: Array<{ 
+    operations: Array<{
       type: "create" | "update" | "delete";
   id?: string;
   data?: any

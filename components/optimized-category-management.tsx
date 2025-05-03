@@ -14,15 +14,21 @@ type Category = {
 }
 
 export function OptimizedCategoryManagement() {
-  const { categories, addCategory, updateCategory, removeCategory, isLoading } = useWellness()
+  const {
+    categories,
+    addCategory: addCategoryContext,
+    updateCategory,
+    removeCategory: removeCategoryContext,
+    isLoading,
+  } = useWellness()
   const [newCategory, setNewCategory] = useState("")
   const [newColor, setNewColor] = useState("#3b82f6")
 
-  const addCategory = async () => {
+  const handleAddCategory = async () => {
     if (newCategory.trim() === "") return
 
     const newId = Math.random().toString(36).substring(2, 9)
-    await addCategory({
+    await addCategoryContext({
       name: newCategory,
       description: "",
       color: newColor,
@@ -33,8 +39,8 @@ export function OptimizedCategoryManagement() {
     setNewCategory("")
   }
 
-  const removeCategory = async (id: string) => {
-    await removeCategory(id)
+  const handleRemoveCategory = async (id: string) => {
+    await removeCategoryContext(id)
   }
 
   return (
@@ -54,7 +60,7 @@ export function OptimizedCategoryManagement() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() => removeCategory(category.id)}
+                  onClick={() => handleRemoveCategory(category.id)}
                   className={cn("h-8 w-8 p-0", "text-muted-foreground hover:text-destructive")}
                 >
                   ✕
@@ -71,7 +77,7 @@ export function OptimizedCategoryManagement() {
               className="flex-1"
             />
             <Input type="color" value={newColor} onChange={(e) => setNewColor(e.target.value)} className="w-12" />
-            <Button onClick={addCategory}>Add</Button>
+            <Button onClick={handleAddCategory}>Add</Button>
           </div>
         </div>
       </CardContent>

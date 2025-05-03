@@ -74,13 +74,13 @@ export function OptimisticUpdatesProvider({ children }: { children: ReactNode })
     return baseOptimisticDelete(id, deleteFn, rollbackData)
   }
 
-  const optimisticBatch = async <R>(\
+  const optimisticBatch = async <R>(
     entityType: string,
     operations: Array<{ 
       type: "create" | "update" | "delete"
   id?: string
   data?: any;
-  rollbackData?: any;
+  rollbackData?: any
 }
 >,
     batchFn: () => Promise<R>
