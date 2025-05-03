@@ -38,13 +38,25 @@ export const formatValue = (value: number, unit: string): string => {
 export const getTrendIndicator = (current: number, goal: number): TrendIndicator => {
   const percentage = goal > 0 ? (current / goal) * 100 : 0
   if (percentage >= 100) {
-    return { icon: <ArrowUpIcon className="h-4 w-4 text-green-500" />, color: "text-green-500" }
+    return {
+      icon: { type: ArrowUpIcon, props: { className: "h-4 w-4 text-green-500" } },
+      color: "text-green-500",
+    }
   } else if (percentage >= 75) {
-    return { icon: <ArrowUpIcon className="h-4 w-4 text-amber-500" />, color: "text-amber-500" }
+    return {
+      icon: { type: ArrowUpIcon, props: { className: "h-4 w-4 text-amber-500" } },
+      color: "text-amber-500",
+    }
   } else if (percentage >= 50) {
-    return { icon: <MinusIcon className="h-4 w-4 text-amber-500" />, color: "text-amber-500" }
+    return {
+      icon: { type: MinusIcon, props: { className: "h-4 w-4 text-amber-500" } },
+      color: "text-amber-500",
+    }
   } else {
-    return { icon: <ArrowDownIcon className="h-4 w-4 text-red-500" />, color: "text-red-500" }
+    return {
+      icon: { type: ArrowDownIcon, props: { className: "h-4 w-4 text-red-500" } },
+      color: "text-red-500",
+    }
   }
 }
 

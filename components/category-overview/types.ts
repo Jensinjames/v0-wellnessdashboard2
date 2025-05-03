@@ -1,4 +1,4 @@
-import type { ReactNode } from "react"
+import type React from "react"
 
 // Main component props
 export interface CategoryOverviewProps {
@@ -37,8 +37,13 @@ export interface CategoryProgressData {
 }
 
 // Trend indicator return type
-export interface TrendIndicator {
-  icon: ReactNode
+export type TrendIndicator = {
+  icon: {
+    type: React.ComponentType<any>
+    props: {
+      className: string
+    }
+  }
   color: string
 }
 

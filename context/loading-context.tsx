@@ -9,11 +9,23 @@ interface LoadingState {
   [key: string]: boolean
 }
 
+type ErrorType = "async_error" | "critical_error"
+
 interface LoadingContextType {
   isLoading: (key?: string) => boolean
   startLoading: (key: string) => void
   stopLoading: (key: string) => void
-  withLoading: <T>(key: string, promise: Promise<T>) => Promise<T>
+  withLoading: <T>(
+    key: string,
+    promise: Promise<T>,
+    options?: {
+      timeout?: number
+      retries?: number
+      retryDelay?: number
+      errorType?: ErrorType
+      errorContext?: Record<string, any>
+    },
+  ) => Promise<[T | null, Error | null]>
   loadingState: LoadingState
 }
 
@@ -43,14 +55,94 @@ export function LoadingProvider({ children }: { children: React.ReactNode }) {
 
   // Utility to wrap async operations with loading state
   const withLoading = useCallback(
-    async <T,>(key: string, promise: Promise<T>): Promise<T> => {
+    async <T,>(
+      key: string,
+      promise: Promise<T>,
+      options?: {
+        timeout?: number
+        retries?: number
+        retryDelay?: number
+        errorType?: ErrorType
+        errorContext?: Record<string, any>
+      },
+    ): Promise<[T | null, Error | null]> => {
+      const {
+        timeout = 30000, // 30 seconds default timeout
+        retries = 0,
+        retryDelay = 1000,
+        errorType = "async_error",
+        errorContext = {},
+      } = options || {}
+
+      let attempt = 0
+      let timeoutId: NodeJS.Timeout | null = null
+
+      const executeWithTimeout = (): Promise<T> => {
+        return new Promise((resolve, reject) => {
+          // Set timeout to cancel the operation if it takes too long
+          timeoutId = setTimeout(() => {
+            const timeoutError = new Error(`Operation timed out after ${timeout}ms`)
+            reject(timeoutError)
+          }, timeout)
+
+          // Execute the actual promise
+          promise.then(
+            (result) => {
+              if (timeoutId) clearTimeout(timeoutId)
+              resolve(result)
+            },
+            (error) => {
+              if (timeoutId) clearTimeout(timeoutId)
+              reject(error)
+            },
+          )
+        })
+      }
+
       try {
         startLoading(key)
-        const result = await promise
-        return result
-      } catch (error) {
-        reportError("async_error", error instanceof Error ? error : new Error(String(error)))
-        throw error
+
+        // Implement retry logic
+        while (true) {
+          try {
+            const result = await executeWithTimeout()
+            return [result, null]
+          } catch (error) {
+            attempt++
+
+            // Determine if we should retry
+            if (attempt <= retries) {
+              console.log(`Attempt ${attempt}/${retries} failed, retrying in ${retryDelay}ms...`)
+              await new Promise((resolve) => setTimeout(resolve, retryDelay))
+              continue
+            }
+
+            // No more retries, report and throw the error
+            const enhancedError = error instanceof Error ? error : new Error(String(error))
+
+            // Add additional context to the error
+            const enhancedContext = {
+              ...errorContext,
+              loadingKey: key,
+              attempts: attempt,
+              timestamp: new Date().toISOString(),
+              url: typeof window !== "undefined" ? window.location.href : "",
+            }
+
+            // Report the error with enhanced context
+            reportError(errorType, enhancedError, undefined, errorType === "critical_error")
+
+            // Log additional debugging information in development
+            if (process.env.NODE_ENV === "development") {
+              console.group("Loading Error Details")
+              console.error("Error:", enhancedError)
+              console.error("Context:", enhancedContext)
+              console.groupEnd()
+            }
+
+            return [null, enhancedError]
+          }
+        }
       } finally {
         stopLoading(key)
       }

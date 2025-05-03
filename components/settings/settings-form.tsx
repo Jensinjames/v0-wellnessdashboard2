@@ -17,7 +17,7 @@ import { useSettings } from "@/context/settings-context"
 import { useLoading } from "@/context/loading-context"
 import { LoadingButton } from "@/components/ui/loading/loading-button"
 import { FormStatus } from "@/components/ui/form-status"
-import { FormErrorBoundary } from "@/components/error-boundary/specialized-boundaries"
+import { FormErrorBoundary } from "@/components/error-boundary/specialized_boundaries"
 
 export function SettingsForm() {
   const { theme, setTheme } = useTheme()
@@ -109,9 +109,23 @@ export function SettingsForm() {
 
     try {
       // Use withLoading to handle loading state
-      const result = await withLoading("save-settings", () => updateSettings(formState))
+      const [result, error] = await withLoading("save-settings", () => updateSettings(formState), {
+        retries: 1,
+        errorType: "form_error",
+        errorContext: { formType: "settings" },
+      })
 
-      if (result.success) {
+      if (error) {
+        // Handle error case
+        console.error("Failed to save settings:", error)
+        setFormStatus({ message: "Failed to save settings. Please try again.", type: "error" })
+
+        toast({
+          title: "Error",
+          description: "There was a problem saving your settings.",
+          variant: "destructive",
+        })
+      } else {
         setFormStatus({ message: "Settings saved successfully!", type: "success" })
         setFormModified(false)
 
@@ -124,8 +138,6 @@ export function SettingsForm() {
         setTimeout(() => {
           setFormStatus(null)
         }, 3000)
-      } else {
-        throw new Error("Failed to save settings")
       }
     } catch (error) {
       setFormStatus({ message: "Failed to save settings. Please try again.", type: "error" })
