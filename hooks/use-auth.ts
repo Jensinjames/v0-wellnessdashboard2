@@ -1,14 +1,18 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { supabase } from "@/lib/supabase"
 import { toast } from "@/hooks/use-toast"
-import { useRouter } from "next/navigation"
 import type { Provider } from "@supabase/supabase-js"
 import type { AuthState } from "@/types/supabase"
+import { useRouter } from "next/navigation"
+import { createClient } from "@/lib/supabase-client"
+import type { User } from "@supabase/supabase-js"
 
 export function useAuth() {
+  const [user, setUser] = useState<User | null>(null)
+  const [loading, setLoading] = useState(true)
   const router = useRouter()
+  const supabase = createClient()
   const [authState, setAuthState] = useState<AuthState>({
     user: null,
     session: null,
@@ -16,56 +20,40 @@ export function useAuth() {
     error: null,
   })
 
-  // Initialize auth state
   useEffect(() => {
-    const initializeAuth = async () => {
-      try {
-        // Get the current session
-        const {
-          data: { session },
-          error,
-        } = await supabase.auth.getSession()
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      setUser(session?.user ?? null)
+      setLoading(false)
+      setAuthState({
+        user: session?.user || null,
+        session,
+        isLoading: false,
+        error: null,
+      })
 
-        if (error) {
-          throw error
-        }
-
-        setAuthState({
-          user: session?.user || null,
-          session,
-          isLoading: false,
-          error: null,
-        })
-
-        // Set up auth state change listener
-        const {
-          data: { subscription },
-        } = await supabase.auth.onAuthStateChange((_event, session) => {
-          setAuthState({
-            user: session?.user || null,
-            session,
-            isLoading: false,
-            error: null,
-          })
-        })
-
-        // Clean up subscription on unmount
-        return () => {
-          subscription.unsubscribe()
-        }
-      } catch (error) {
-        console.error("Error initializing auth:", error)
-        setAuthState({
-          user: null,
-          session: null,
-          isLoading: false,
-          error: error instanceof Error ? error : new Error("Failed to initialize auth"),
-        })
+      if (event === "SIGNED_OUT") {
+        router.push("/login")
       }
-    }
+    })
 
-    initializeAuth()
-  }, [])
+    // Initial session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user ?? null)
+      setLoading(false)
+      setAuthState({
+        user: session?.user || null,
+        session,
+        isLoading: false,
+        error: null,
+      })
+    })
+
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [router, supabase])
 
   // Sign up with email and password
   const signUp = useCallback(
@@ -203,48 +191,10 @@ export function useAuth() {
   )
 
   // Sign out
-  const signOut = useCallback(
-    async (options?: { redirectTo?: string }) => {
-      try {
-        setAuthState((prev) => ({ ...prev, isLoading: true, error: null }))
-
-        const { error } = await supabase.auth.signOut()
-
-        if (error) {
-          throw error
-        }
-
-        toast({
-          title: "Sign out successful",
-          description: "You have been signed out.",
-        })
-
-        if (options?.redirectTo) {
-          router.push(options.redirectTo)
-        }
-
-        return { success: true }
-      } catch (error) {
-        console.error("Sign out error:", error)
-
-        toast({
-          title: "Sign out failed",
-          description: error instanceof Error ? error.message : "Failed to sign out",
-          variant: "destructive",
-        })
-
-        setAuthState((prev) => ({
-          ...prev,
-          error: error instanceof Error ? error : new Error("Failed to sign out"),
-        }))
-
-        return { success: false, error }
-      } finally {
-        setAuthState((prev) => ({ ...prev, isLoading: false }))
-      }
-    },
-    [router],
-  )
+  const signOut = async () => {
+    await supabase.auth.signOut()
+    router.push("/login")
+  }
 
   // Reset password
   const resetPassword = useCallback(async (email: string, options?: { redirectTo?: string }) => {
@@ -366,6 +316,8 @@ export function useAuth() {
 
   return {
     ...authState,
+    user,
+    loading,
     signUp,
     signIn,
     signInWithProvider,
@@ -373,5 +325,6 @@ export function useAuth() {
     resetPassword,
     updatePassword,
     updateProfile,
+    isAuthenticated: !!user,
   }
 }
