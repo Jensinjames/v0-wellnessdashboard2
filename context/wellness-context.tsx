@@ -1,62 +1,26 @@
 "use client"
 
 import type React from "react"
-
-import { createContext, useContext, useCallback, useRef, useEffect } from "react"
+import { createContext, useContext, useState, useEffect, useCallback, useMemo } from "react"
+import { toast } from "@/hooks/use-toast"
+import { DEFAULT_CATEGORIES } from "@/types/wellness"
+import { generateUniqueId } from "@/utils/id-generator"
+import type { WellnessCategory, WellnessGoal, WellnessEntry } from "@/schemas/wellness-schemas"
+import { validateCategory, validateGoal, validateEntry, validateGoalsArray } from "@/utils/validation-utils"
+import { getCategories, setCategories, getGoals, setGoals, getEntries, setEntries } from "@/utils/storage-utils"
 import {
-  type WellnessCategory,
-  type WellnessGoal,
-  type WellnessEntryData,
-  DEFAULT_CATEGORIES,
-  type CategoryId,
-} from "@/types/wellness"
-import { usePersistentState, useStableCallback } from "@/lib/state-utils"
-import { useDeepMemo } from "@/lib/memo-utils"
-
-interface WellnessContextType {
-  categories: WellnessCategory[]
-  goals: WellnessGoal[]
-  entries: WellnessEntryData[]
-  isLoading: boolean
-  addCategory: (category: WellnessCategory) => { success: boolean; message?: string }
-  updateCategory: (categoryId: CategoryId, updates: Partial<WellnessCategory>) => { success: boolean; message?: string }
-  removeCategory: (categoryId: CategoryId) => void
-  setGoal: (goal: WellnessGoal) => void
-  updateGoals: (goals: WellnessGoal[]) => void
-  addEntry: (entry: WellnessEntryData) => void
-  updateEntry: (entryId: string, updates: Partial<WellnessEntryData>) => void
-  removeEntry: (entryId: string) => void
-  getCategoryById: (categoryId: CategoryId) => WellnessCategory | undefined
-  getGoalByCategoryAndMetric: (categoryId: CategoryId, metricId: string) => number
-  reorderCategories: (startIndex: number, endIndex: number) => void
-  categoryIdExists: (id: string) => boolean
-  metricIdExistsInCategory: (categoryId: string, metricId: string) => boolean
-}
-
-const WellnessContext = createContext<WellnessContextType | undefined>(undefined)
-
-// Sample entries for demonstration
-const sampleEntries: WellnessEntryData[] = [
-  {
-    id: "1",
-    date: new Date(2023, 3, 15),
-    metrics: [
-      { categoryId: "faith", metricId: "dailyPrayer", value: 15 },
-      { categoryId: "faith", metricId: "meditation", value: 10 },
-      { categoryId: "faith", metricId: "scriptureStudy", value: 20 },
-      { categoryId: "life", metricId: "familyTime", value: 2 },
-      { categoryId: "life", metricId: "socialActivities", value: 1 },
-      { categoryId: "life", metricId: "hobbies", value: 1.5 },
-      { categoryId: "work", metricId: "productivity", value: 75 },
-      { categoryId: "work", metricId: "projectsCompleted", value: 1 },
-      { categoryId: "work", metricId: "learningHours", value: 2 },
-      { categoryId: "health", metricId: "exercise", value: 1 },
-      { categoryId: "health", metricId: "sleep", value: 7 },
-      { categoryId: "health", metricId: "stressLevel", value: 4 },
-    ],
-  },
-  // Add more sample entries as needed
-]
+  type CategoriesStore,
+  type GoalsStore,
+  type EntriesStore,
+  type WellnessIndexes,
+  addItem,
+  updateItem,
+  removeItem,
+  reorderItems,
+  buildIndexes,
+  arrayToNormalizedStore,
+  normalizedStoreToArray,
+} from "@/utils/normalized-store"
 
 // Generate initial goals from default categories
 const generateInitialGoals = (): WellnessGoal[] => {
@@ -69,331 +33,629 @@ const generateInitialGoals = (): WellnessGoal[] => {
   )
 }
 
+// Define context type
+interface WellnessContextType {
+  // Data
+  categories: WellnessCategory[]
+  goals: WellnessGoal[]
+  entries: WellnessEntry[]
+  isLoading: boolean
+
+  // Category operations
+  addCategory: (
+    category: Omit<WellnessCategory, "id">,
+  ) => Promise<{ success: boolean; message?: string; data?: WellnessCategory }>
+  updateCategory: (
+    categoryId: string,
+    updates: Partial<WellnessCategory>,
+  ) => Promise<{ success: boolean; message?: string; data?: WellnessCategory }>
+  removeCategory: (categoryId: string) => Promise<{ success: boolean; message?: string }>
+  getCategoryById: (categoryId: string) => WellnessCategory | undefined
+  reorderCategories: (startIndex: number, endIndex: number) => Promise<{ success: boolean; message?: string }>
+
+  // Goal operations
+  setGoal: (goal: WellnessGoal) => Promise<{ success: boolean; message?: string; data?: WellnessGoal }>
+  updateGoals: (goals: WellnessGoal[]) => Promise<{ success: boolean; message?: string }>
+  getGoalByCategoryAndMetric: (categoryId: string, metricId: string) => number | undefined
+
+  // Entry operations
+  addEntry: (entry: Omit<WellnessEntry, "id">) => Promise<{ success: boolean; message?: string; data?: WellnessEntry }>
+  updateEntry: (
+    entryId: string,
+    updates: Partial<WellnessEntry>,
+  ) => Promise<{ success: boolean; message?: string; data?: WellnessEntry }>
+  removeEntry: (entryId: string) => Promise<{ success: boolean; message?: string }>
+
+  // Helper functions
+  categoryIdExists: (id: string) => boolean
+  metricIdExistsInCategory: (categoryId: string, metricId: string) => boolean
+
+  // Advanced data access (for optimized components)
+  getNormalizedData: () => {
+    categories: CategoriesStore
+    goals: GoalsStore
+    entries: EntriesStore
+    indexes: WellnessIndexes
+  }
+}
+
+// Create context
+const WellnessContext = createContext<WellnessContextType | undefined>(undefined)
+
+// Provider component
 export function WellnessProvider({ children }: { children: React.ReactNode }) {
-  // Use persistent state for categories, goals, and entries
-  const [categories, setCategories, categoriesLoading] = usePersistentState<WellnessCategory[]>(
-    "wellnessCategories",
-    DEFAULT_CATEGORIES,
+  // Normalized state
+  const [categoriesStore, setCategoriesStore] = useState<CategoriesStore>(() => arrayToNormalizedStore([]))
+  const [goalsStore, setGoalsStore] = useState<GoalsStore>(() => arrayToNormalizedStore([]))
+  const [entriesStore, setEntriesStore] = useState<EntriesStore>(() => arrayToNormalizedStore([]))
+  const [isLoading, setIsLoading] = useState(true)
+
+  // Build indexes whenever data changes
+  const indexes = useMemo<WellnessIndexes>(
+    () => buildIndexes(categoriesStore, goalsStore, entriesStore),
+    [categoriesStore, goalsStore, entriesStore],
   )
 
-  const [goals, setGoals, goalsLoading] = usePersistentState<WellnessGoal[]>("wellnessGoals", generateInitialGoals())
+  // Denormalized data for backward compatibility
+  const categories = useMemo(() => normalizedStoreToArray(categoriesStore), [categoriesStore])
+  const goals = useMemo(() => normalizedStoreToArray(goalsStore), [goalsStore])
+  const entries = useMemo(() => normalizedStoreToArray(entriesStore), [entriesStore])
 
-  const [entries, setEntries, entriesLoading] = usePersistentState<WellnessEntryData[]>(
-    "wellnessEntries",
-    sampleEntries,
-  )
-
-  // Track if data has been initialized
-  const initialized = useRef(false)
-
-  // Initialize data if needed
+  // Load data from localStorage on mount
   useEffect(() => {
-    if (!initialized.current && !categoriesLoading && !goalsLoading && !entriesLoading) {
-      // If categories are empty, initialize with defaults
-      if (categories.length === 0) {
-        setCategories(DEFAULT_CATEGORIES)
+    try {
+      setIsLoading(true)
+
+      // Get data from localStorage with validation
+      const storedCategories = getCategories()
+      const storedGoals = getGoals()
+      const storedEntries = getEntries()
+
+      // Populate state
+      setCategoriesStore(storedCategories)
+
+      // If we have no goals but have categories, generate initial goals
+      if (Object.keys(storedGoals.byId).length === 0 && Object.keys(storedCategories.byId).length > 0) {
+        const initialGoals = generateInitialGoals()
+        setGoalsStore(arrayToNormalizedStore(initialGoals))
+      } else {
+        setGoalsStore(storedGoals)
       }
 
-      // If goals are empty, initialize with defaults
-      if (goals.length === 0) {
-        setGoals(generateInitialGoals())
-      }
+      setEntriesStore(storedEntries)
+    } catch (error) {
+      console.error("Error loading wellness data:", error)
+      toast({
+        title: "Data Loading Error",
+        description: "Failed to load wellness data. Using default values.",
+        variant: "destructive",
+      })
 
-      initialized.current = true
+      // Set default values
+      setCategoriesStore(arrayToNormalizedStore(DEFAULT_CATEGORIES))
+      setGoalsStore(arrayToNormalizedStore(generateInitialGoals()))
+      setEntriesStore(arrayToNormalizedStore([]))
+    } finally {
+      setIsLoading(false)
     }
-  }, [categories, goals, categoriesLoading, goalsLoading, entriesLoading, setCategories, setGoals])
+  }, [])
 
-  // Category management functions
+  // Save categories to localStorage whenever they change
+  useEffect(() => {
+    if (!isLoading && categoriesStore.allIds.length > 0) {
+      setCategories(categoriesStore)
+    }
+  }, [categoriesStore, isLoading])
+
+  // Save goals to localStorage whenever they change
+  useEffect(() => {
+    if (!isLoading && goalsStore.allIds.length > 0) {
+      setGoals(goalsStore)
+    }
+  }, [goalsStore, isLoading])
+
+  // Save entries to localStorage whenever they change
+  useEffect(() => {
+    if (!isLoading) {
+      setEntries(entriesStore)
+    }
+  }, [entriesStore, isLoading])
+
+  // Category helper functions
   const categoryIdExists = useCallback(
     (id: string): boolean => {
-      return categories.some((cat) => cat.id === id)
+      return id in categoriesStore.byId
     },
-    [categories],
+    [categoriesStore],
   )
 
   const metricIdExistsInCategory = useCallback(
     (categoryId: string, metricId: string): boolean => {
-      const category = categories.find((cat) => cat.id === categoryId)
+      const category = categoriesStore.byId[categoryId]
       return category ? category.metrics.some((metric) => metric.id === metricId) : false
     },
-    [categories],
+    [categoriesStore],
   )
 
-  // Category management functions with stable callbacks
-  const addCategory = useStableCallback(
-    (category: WellnessCategory) => {
-      // Check if category ID already exists
-      if (categoryIdExists(category.id)) {
-        return {
-          success: false,
-          message: `A category with ID "${category.id}" already exists.`,
-        }
-      }
+  const getCategoryById = useCallback(
+    (categoryId: string) => {
+      return categoriesStore.byId[categoryId]
+    },
+    [categoriesStore],
+  )
 
-      // Check for duplicate metric IDs within the category
-      const metricIds = new Set<string>()
-      for (const metric of category.metrics) {
-        if (metricIds.has(metric.id)) {
+  // Add a new category with validation
+  const addCategory = useCallback(
+    async (
+      categoryData: Omit<WellnessCategory, "id">,
+    ): Promise<{ success: boolean; message?: string; data?: WellnessCategory }> => {
+      try {
+        // Generate a unique ID
+        const id = generateUniqueId()
+
+        // Create the new category
+        const newCategory: WellnessCategory = {
+          id,
+          ...categoryData,
+        }
+
+        // Validate the new category
+        const validationResult = validateCategory(newCategory)
+
+        if (!validationResult.success) {
           return {
             success: false,
-            message: `Duplicate metric ID "${metric.id}" found in the category.`,
+            message: `Invalid category data: ${validationResult.errorMessages?.join(", ")}`,
           }
         }
-        metricIds.add(metric.id)
-      }
 
-      setCategories((prev) => [...prev, category])
-      return { success: true }
-    },
-    [categoryIdExists, setCategories],
-  )
+        // Add to state
+        setCategoriesStore((prev) => addItem(prev, validationResult.data!))
 
-  const updateCategory = useStableCallback(
-    (categoryId: CategoryId, updates: Partial<WellnessCategory>) => {
-      // If we're updating metrics, check for duplicates
-      if (updates.metrics) {
-        const metricIds = new Set<string>()
-        for (const metric of updates.metrics) {
-          if (metricIds.has(metric.id)) {
-            return {
-              success: false,
-              message: `Duplicate metric ID "${metric.id}" found in the updated metrics.`,
-            }
-          }
-          metricIds.add(metric.id)
+        return {
+          success: true,
+          data: validationResult.data,
+        }
+      } catch (error) {
+        console.error("Error adding category:", error)
+        return {
+          success: false,
+          message: "An unexpected error occurred while adding the category.",
         }
       }
-
-      setCategories((prev) => prev.map((cat) => (cat.id === categoryId ? { ...cat, ...updates } : cat)))
-      return { success: true }
     },
-    [setCategories],
+    [],
   )
 
+  // Update an existing category with validation
+  const updateCategory = useCallback(
+    async (
+      categoryId: string,
+      updates: Partial<WellnessCategory>,
+    ): Promise<{ success: boolean; message?: string; data?: WellnessCategory }> => {
+      try {
+        // Find the category
+        const existingCategory = categoriesStore.byId[categoryId]
+
+        if (!existingCategory) {
+          return {
+            success: false,
+            message: `Category with ID ${categoryId} not found.`,
+          }
+        }
+
+        // Create the updated category
+        const updatedCategory: WellnessCategory = {
+          ...existingCategory,
+          ...updates,
+        }
+
+        // Validate the updated category
+        const validationResult = validateCategory(updatedCategory)
+
+        if (!validationResult.success) {
+          return {
+            success: false,
+            message: `Invalid category data: ${validationResult.errorMessages?.join(", ")}`,
+          }
+        }
+
+        // Update state
+        setCategoriesStore((prev) => updateItem(prev, categoryId, validationResult.data!))
+
+        return {
+          success: true,
+          data: validationResult.data,
+        }
+      } catch (error) {
+        console.error("Error updating category:", error)
+        return {
+          success: false,
+          message: "An unexpected error occurred while updating the category.",
+        }
+      }
+    },
+    [categoriesStore],
+  )
+
+  // Remove a category with validation
   const removeCategory = useCallback(
-    (categoryId: CategoryId) => {
-      setCategories((prev) => prev.filter((cat) => cat.id !== categoryId))
-      // Also remove related goals
-      setGoals((prev) => prev.filter((goal) => goal.categoryId !== categoryId))
+    async (categoryId: string): Promise<{ success: boolean; message?: string }> => {
+      try {
+        // Check if category exists
+        const existingCategory = categoriesStore.byId[categoryId]
+
+        if (!existingCategory) {
+          return {
+            success: false,
+            message: `Category with ID ${categoryId} not found.`,
+          }
+        }
+
+        // Remove category from state
+        setCategoriesStore((prev) => removeItem(prev, categoryId))
+
+        // Remove related goals
+        setGoalsStore((prev) => {
+          let updated = { ...prev }
+
+          // Find goals related to this category
+          const goalIdsToRemove = Object.values(prev.byId)
+            .filter((goal) => goal.categoryId === categoryId)
+            .map((goal) => goal.id)
+
+          // Remove each goal
+          goalIdsToRemove.forEach((goalId) => {
+            updated = removeItem(updated, goalId)
+          })
+
+          return updated
+        })
+
+        return { success: true }
+      } catch (error) {
+        console.error("Error removing category:", error)
+        return {
+          success: false,
+          message: "An unexpected error occurred while removing the category.",
+        }
+      }
     },
-    [setCategories, setGoals],
+    [categoriesStore],
+  )
+
+  // Reorder categories
+  const reorderCategories = useCallback(
+    async (startIndex: number, endIndex: number): Promise<{ success: boolean; message?: string }> => {
+      try {
+        if (
+          startIndex < 0 ||
+          endIndex < 0 ||
+          startIndex >= categoriesStore.allIds.length ||
+          endIndex >= categoriesStore.allIds.length
+        ) {
+          return {
+            success: false,
+            message: "Invalid index for reordering categories.",
+          }
+        }
+
+        setCategoriesStore((prev) => reorderItems(prev, startIndex, endIndex))
+
+        return { success: true }
+      } catch (error) {
+        console.error("Error reordering categories:", error)
+        return {
+          success: false,
+          message: "An unexpected error occurred while reordering categories.",
+        }
+      }
+    },
+    [categoriesStore],
   )
 
   // Goal management functions
   const setGoal = useCallback(
-    (goal: WellnessGoal) => {
-      setGoals((prev) => {
-        const existingIndex = prev.findIndex((g) => g.categoryId === goal.categoryId && g.metricId === goal.metricId)
+    async (goal: WellnessGoal): Promise<{ success: boolean; message?: string; data?: WellnessGoal }> => {
+      try {
+        // Validate the goal
+        const validationResult = validateGoal(goal)
 
-        if (existingIndex >= 0) {
-          // Update existing goal
-          const updated = [...prev]
-          updated[existingIndex] = goal
-          return updated
-        } else {
-          // Add new goal
-          return [...prev, goal]
+        if (!validationResult.success) {
+          return {
+            success: false,
+            message: `Invalid goal data: ${validationResult.errorMessages?.join(", ")}`,
+          }
         }
-      })
+
+        // Check if category and metric exist
+        if (!categoryIdExists(goal.categoryId)) {
+          return {
+            success: false,
+            message: `Category with ID ${goal.categoryId} does not exist.`,
+          }
+        }
+
+        if (!metricIdExistsInCategory(goal.categoryId, goal.metricId)) {
+          return {
+            success: false,
+            message: `Metric with ID ${goal.metricId} does not exist in category ${goal.categoryId}.`,
+          }
+        }
+
+        // Find existing goal with same category and metric
+        const existingGoalId = Object.values(goalsStore.byId).find(
+          (g) => g.categoryId === goal.categoryId && g.metricId === goal.metricId,
+        )?.id
+
+        if (existingGoalId) {
+          // Update existing goal
+          setGoalsStore((prev) => updateItem(prev, existingGoalId, validationResult.data!))
+        } else {
+          // Add new goal with ID if it doesn't have one
+          const goalWithId = goal.id ? goal : { ...goal, id: generateUniqueId() }
+          setGoalsStore((prev) => addItem(prev, goalWithId))
+        }
+
+        return {
+          success: true,
+          data: validationResult.data,
+        }
+      } catch (error) {
+        console.error("Error setting goal:", error)
+        return {
+          success: false,
+          message: "An unexpected error occurred while setting the goal.",
+        }
+      }
     },
-    [setGoals],
+    [categoryIdExists, metricIdExistsInCategory],
   )
 
-  const updateGoals = useCallback(
-    (newGoals: WellnessGoal[]) => {
-      setGoals((prev) => {
-        const updated = [...prev]
+  const updateGoals = useCallback(async (newGoals: WellnessGoal[]): Promise<{ success: boolean; message?: string }> => {
+    try {
+      // Validate the goals
+      const validationResult = validateGoalsArray(newGoals)
 
-        newGoals.forEach((newGoal) => {
-          const existingIndex = updated.findIndex(
+      if (!validationResult.success) {
+        return {
+          success: false,
+          message: `Invalid goals data: ${validationResult.errorMessages?.join(", ")}`,
+        }
+      }
+
+      // Update goals
+      setGoalsStore((prev) => {
+        let updated = { ...prev }
+
+        validationResult.data!.forEach((newGoal) => {
+          // Find existing goal with same category and metric
+          const existingGoalId = Object.values(prev.byId).find(
             (g) => g.categoryId === newGoal.categoryId && g.metricId === newGoal.metricId,
-          )
+          )?.id
 
-          if (existingIndex >= 0) {
+          if (existingGoalId) {
             // Update existing goal
-            updated[existingIndex] = newGoal
+            updated = updateItem(updated, existingGoalId, newGoal)
           } else {
-            // Add new goal
-            updated.push(newGoal)
+            // Add new goal with ID if it doesn't have one
+            const goalWithId = newGoal.id ? newGoal : { ...newGoal, id: generateUniqueId() }
+            updated = addItem(updated, goalWithId)
           }
         })
 
         return updated
       })
-    },
-    [setGoals],
-  )
 
-  // Entry management functions
-  const addEntry = useCallback(
-    (entry: WellnessEntryData) => {
-      // Check if this is an update to an existing entry for today
-      const today = new Date()
-      today.setHours(0, 0, 0, 0)
-
-      const entryDate = new Date(entry.date)
-      entryDate.setHours(0, 0, 0, 0)
-
-      const isSameDay = entryDate.getTime() === today.getTime()
-
-      if (isSameDay) {
-        // For entries from today, check if we already have entries for these metrics
-        const existingTodayEntries = entries.filter((e) => {
-          const eDate = new Date(e.date)
-          eDate.setHours(0, 0, 0, 0)
-          return eDate.getTime() === today.getTime()
-        })
-
-        if (existingTodayEntries.length > 0) {
-          // Update existing entries for today with the new metrics
-          setEntries((prevEntries) => {
-            return prevEntries.map((e) => {
-              const eDate = new Date(e.date)
-              eDate.setHours(0, 0, 0, 0)
-
-              if (eDate.getTime() === today.getTime()) {
-                // This is an entry for today, update its metrics
-                const updatedMetrics = [...e.metrics]
-
-                // For each metric in the new entry
-                entry.metrics.forEach((newMetric) => {
-                  const existingMetricIndex = updatedMetrics.findIndex(
-                    (m) => m.categoryId === newMetric.categoryId && m.metricId === newMetric.metricId,
-                  )
-
-                  if (existingMetricIndex >= 0) {
-                    // Update existing metric value
-                    updatedMetrics[existingMetricIndex] = {
-                      ...updatedMetrics[existingMetricIndex],
-                      value: updatedMetrics[existingMetricIndex].value + newMetric.value,
-                    }
-                  } else {
-                    // Add new metric
-                    updatedMetrics.push(newMetric)
-                  }
-                })
-
-                return {
-                  ...e,
-                  metrics: updatedMetrics,
-                }
-              }
-
-              return e
-            })
-          })
-          return
-        }
+      return { success: true }
+    } catch (error) {
+      console.error("Error updating goals:", error)
+      return {
+        success: false,
+        message: "An unexpected error occurred while updating goals.",
       }
-
-      // If not updating an existing entry, add as new
-      setEntries((prev) => [...prev, entry])
-    },
-    [entries, setEntries],
-  )
-
-  const updateEntry = useCallback(
-    (entryId: string, updates: Partial<WellnessEntryData>) => {
-      setEntries((prev) => prev.map((entry) => (entry.id === entryId ? { ...entry, ...updates } : entry)))
-    },
-    [setEntries],
-  )
-
-  const removeEntry = useCallback(
-    (entryId: string) => {
-      setEntries((prev) => prev.filter((entry) => entry.id !== entryId))
-    },
-    [setEntries],
-  )
-
-  // Helper functions
-  const getCategoryById = useCallback(
-    (categoryId: CategoryId) => {
-      return categories.find((cat) => cat.id === categoryId)
-    },
-    [categories],
-  )
+    }
+  }, [])
 
   const getGoalByCategoryAndMetric = useCallback(
-    (categoryId: CategoryId, metricId: string) => {
-      const goal = goals.find((g) => g.categoryId === categoryId && g.metricId === metricId)
+    (categoryId: string, metricId: string) => {
+      // Find goal with matching category and metric
+      const goal = Object.values(goalsStore.byId).find((g) => g.categoryId === categoryId && g.metricId === metricId)
 
       if (goal) {
         return goal.value
       }
 
       // If no goal is found, look for the default goal in the category definition
-      const category = categories.find((cat) => cat.id === categoryId)
+      const category = categoriesStore.byId[categoryId]
       const metric = category?.metrics.find((m) => m.id === metricId)
 
-      return metric?.defaultGoal || 0
+      return metric?.defaultGoal
     },
-    [categories, goals],
+    [categoriesStore, goalsStore],
   )
 
-  const reorderCategories = useCallback(
-    (startIndex: number, endIndex: number) => {
-      setCategories((prev) => {
-        const result = Array.from(prev)
-        const [removed] = result.splice(startIndex, 1)
-        result.splice(endIndex, 0, removed)
-        return result
-      })
+  // Entry management functions
+  const addEntry = useCallback(
+    async (
+      entryData: Omit<WellnessEntry, "id">,
+    ): Promise<{ success: boolean; message?: string; data?: WellnessEntry }> => {
+      try {
+        // Generate a unique ID
+        const id = generateUniqueId()
+
+        // Ensure date is a Date object
+        const date = entryData.date instanceof Date ? entryData.date : new Date(entryData.date)
+
+        // Create the new entry
+        const newEntry: WellnessEntry = {
+          id,
+          ...entryData,
+          date,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        }
+
+        // Validate the new entry
+        const validationResult = validateEntry(newEntry)
+
+        if (!validationResult.success) {
+          return {
+            success: false,
+            message: `Invalid entry data: ${validationResult.errorMessages?.join(", ")}`,
+          }
+        }
+
+        // Add to state
+        setEntriesStore((prev) => addItem(prev, validationResult.data!))
+
+        return {
+          success: true,
+          data: validationResult.data,
+        }
+      } catch (error) {
+        console.error("Error adding entry:", error)
+        return {
+          success: false,
+          message: "An unexpected error occurred while adding the entry.",
+        }
+      }
     },
-    [setCategories],
+    [],
   )
 
-  // Create a memoized context value to prevent unnecessary re-renders
-  const contextValue = useDeepMemo(
-    {
-      categories,
-      goals,
-      entries,
-      isLoading: categoriesLoading || goalsLoading || entriesLoading,
-      addCategory,
-      updateCategory,
-      removeCategory,
-      setGoal,
-      updateGoals,
-      addEntry,
-      updateEntry,
-      removeEntry,
-      getCategoryById,
-      getGoalByCategoryAndMetric,
-      reorderCategories,
-      categoryIdExists,
-      metricIdExistsInCategory,
+  const updateEntry = useCallback(
+    async (
+      entryId: string,
+      updates: Partial<WellnessEntry>,
+    ): Promise<{ success: boolean; message?: string; data?: WellnessEntry }> => {
+      try {
+        // Find the entry
+        const existingEntry = entriesStore.byId[entryId]
+
+        if (!existingEntry) {
+          return {
+            success: false,
+            message: `Entry with ID ${entryId} not found.`,
+          }
+        }
+
+        // Create the updated entry
+        const updatedEntry: WellnessEntry = {
+          ...existingEntry,
+          ...updates,
+          updatedAt: new Date(),
+        }
+
+        // Validate the updated entry
+        const validationResult = validateEntry(updatedEntry)
+
+        if (!validationResult.success) {
+          return {
+            success: false,
+            message: `Invalid entry data: ${validationResult.errorMessages?.join(", ")}`,
+          }
+        }
+
+        // Update state
+        setEntriesStore((prev) => updateItem(prev, entryId, validationResult.data!))
+
+        return {
+          success: true,
+          data: validationResult.data,
+        }
+      } catch (error) {
+        console.error("Error updating entry:", error)
+        return {
+          success: false,
+          message: "An unexpected error occurred while updating the entry.",
+        }
+      }
     },
-    [
-      categories,
-      goals,
-      entries,
-      categoriesLoading,
-      goalsLoading,
-      entriesLoading,
-      addCategory,
-      updateCategory,
-      removeCategory,
-      setGoal,
-      updateGoals,
-      addEntry,
-      updateEntry,
-      removeEntry,
-      getCategoryById,
-      getGoalByCategoryAndMetric,
-      reorderCategories,
-      categoryIdExists,
-      metricIdExistsInCategory,
-    ],
+    [entriesStore],
   )
+
+  const removeEntry = useCallback(
+    async (entryId: string): Promise<{ success: boolean; message?: string }> => {
+      try {
+        // Check if entry exists
+        const existingEntry = entriesStore.byId[entryId]
+
+        if (!existingEntry) {
+          return {
+            success: false,
+            message: `Entry with ID ${entryId} not found.`,
+          }
+        }
+
+        // Remove entry from state
+        setEntriesStore((prev) => removeItem(prev, entryId))
+
+        return { success: true }
+      } catch (error) {
+        console.error("Error removing entry:", error)
+        return {
+          success: false,
+          message: "An unexpected error occurred while removing the entry.",
+        }
+      }
+    },
+    [entriesStore],
+  )
+
+  // Provide access to normalized data for optimized components
+  const getNormalizedData = useCallback(() => {
+    return {
+      categories: categoriesStore,
+      goals: goalsStore,
+      entries: entriesStore,
+      indexes,
+    }
+  }, [categoriesStore, goalsStore, entriesStore, indexes])
+
+  // Context value
+  const contextValue: WellnessContextType = {
+    // Denormalized data for backward compatibility
+    categories,
+    goals,
+    entries,
+    isLoading,
+
+    // Category operations
+    addCategory,
+    updateCategory,
+    removeCategory,
+    getCategoryById,
+    reorderCategories,
+
+    // Goal operations
+    setGoal,
+    updateGoals,
+    getGoalByCategoryAndMetric,
+
+    // Entry operations
+    addEntry,
+    updateEntry,
+    removeEntry,
+
+    // Helper functions
+    categoryIdExists,
+    metricIdExistsInCategory,
+
+    // Advanced data access
+    getNormalizedData,
+  }
 
   return <WellnessContext.Provider value={contextValue}>{children}</WellnessContext.Provider>
 }
 
+// Custom hook to use the wellness context
 export function useWellness() {
   const context = useContext(WellnessContext)
+
   if (context === undefined) {
     throw new Error("useWellness must be used within a WellnessProvider")
   }
+
   return context
 }
