@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { createContext, useContext, useCallback, useMemo, useRef, useEffect } from "react"
+import { createContext, useContext, useCallback, useRef, useEffect } from "react"
 import {
   type WellnessCategory,
   type WellnessGoal,
@@ -11,6 +11,7 @@ import {
   type CategoryId,
 } from "@/types/wellness"
 import { usePersistentState, useStableCallback } from "@/lib/state-utils"
+import { useDeepMemo } from "@/lib/memo-utils"
 
 interface WellnessContextType {
   categories: WellnessCategory[]
@@ -343,8 +344,8 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
   )
 
   // Create a memoized context value to prevent unnecessary re-renders
-  const contextValue = useMemo(
-    () => ({
+  const contextValue = useDeepMemo(
+    {
       categories,
       goals,
       entries,
@@ -362,7 +363,7 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
       reorderCategories,
       categoryIdExists,
       metricIdExistsInCategory,
-    }),
+    },
     [
       categories,
       goals,
