@@ -13,58 +13,24 @@ import { Separator } from "@/components/ui/separator"
 import { toast } from "@/hooks/use-toast"
 import { Moon, Sun, Bell, BarChart, Shield, User, AlertCircle } from "lucide-react"
 import { useSettings } from "@/context/settings-context"
-import { FormStatus } from "@/components/ui/form-status"
-import { z } from "zod"
-
-// Define validation schema
-const accountSchema = z
-  .object({
-    name: z.string().min(2, "Name must be at least 2 characters"),
-    email: z.string().email("Please enter a valid email address"),
-    currentPassword: z.string().optional(),
-    newPassword: z.string().min(8, "Password must be at least 8 characters").optional(),
-    confirmPassword: z.string().optional(),
-  })
-  .refine(
-    (data) => {
-      if (data.newPassword && !data.currentPassword) {
-        return false
-      }
-      return true
-    },
-    {
-      message: "Current password is required when setting a new password",
-      path: ["currentPassword"],
-    },
-  )
-  .refine(
-    (data) => {
-      if (data.newPassword && data.newPassword !== data.confirmPassword) {
-        return false
-      }
-      return true
-    },
-    {
-      message: "Passwords do not match",
-      path: ["confirmPassword"],
-    },
-  )
 
 export function SettingsForm() {
   const { theme, setTheme } = useTheme()
-  const { settings, updateSettings } = useSettings()
+  const { settings, updateSettings, isLoaded } = useSettings()
   const [isLoading, setIsLoading] = useState(false)
   const [formState, setFormState] = useState(settings)
   const [formModified, setFormModified] = useState(false)
-  const [formStatus, setFormStatus] = useState<{ message: string; type: "loading" | "success" | "error" } | null>(null)
-  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
+  const [formStatus, setFormStatus] = useState(null)
+  const [validationErrors, setValidationErrors] = useState({})
 
   // Update form state when settings are loaded
   useEffect(() => {
-    setFormState(settings)
-  }, [settings])
+    if (isLoaded) {
+      setFormState(settings)
+    }
+  }, [settings, isLoaded])
 
-  const updateFormState = (key: string, value: any) => {
+  const updateFormState = (key, value) => {
     setFormState((prev) => ({
       ...prev,
       [key]: value,
@@ -82,40 +48,41 @@ export function SettingsForm() {
   }
 
   const validateForm = () => {
-    // Validate account fields if we're on the account tab
-    try {
-      if (formState.currentPassword || formState.newPassword || formState.confirmPassword) {
-        accountSchema.parse({
-          name: formState.name,
-          email: formState.email,
-          currentPassword: formState.currentPassword,
-          newPassword: formState.newPassword,
-          confirmPassword: formState.confirmPassword,
-        })
-      } else {
-        // Just validate name and email
-        z.object({
-          name: z.string().min(2, "Name must be at least 2 characters"),
-          email: z.string().email("Please enter a valid email address"),
-        }).parse({
-          name: formState.name,
-          email: formState.email,
-        })
-      }
-      setValidationErrors({})
-      return true
-    } catch (error) {
-      if (error instanceof z.ZodError) {
-        const errors: Record<string, string> = {}
-        error.errors.forEach((err) => {
-          if (err.path) {
-            errors[err.path[0]] = err.message
-          }
-        })
-        setValidationErrors(errors)
-      }
-      return false
+    const errors = {}
+    let isValid = true
+
+    // Validate name
+    if (!formState.name || formState.name.trim().length < 2) {
+      errors.name = "Name must be at least 2 characters"
+      isValid = false
     }
+
+    // Validate email
+    if (!formState.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(formState.email)) {
+      errors.email = "Please enter a valid email address"
+      isValid = false
+    }
+
+    // Validate password fields if any are filled
+    if (formState.newPassword || formState.currentPassword || formState.confirmPassword) {
+      if (!formState.currentPassword) {
+        errors.currentPassword = "Current password is required when setting a new password"
+        isValid = false
+      }
+
+      if (formState.newPassword && formState.newPassword.length < 8) {
+        errors.newPassword = "Password must be at least 8 characters"
+        isValid = false
+      }
+
+      if (formState.newPassword !== formState.confirmPassword) {
+        errors.confirmPassword = "Passwords do not match"
+        isValid = false
+      }
+    }
+
+    setValidationErrors(errors)
+    return isValid
   }
 
   const handleSaveSettings = async () => {
@@ -132,20 +99,24 @@ export function SettingsForm() {
     setFormStatus({ message: "Saving your settings...", type: "loading" })
 
     try {
-      await updateSettings(formState)
+      const result = await updateSettings(formState)
 
-      setFormStatus({ message: "Settings saved successfully!", type: "success" })
-      setFormModified(false)
+      if (result.success) {
+        setFormStatus({ message: "Settings saved successfully!", type: "success" })
+        setFormModified(false)
 
-      toast({
-        title: "Settings saved",
-        description: "Your settings have been updated successfully.",
-      })
+        toast({
+          title: "Settings saved",
+          description: "Your settings have been updated successfully.",
+        })
 
-      // Clear form status after a delay
-      setTimeout(() => {
-        setFormStatus(null)
-      }, 3000)
+        // Clear form status after a delay
+        setTimeout(() => {
+          setFormStatus(null)
+        }, 3000)
+      } else {
+        throw new Error("Failed to save settings")
+      }
     } catch (error) {
       setFormStatus({ message: "Failed to save settings. Please try again.", type: "error" })
 
@@ -176,11 +147,27 @@ export function SettingsForm() {
       </TabsList>
 
       {formStatus && (
-        <FormStatus
-          variant={formStatus.type === "loading" ? "loading" : formStatus.type === "success" ? "success" : "error"}
-          message={formStatus.message}
-          className="mb-6"
-        />
+        <div
+          className={`mb-6 p-4 rounded-md border ${
+            formStatus.type === "loading"
+              ? "bg-muted border-muted-foreground"
+              : formStatus.type === "success"
+                ? "bg-green-50 border-green-200"
+                : "bg-red-50 border-red-200"
+          }`}
+        >
+          <p
+            className={`text-sm ${
+              formStatus.type === "loading"
+                ? "text-muted-foreground"
+                : formStatus.type === "success"
+                  ? "text-green-600"
+                  : "text-red-600"
+            }`}
+          >
+            {formStatus.message}
+          </p>
+        </div>
       )}
 
       {/* Appearance Tab */}
@@ -489,7 +476,6 @@ export function SettingsForm() {
               <Button
                 className="w-full"
                 onClick={() => {
-                  // Validate just the password fields
                   validateForm()
                 }}
                 disabled={!formState.currentPassword && !formState.newPassword && !formState.confirmPassword}

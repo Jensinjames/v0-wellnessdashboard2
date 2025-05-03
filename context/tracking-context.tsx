@@ -1,9 +1,11 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useEffect, useCallback } from "react"
+
+import { createContext, useContext, useCallback, useMemo, useRef, useEffect } from "react"
 import { useWellness } from "./wellness-context"
 import type { CategoryId } from "@/types/wellness"
+import { usePersistentState, useStableCallback } from "@/lib/state-utils"
 
 // Types for tracking
 export interface TrackingSession {
@@ -20,6 +22,7 @@ export interface TrackingSession {
 interface TrackingContextType {
   activeSessions: TrackingSession[]
   recentSessions: TrackingSession[]
+  isLoading: boolean
   startTracking: (categoryId: CategoryId, metricId: string, notes?: string) => string
   pauseTracking: (sessionId: string) => void
   resumeTracking: (sessionId: string) => void
@@ -39,121 +42,130 @@ const MAX_RECENT_SESSIONS = 20
 const ACTIVE_SESSIONS_KEY = "wellness_active_sessions"
 const RECENT_SESSIONS_KEY = "wellness_recent_sessions"
 
+// Helper function to parse dates in tracking sessions
+function parseTrackingSessions(sessions: any[]): TrackingSession[] {
+  return sessions.map((session) => ({
+    ...session,
+    startTime: new Date(session.startTime),
+    endTime: session.endTime ? new Date(session.endTime) : undefined,
+  }))
+}
+
 export function TrackingProvider({ children }: { children: React.ReactNode }) {
   const { addEntry } = useWellness()
-  const [activeSessions, setActiveSessions] = useState<TrackingSession[]>([])
-  const [recentSessions, setRecentSessions] = useState<TrackingSession[]>([])
 
-  // Load sessions from localStorage on mount
+  // Use persistent state for active and recent sessions
+  const [activeSessions, setActiveSessions, activeSessionsLoading] = usePersistentState<TrackingSession[]>(
+    ACTIVE_SESSIONS_KEY,
+    [],
+  )
+
+  const [recentSessions, setRecentSessions, recentSessionsLoading] = usePersistentState<TrackingSession[]>(
+    RECENT_SESSIONS_KEY,
+    [],
+  )
+
+  // Track if data has been initialized
+  const initialized = useRef(false)
+  const updateIntervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  // Initialize data if needed
   useEffect(() => {
-    try {
-      const savedActiveSessions = localStorage.getItem(ACTIVE_SESSIONS_KEY)
-      const savedRecentSessions = localStorage.getItem(RECENT_SESSIONS_KEY)
-
-      if (savedActiveSessions) {
-        const parsed = JSON.parse(savedActiveSessions)
-        // Convert string dates back to Date objects
-        const sessions = parsed.map((session: any) => ({
-          ...session,
-          startTime: new Date(session.startTime),
-          endTime: session.endTime ? new Date(session.endTime) : undefined,
-        }))
-        setActiveSessions(sessions)
-      }
-
-      if (savedRecentSessions) {
-        const parsed = JSON.parse(savedRecentSessions)
-        // Convert string dates back to Date objects
-        const sessions = parsed.map((session: any) => ({
-          ...session,
-          startTime: new Date(session.startTime),
-          endTime: session.endTime ? new Date(session.endTime) : undefined,
-        }))
-        setRecentSessions(sessions)
-      }
-    } catch (error) {
-      console.error("Error loading tracking sessions:", error)
+    if (!initialized.current && !activeSessionsLoading && !recentSessionsLoading) {
+      initialized.current = true
     }
-  }, [])
-
-  // Save sessions to localStorage whenever they change
-  useEffect(() => {
-    localStorage.setItem(ACTIVE_SESSIONS_KEY, JSON.stringify(activeSessions))
-  }, [activeSessions])
-
-  useEffect(() => {
-    localStorage.setItem(RECENT_SESSIONS_KEY, JSON.stringify(recentSessions))
-  }, [recentSessions])
+  }, [activeSessionsLoading, recentSessionsLoading])
 
   // Update active sessions every second to keep duration current
   useEffect(() => {
-    if (activeSessions.length === 0) return
-
-    const interval = setInterval(() => {
-      setActiveSessions((prev) =>
-        prev.map((session) => {
-          if (!session.isActive) return session
-
-          const now = new Date()
-          const duration = now.getTime() - session.startTime.getTime()
-          return { ...session, duration }
-        }),
-      )
-    }, 1000)
-
-    return () => clearInterval(interval)
-  }, [activeSessions])
-
-  // Start tracking a new activity
-  const startTracking = useCallback((categoryId: CategoryId, metricId: string, notes?: string): string => {
-    const now = new Date()
-    const newSession: TrackingSession = {
-      id: crypto.randomUUID(),
-      categoryId,
-      metricId,
-      startTime: now,
-      duration: 0,
-      isActive: true,
-      notes,
+    // Clear any existing interval
+    if (updateIntervalRef.current) {
+      clearInterval(updateIntervalRef.current)
+      updateIntervalRef.current = null
     }
 
-    setActiveSessions((prev) => [...prev, newSession])
-    return newSession.id
-  }, [])
+    // Only set up interval if there are active sessions
+    if (activeSessions.length > 0) {
+      updateIntervalRef.current = setInterval(() => {
+        setActiveSessions((prev) =>
+          prev.map((session) => {
+            if (!session.isActive) return session
+
+            const now = new Date()
+            const duration = now.getTime() - new Date(session.startTime).getTime()
+            return { ...session, duration }
+          }),
+        )
+      }, 1000)
+    }
+
+    // Clean up interval on unmount
+    return () => {
+      if (updateIntervalRef.current) {
+        clearInterval(updateIntervalRef.current)
+      }
+    }
+  }, [activeSessions, setActiveSessions])
+
+  // Start tracking a new activity
+  const startTracking = useStableCallback(
+    (categoryId: CategoryId, metricId: string, notes?: string): string => {
+      const now = new Date()
+      const newSession: TrackingSession = {
+        id: crypto.randomUUID(),
+        categoryId,
+        metricId,
+        startTime: now,
+        duration: 0,
+        isActive: true,
+        notes,
+      }
+
+      setActiveSessions((prev) => [...prev, newSession])
+      return newSession.id
+    },
+    [setActiveSessions],
+  )
 
   // Pause an active tracking session
-  const pauseTracking = useCallback((sessionId: string) => {
-    setActiveSessions((prev) =>
-      prev.map((session) => {
-        if (session.id === sessionId && session.isActive) {
-          return { ...session, isActive: false }
-        }
-        return session
-      }),
-    )
-  }, [])
+  const pauseTracking = useStableCallback(
+    (sessionId: string) => {
+      setActiveSessions((prev) =>
+        prev.map((session) => {
+          if (session.id === sessionId && session.isActive) {
+            return { ...session, isActive: false }
+          }
+          return session
+        }),
+      )
+    },
+    [setActiveSessions],
+  )
 
   // Resume a paused tracking session
-  const resumeTracking = useCallback((sessionId: string) => {
-    setActiveSessions((prev) =>
-      prev.map((session) => {
-        if (session.id === sessionId && !session.isActive) {
-          return { ...session, isActive: true }
-        }
-        return session
-      }),
-    )
-  }, [])
+  const resumeTracking = useStableCallback(
+    (sessionId: string) => {
+      setActiveSessions((prev) =>
+        prev.map((session) => {
+          if (session.id === sessionId && !session.isActive) {
+            return { ...session, isActive: true }
+          }
+          return session
+        }),
+      )
+    },
+    [setActiveSessions],
+  )
 
   // Stop tracking and save the session
-  const stopTracking = useCallback(
+  const stopTracking = useStableCallback(
     (sessionId: string) => {
       const session = activeSessions.find((s) => s.id === sessionId)
       if (!session) return
 
       const now = new Date()
       const endTime = now
-      const finalDuration = session.isActive ? now.getTime() - session.startTime.getTime() : session.duration
+      const finalDuration = session.isActive ? now.getTime() - new Date(session.startTime).getTime() : session.duration
 
       const completedSession: TrackingSession = {
         ...session,
@@ -187,25 +199,31 @@ export function TrackingProvider({ children }: { children: React.ReactNode }) {
         ],
       })
     },
-    [activeSessions, addEntry],
+    [activeSessions, addEntry, setRecentSessions, setActiveSessions],
   )
 
   // Discard a tracking session without saving
-  const discardTracking = useCallback((sessionId: string) => {
-    setActiveSessions((prev) => prev.filter((s) => s.id !== sessionId))
-  }, [])
+  const discardTracking = useCallback(
+    (sessionId: string) => {
+      setActiveSessions((prev) => prev.filter((s) => s.id !== sessionId))
+    },
+    [setActiveSessions],
+  )
 
   // Update notes for a session
-  const updateNotes = useCallback((sessionId: string, notes: string) => {
-    setActiveSessions((prev) =>
-      prev.map((session) => {
-        if (session.id === sessionId) {
-          return { ...session, notes }
-        }
-        return session
-      }),
-    )
-  }, [])
+  const updateNotes = useCallback(
+    (sessionId: string, notes: string) => {
+      setActiveSessions((prev) =>
+        prev.map((session) => {
+          if (session.id === sessionId) {
+            return { ...session, notes }
+          }
+          return session
+        }),
+      )
+    },
+    [setActiveSessions],
+  )
 
   // Get a session by ID
   const getSessionById = useCallback(
@@ -235,7 +253,7 @@ export function TrackingProvider({ children }: { children: React.ReactNode }) {
             s.categoryId === categoryId &&
             s.metricId === metricId &&
             s.endTime &&
-            s.endTime.getTime() >= today.getTime(),
+            new Date(s.endTime).getTime() >= today.getTime(),
         )
         .reduce((total, session) => {
           return total + session.duration
@@ -246,20 +264,38 @@ export function TrackingProvider({ children }: { children: React.ReactNode }) {
     [activeSessions, recentSessions],
   )
 
-  const value = {
-    activeSessions,
-    recentSessions,
-    startTracking,
-    pauseTracking,
-    resumeTracking,
-    stopTracking,
-    discardTracking,
-    updateNotes,
-    getSessionById,
-    getTotalTrackedTimeToday,
-  }
+  // Create a memoized context value to prevent unnecessary re-renders
+  const contextValue = useMemo(
+    () => ({
+      activeSessions,
+      recentSessions,
+      isLoading: activeSessionsLoading || recentSessionsLoading,
+      startTracking,
+      pauseTracking,
+      resumeTracking,
+      stopTracking,
+      discardTracking,
+      updateNotes,
+      getSessionById,
+      getTotalTrackedTimeToday,
+    }),
+    [
+      activeSessions,
+      recentSessions,
+      activeSessionsLoading,
+      recentSessionsLoading,
+      startTracking,
+      pauseTracking,
+      resumeTracking,
+      stopTracking,
+      discardTracking,
+      updateNotes,
+      getSessionById,
+      getTotalTrackedTimeToday,
+    ],
+  )
 
-  return <TrackingContext.Provider value={value}>{children}</TrackingContext.Provider>
+  return <TrackingContext.Provider value={contextValue}>{children}</TrackingContext.Provider>
 }
 
 export function useTracking() {

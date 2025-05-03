@@ -2,16 +2,6 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: var(--font-sans);
-}
-
-@layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-}
-
 @layer base {
   :root {
     --background: 0 0% 100%;
@@ -33,12 +23,16 @@ body {
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
     --ring: 221.2 83.2% 53.3%;
+    --radius: 0.5rem;
+
+    /* Chart colors */
     --chart-1: 221.2 83.2% 53.3%;
     --chart-2: 142.1 76.2% 36.3%;
     --chart-3: 43.3 96.4% 56.3%;
     --chart-4: 262.1 83.3% 57.8%;
     --chart-5: 316.6 73.1% 52.4%;
-    --radius: 0.5rem;
+
+    /* Sidebar colors */
     --sidebar-background: 210 40% 98%;
     --sidebar-foreground: 222.2 47.4% 11.2%;
     --sidebar-primary: 221.2 83.2% 53.3%;
@@ -48,7 +42,7 @@ body {
     --sidebar-border: 214.3 31.8% 91.4%;
     --sidebar-ring: 221.2 83.2% 53.3%;
 
-    /* Surface colors for light theme */
+    /* Surface colors */
     --surface-50: 0 0% 100%;
     --surface-100: 210 40% 98%;
     --surface-200: 214 32% 91%;
@@ -63,6 +57,7 @@ body {
     /* Font variable */
     --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   }
+
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
@@ -83,11 +78,15 @@ body {
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
     --ring: 224.3 76.3% 48%;
+
+    /* Chart colors */
     --chart-1: 217.2 91.2% 59.8%;
     --chart-2: 142.1 70.6% 45.3%;
     --chart-3: 43.3 74.6% 49.0%;
     --chart-4: 262.1 83.3% 57.8%;
     --chart-5: 316.6 73.1% 52.4%;
+
+    /* Sidebar colors */
     --sidebar-background: 222.2 84% 4.9%;
     --sidebar-foreground: 210 40% 98%;
     --sidebar-primary: 217.2 91.2% 59.8%;
@@ -104,66 +103,70 @@ body {
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground font-sans;
   }
 }
 
 /* Mobile optimizations */
 @layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+
   /* Extra small screens */
   .xs\:grid-cols-2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
 
-  /* Improve touch targets on mobile */
-  @media (max-width: 768px) {
-    button,
-    [role="button"],
-    a {
-      min-height: 44px;
-      min-width: 44px;
-    }
-
-    /* Ensure tooltips don't get cut off */
-    [data-radix-popper-content-wrapper] {
-      @apply !max-w-[calc(100vw-20px)];
-    }
-
-    /* Improve chart interactions */
-    .recharts-wrapper .recharts-tooltip-cursor {
-      @apply !stroke-2;
-    }
-
-    .recharts-default-tooltip {
-      padding: 0.5rem;
-      max-width: 200px;
-    }
+/* Mobile-specific styles */
+@media (max-width: 768px) {
+  button,
+  [role="button"],
+  a {
+    min-height: 44px;
+    min-width: 44px;
   }
 
-  /* Prevent text overflow in charts */
-  .recharts-text.recharts-label {
-    @apply text-xs;
+  /* Ensure tooltips don't get cut off */
+  [data-radix-popper-content-wrapper] {
+    max-width: calc(100vw - 20px);
   }
 
-  /* Improve chart touch targets */
-  .recharts-dot {
-    @apply cursor-pointer;
+  /* Improve chart interactions */
+  .recharts-wrapper .recharts-tooltip-cursor {
+    stroke-width: 2px;
+  }
+
+  .recharts-default-tooltip {
+    padding: 0.5rem;
+    max-width: 200px;
   }
 }
 
-/* Fix for visibility issues in dashboard components */
+/* Chart text styles */
+.recharts-text.recharts-label {
+  font-size: 0.75rem;
+}
+
+/* Chart interaction styles */
+.recharts-dot {
+  cursor: pointer;
+}
+
+/* Fix for visibility issues */
 .dashboard-component {
-  visibility: visible !important;
-  opacity: 1 !important;
-  display: block !important;
+  visibility: visible;
+  opacity: 1;
+  display: block;
 }
 
 /* Ensure proper rendering of dynamic routes */
 [data-dynamic-route] {
-  display: block !important;
+  display: block;
 }
 
 /* Fix for parallel routes */
 [data-parallel-route] {
-  display: block !important;
+  display: block;
 }

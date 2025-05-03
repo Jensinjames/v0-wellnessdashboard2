@@ -58,7 +58,10 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "latest",
     "zod": "latest",
-    "tailwindcss": "latest"
+    "tailwindcss": "latest",
+    "@babel/parser": "latest",
+    "@babel/traverse": "latest",
+    "@babel/generator": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",

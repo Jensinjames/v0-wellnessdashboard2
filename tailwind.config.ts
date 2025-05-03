@@ -1,8 +1,7 @@
 import type { Config } from "tailwindcss"
-// Fix the import issue by importing the entire defaultTheme object
 import defaultTheme from "tailwindcss/defaultTheme"
 
-const config = {
+const config: Config = {
   darkMode: ["class"],
   content: [
     "./pages/**/*.{ts,tsx}",
@@ -73,16 +72,16 @@ const config = {
           ring: "hsl(var(--sidebar-ring))",
         },
         surface: {
-          50: "#ffffff",
-          100: "#f9fafb",
-          200: "#f3f4f6",
-          300: "#e5e7eb",
-          400: "#d1d5db",
-          500: "#9ca3af",
-          600: "#6b7280",
-          700: "#4b5563",
-          800: "#1f2937",
-          900: "#111827",
+          50: "rgb(var(--surface-50) / <alpha-value>)",
+          100: "rgb(var(--surface-100) / <alpha-value>)",
+          200: "rgb(var(--surface-200) / <alpha-value>)",
+          300: "rgb(var(--surface-300) / <alpha-value>)",
+          400: "rgb(var(--surface-400) / <alpha-value>)",
+          500: "rgb(var(--surface-500) / <alpha-value>)",
+          600: "rgb(var(--surface-600) / <alpha-value>)",
+          700: "rgb(var(--surface-700) / <alpha-value>)",
+          800: "rgb(var(--surface-800) / <alpha-value>)",
+          900: "rgb(var(--surface-900) / <alpha-value>)",
         },
       },
       borderRadius: {
@@ -91,7 +90,6 @@ const config = {
         sm: "calc(var(--radius) - 4px)",
       },
       fontFamily: {
-        // Fix the fontFamily usage by accessing the sans property from defaultTheme
         sans: ["var(--font-sans)", ...defaultTheme.fontFamily.sans],
       },
       keyframes: {
@@ -111,6 +109,6 @@ const config = {
     },
   },
   plugins: [require("tailwindcss-animate")],
-} satisfies Config
+}
 
 export default config
