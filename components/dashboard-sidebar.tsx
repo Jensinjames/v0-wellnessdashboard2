@@ -37,12 +37,12 @@ export function DashboardSidebar() {
   const pathname = usePathname()
 
   return (
-    <div className="hidden border-r bg-background md:block">
+    <div className="hidden border-r bg-sidebar md:block md:w-64 lg:w-72">
       <div className="flex h-full flex-col gap-2">
         <div className="flex h-14 items-center border-b px-4">
           <Link href="/" className="flex items-center gap-2 font-semibold">
-            <LineChart className="h-6 w-6" />
-            <span>Wellness Dashboard</span>
+            <LineChart className="h-6 w-6 text-primary" />
+            <span className="text-sidebar-foreground">Wellness Dashboard</span>
           </Link>
         </div>
         <div className="flex-1 overflow-auto py-2">
@@ -52,8 +52,8 @@ export function DashboardSidebar() {
                 key={index}
                 href={item.href}
                 className={cn(
-                  "flex items-center gap-3 rounded-lg px-3 py-2 text-muted-foreground transition-all hover:text-foreground",
-                  pathname === item.href ? "bg-muted text-foreground" : "",
+                  "flex items-center gap-3 rounded-lg px-3 py-2 text-sidebar-foreground transition-all hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                  pathname === item.href ? "bg-sidebar-accent text-sidebar-accent-foreground" : "",
                 )}
               >
                 {item.icon}

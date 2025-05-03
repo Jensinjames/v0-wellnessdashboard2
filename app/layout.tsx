@@ -20,10 +20,13 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen bg-background font-sans antialiased">
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
           <SettingsProvider>
-            <DashboardSidebar>{children}</DashboardSidebar>
-            <MobileNav />
+            <div className="flex min-h-screen flex-col md:flex-row">
+              <DashboardSidebar />
+              <main className="flex-1 dashboard-component">{children}</main>
+              <MobileNav />
+            </div>
           </SettingsProvider>
         </ThemeProvider>
       </body>

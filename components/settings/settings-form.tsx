@@ -1,90 +1,154 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useTheme } from "next-themes"
-import { Moon, Sun, Bell, BarChart, Shield, Layout } from "lucide-react"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import { toast } from "@/hooks/use-toast"
+import { Moon, Sun, Bell, BarChart, Shield, User, AlertCircle } from "lucide-react"
+import { useSettings } from "@/context/settings-context"
+import { FormStatus } from "@/components/ui/form-status"
+import { z } from "zod"
 
-// Define types for settings
-type NotificationFrequency = "all" | "important" | "none"
-type MeasurementUnit = "metric" | "imperial"
-type DataSharing = "all" | "anonymous" | "none"
-
-// Mock settings hook
-const useSettings = () => {
-  const [settings, setSettings] = useState({
-    notificationEmail: true,
-    notificationPush: false,
-    notificationFrequency: "important" as NotificationFrequency,
-    measurementUnit: "metric" as MeasurementUnit,
-    dataSharing: "anonymous" as DataSharing,
-    compactView: false,
+// Define validation schema
+const accountSchema = z
+  .object({
+    name: z.string().min(2, "Name must be at least 2 characters"),
+    email: z.string().email("Please enter a valid email address"),
+    currentPassword: z.string().optional(),
+    newPassword: z.string().min(8, "Password must be at least 8 characters").optional(),
+    confirmPassword: z.string().optional(),
   })
-
-  const updateSettings = (newSettings: Partial<typeof settings>) => {
-    setSettings((prev) => ({ ...prev, ...newSettings }))
-    // In a real app, this would persist to localStorage or a database
-    localStorage.setItem("userSettings", JSON.stringify({ ...settings, ...newSettings }))
-  }
-
-  return { ...settings, updateSettings }
-}
+  .refine(
+    (data) => {
+      if (data.newPassword && !data.currentPassword) {
+        return false
+      }
+      return true
+    },
+    {
+      message: "Current password is required when setting a new password",
+      path: ["currentPassword"],
+    },
+  )
+  .refine(
+    (data) => {
+      if (data.newPassword && data.newPassword !== data.confirmPassword) {
+        return false
+      }
+      return true
+    },
+    {
+      message: "Passwords do not match",
+      path: ["confirmPassword"],
+    },
+  )
 
 export function SettingsForm() {
-  const { setTheme, theme } = useTheme()
-  const settings = useSettings()
+  const { theme, setTheme } = useTheme()
+  const { settings, updateSettings } = useSettings()
   const [isLoading, setIsLoading] = useState(false)
-  const [status, setStatus] = useState("")
+  const [formState, setFormState] = useState(settings)
+  const [formModified, setFormModified] = useState(false)
+  const [formStatus, setFormStatus] = useState<{ message: string; type: "loading" | "success" | "error" } | null>(null)
+  const [validationErrors, setValidationErrors] = useState<Record<string, string>>({})
 
-  // Local state to track form changes before saving
-  const [formState, setFormState] = useState({
-    notificationEmail: settings.notificationEmail,
-    notificationPush: settings.notificationPush,
-    notificationFrequency: settings.notificationFrequency,
-    measurementUnit: settings.measurementUnit,
-    dataSharing: settings.dataSharing,
-    compactView: settings.compactView,
-  })
-
-  // Track if form has been modified
-  const [isModified, setIsModified] = useState(false)
+  // Update form state when settings are loaded
+  useEffect(() => {
+    setFormState(settings)
+  }, [settings])
 
   const updateFormState = (key: string, value: any) => {
     setFormState((prev) => ({
       ...prev,
       [key]: value,
     }))
-    setIsModified(true)
-    setStatus("")
+    setFormModified(true)
+
+    // Clear validation error for this field if it exists
+    if (validationErrors[key]) {
+      setValidationErrors((prev) => {
+        const newErrors = { ...prev }
+        delete newErrors[key]
+        return newErrors
+      })
+    }
   }
 
-  const saveSettings = async () => {
+  const validateForm = () => {
+    // Validate account fields if we're on the account tab
+    try {
+      if (formState.currentPassword || formState.newPassword || formState.confirmPassword) {
+        accountSchema.parse({
+          name: formState.name,
+          email: formState.email,
+          currentPassword: formState.currentPassword,
+          newPassword: formState.newPassword,
+          confirmPassword: formState.confirmPassword,
+        })
+      } else {
+        // Just validate name and email
+        z.object({
+          name: z.string().min(2, "Name must be at least 2 characters"),
+          email: z.string().email("Please enter a valid email address"),
+        }).parse({
+          name: formState.name,
+          email: formState.email,
+        })
+      }
+      setValidationErrors({})
+      return true
+    } catch (error) {
+      if (error instanceof z.ZodError) {
+        const errors: Record<string, string> = {}
+        error.errors.forEach((err) => {
+          if (err.path) {
+            errors[err.path[0]] = err.message
+          }
+        })
+        setValidationErrors(errors)
+      }
+      return false
+    }
+  }
+
+  const handleSaveSettings = async () => {
+    if (!validateForm()) {
+      toast({
+        title: "Validation Error",
+        description: "Please correct the errors in the form",
+        variant: "destructive",
+      })
+      return
+    }
+
     setIsLoading(true)
-    setStatus("Saving your settings...")
+    setFormStatus({ message: "Saving your settings...", type: "loading" })
 
     try {
-      // Simulate API call with a delay
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      await updateSettings(formState)
 
-      // Update settings
-      settings.updateSettings(formState)
-      setIsModified(false)
-      setStatus("Settings saved successfully!")
+      setFormStatus({ message: "Settings saved successfully!", type: "success" })
+      setFormModified(false)
 
-      // Show toast notification
       toast({
-        title: "Settings updated",
-        description: "Your preferences have been saved successfully.",
+        title: "Settings saved",
+        description: "Your settings have been updated successfully.",
       })
+
+      // Clear form status after a delay
+      setTimeout(() => {
+        setFormStatus(null)
+      }, 3000)
     } catch (error) {
-      setStatus("Failed to save settings. Please try again.")
+      setFormStatus({ message: "Failed to save settings. Please try again.", type: "error" })
+
       toast({
         title: "Error",
         description: "There was a problem saving your settings.",
@@ -95,29 +159,29 @@ export function SettingsForm() {
     }
   }
 
-  const resetForm = () => {
-    setFormState({
-      notificationEmail: settings.notificationEmail,
-      notificationPush: settings.notificationPush,
-      notificationFrequency: settings.notificationFrequency,
-      measurementUnit: settings.measurementUnit,
-      dataSharing: settings.dataSharing,
-      compactView: settings.compactView,
-    })
-    setIsModified(false)
-    setStatus("")
+  const handleResetForm = () => {
+    setFormState(settings)
+    setFormModified(false)
+    setValidationErrors({})
+    setFormStatus(null)
   }
 
   return (
     <Tabs defaultValue="appearance" className="w-full">
-      <TabsList className="grid w-full grid-cols-4 md:w-fit">
+      <TabsList className="grid w-full grid-cols-4 mb-8">
         <TabsTrigger value="appearance">Appearance</TabsTrigger>
         <TabsTrigger value="notifications">Notifications</TabsTrigger>
         <TabsTrigger value="data">Data & Privacy</TabsTrigger>
         <TabsTrigger value="account">Account</TabsTrigger>
       </TabsList>
 
-      {status && <div className="my-4 p-3 rounded-md border bg-blue-50 text-blue-700">{status}</div>}
+      {formStatus && (
+        <FormStatus
+          variant={formStatus.type === "loading" ? "loading" : formStatus.type === "success" ? "success" : "error"}
+          message={formStatus.message}
+          className="mb-6"
+        />
+      )}
 
       {/* Appearance Tab */}
       <TabsContent value="appearance">
@@ -167,10 +231,7 @@ export function SettingsForm() {
 
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <div className="flex items-center gap-2">
-                    <Layout className="h-4 w-4" />
-                    <Label className="text-base">Compact View</Label>
-                  </div>
+                  <Label className="text-base">Compact View</Label>
                   <p className="text-sm text-muted-foreground">Use a more compact layout for dashboard components.</p>
                 </div>
                 <Switch
@@ -201,8 +262,8 @@ export function SettingsForm() {
                   <p className="text-sm text-muted-foreground">Receive notifications via email.</p>
                 </div>
                 <Switch
-                  checked={formState.notificationEmail}
-                  onCheckedChange={(checked) => updateFormState("notificationEmail", checked)}
+                  checked={formState.emailNotifications}
+                  onCheckedChange={(checked) => updateFormState("emailNotifications", checked)}
                 />
               </div>
 
@@ -217,8 +278,8 @@ export function SettingsForm() {
                   <p className="text-sm text-muted-foreground">Receive push notifications in your browser.</p>
                 </div>
                 <Switch
-                  checked={formState.notificationPush}
-                  onCheckedChange={(checked) => updateFormState("notificationPush", checked)}
+                  checked={formState.pushNotifications}
+                  onCheckedChange={(checked) => updateFormState("pushNotifications", checked)}
                 />
               </div>
 
@@ -228,7 +289,7 @@ export function SettingsForm() {
                 <Label htmlFor="notification-frequency">Notification Frequency</Label>
                 <Select
                   value={formState.notificationFrequency}
-                  onValueChange={(value) => updateFormState("notificationFrequency", value as NotificationFrequency)}
+                  onValueChange={(value) => updateFormState("notificationFrequency", value)}
                 >
                   <SelectTrigger id="notification-frequency">
                     <SelectValue placeholder="Select frequency" />
@@ -262,10 +323,7 @@ export function SettingsForm() {
                   <Shield className="h-4 w-4" />
                   <Label htmlFor="data-sharing">Data Sharing</Label>
                 </div>
-                <Select
-                  value={formState.dataSharing}
-                  onValueChange={(value) => updateFormState("dataSharing", value as DataSharing)}
-                >
+                <Select value={formState.dataSharing} onValueChange={(value) => updateFormState("dataSharing", value)}>
                   <SelectTrigger id="data-sharing">
                     <SelectValue placeholder="Select data sharing preference" />
                   </SelectTrigger>
@@ -289,7 +347,7 @@ export function SettingsForm() {
                 </div>
                 <Select
                   value={formState.measurementUnit}
-                  onValueChange={(value) => updateFormState("measurementUnit", value as MeasurementUnit)}
+                  onValueChange={(value) => updateFormState("measurementUnit", value)}
                 >
                   <SelectTrigger id="measurement-unit">
                     <SelectValue placeholder="Select measurement unit" />
@@ -327,54 +385,117 @@ export function SettingsForm() {
           <CardContent className="space-y-6">
             <div className="space-y-4">
               <div className="grid gap-2">
-                <Label htmlFor="name">Name</Label>
-                <input
-                  id="name"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  defaultValue="User Name"
-                />
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  <Label htmlFor="name">Name</Label>
+                </div>
+                <div className="relative">
+                  <Input
+                    id="name"
+                    value={formState.name || ""}
+                    onChange={(e) => updateFormState("name", e.target.value)}
+                    className={validationErrors.name ? "border-destructive" : ""}
+                  />
+                  {validationErrors.name && (
+                    <div className="flex items-center text-destructive text-xs mt-1">
+                      <AlertCircle className="h-3 w-3 mr-1" />
+                      {validationErrors.name}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="grid gap-2">
-                <Label htmlFor="email">Email</Label>
-                <input
-                  id="email"
-                  type="email"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                  defaultValue="user@example.com"
-                />
+                <div className="flex items-center gap-2">
+                  <User className="h-4 w-4" />
+                  <Label htmlFor="email">Email</Label>
+                </div>
+                <div className="relative">
+                  <Input
+                    id="email"
+                    type="email"
+                    value={formState.email || ""}
+                    onChange={(e) => updateFormState("email", e.target.value)}
+                    className={validationErrors.email ? "border-destructive" : ""}
+                  />
+                  {validationErrors.email && (
+                    <div className="flex items-center text-destructive text-xs mt-1">
+                      <AlertCircle className="h-3 w-3 mr-1" />
+                      {validationErrors.email}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <Separator />
 
               <div className="grid gap-2">
                 <Label htmlFor="current-password">Current Password</Label>
-                <input
-                  id="current-password"
-                  type="password"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                />
+                <div className="relative">
+                  <Input
+                    id="current-password"
+                    type="password"
+                    value={formState.currentPassword || ""}
+                    onChange={(e) => updateFormState("currentPassword", e.target.value)}
+                    className={validationErrors.currentPassword ? "border-destructive" : ""}
+                  />
+                  {validationErrors.currentPassword && (
+                    <div className="flex items-center text-destructive text-xs mt-1">
+                      <AlertCircle className="h-3 w-3 mr-1" />
+                      {validationErrors.currentPassword}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="grid gap-2">
                 <Label htmlFor="new-password">New Password</Label>
-                <input
-                  id="new-password"
-                  type="password"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                />
+                <div className="relative">
+                  <Input
+                    id="new-password"
+                    type="password"
+                    value={formState.newPassword || ""}
+                    onChange={(e) => updateFormState("newPassword", e.target.value)}
+                    className={validationErrors.newPassword ? "border-destructive" : ""}
+                  />
+                  {validationErrors.newPassword && (
+                    <div className="flex items-center text-destructive text-xs mt-1">
+                      <AlertCircle className="h-3 w-3 mr-1" />
+                      {validationErrors.newPassword}
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div className="grid gap-2">
                 <Label htmlFor="confirm-password">Confirm New Password</Label>
-                <input
-                  id="confirm-password"
-                  type="password"
-                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                />
+                <div className="relative">
+                  <Input
+                    id="confirm-password"
+                    type="password"
+                    value={formState.confirmPassword || ""}
+                    onChange={(e) => updateFormState("confirmPassword", e.target.value)}
+                    className={validationErrors.confirmPassword ? "border-destructive" : ""}
+                  />
+                  {validationErrors.confirmPassword && (
+                    <div className="flex items-center text-destructive text-xs mt-1">
+                      <AlertCircle className="h-3 w-3 mr-1" />
+                      {validationErrors.confirmPassword}
+                    </div>
+                  )}
+                </div>
               </div>
 
-              <Button className="w-full">Update Password</Button>
+              <Button
+                className="w-full"
+                onClick={() => {
+                  // Validate just the password fields
+                  validateForm()
+                }}
+                disabled={!formState.currentPassword && !formState.newPassword && !formState.confirmPassword}
+              >
+                Update Password
+              </Button>
 
               <Separator />
 
@@ -389,18 +510,18 @@ export function SettingsForm() {
         </Card>
       </TabsContent>
 
-      {isModified && (
-        <CardFooter className="flex justify-between border rounded-lg p-4 mt-6">
+      {formModified && (
+        <div className="flex justify-between items-center border rounded-lg p-4 mt-6">
           <p className="text-sm text-muted-foreground">You have unsaved changes</p>
           <div className="flex gap-2">
-            <Button variant="outline" onClick={resetForm} disabled={isLoading}>
+            <Button variant="outline" onClick={handleResetForm} disabled={isLoading}>
               Cancel
             </Button>
-            <Button onClick={saveSettings} disabled={isLoading}>
+            <Button onClick={handleSaveSettings} disabled={isLoading}>
               {isLoading ? "Saving..." : "Save Changes"}
             </Button>
           </div>
-        </CardFooter>
+        </div>
       )}
     </Tabs>
   )

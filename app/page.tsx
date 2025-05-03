@@ -40,18 +40,18 @@ export default function Dashboard() {
   return (
     <WellnessProvider>
       <TrackingProvider>
-        <div className="min-h-screen bg-surface-50 text-surface-900">
+        <div className="dashboard-component min-h-screen bg-background">
           <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
             <div className="space-y-6">
               <DashboardHeader onAddEntry={handleAddNewEntry} />
 
               <div className="grid gap-6">
-                <section>
+                <section className="dashboard-component">
                   <h2 className="mb-3 text-sm font-medium">Daily Overview</h2>
                   <DailyMetrics />
                 </section>
 
-                <section>
+                <section className="dashboard-component">
                   <div className="flex items-center justify-between mb-3">
                     <h2 className="text-sm font-medium">Category Performance</h2>
                     <div className="flex items-center gap-2">
@@ -90,21 +90,21 @@ export default function Dashboard() {
                   />
                 </section>
 
-                <section>
+                <section className="dashboard-component">
                   <ActiveTracking />
                 </section>
 
-                <section>
+                <section className="dashboard-component">
                   <h2 className="mb-3 text-sm font-medium">Detailed Analysis</h2>
                   <CategoryDetails />
                 </section>
 
-                <section>
+                <section className="dashboard-component">
                   <h2 className="mb-3 text-sm font-medium">Wellness Trends</h2>
                   <WellnessTrends />
                 </section>
 
-                <section>
+                <section className="dashboard-component">
                   <EntriesList onEdit={handleEditEntry} />
                 </section>
               </div>

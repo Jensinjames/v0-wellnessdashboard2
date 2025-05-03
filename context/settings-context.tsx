@@ -1,58 +1,79 @@
 "use client"
 
 import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
-
-export type NotificationFrequency = "all" | "important" | "none"
-export type MeasurementUnit = "metric" | "imperial"
-export type DataSharing = "all" | "anonymous" | "none"
+import type { UserSettings } from "@/types/settings"
 
 interface SettingsContextType {
-  notificationEmail: boolean
-  notificationPush: boolean
-  notificationFrequency: NotificationFrequency
-  measurementUnit: MeasurementUnit
-  dataSharing: DataSharing
-  compactView: boolean
-  updateSettings: (settings: Partial<Omit<SettingsContextType, "updateSettings">>) => void
+  settings: UserSettings
+  updateSettings: (settings: Partial<UserSettings>) => Promise<{ success: boolean; error?: any }>
+  isLoaded: boolean
 }
 
-const defaultSettings: Omit<SettingsContextType, "updateSettings"> = {
-  notificationEmail: true,
-  notificationPush: false,
+const defaultSettings: UserSettings = {
+  // Notification settings
+  emailNotifications: true,
+  pushNotifications: false,
   notificationFrequency: "important",
-  measurementUnit: "metric",
+
+  // Data & Privacy settings
   dataSharing: "anonymous",
+  measurementUnit: "metric",
+
+  // Account settings
+  name: "User Name",
+  email: "user@example.com",
+
+  // Appearance settings
   compactView: false,
 }
 
 const SettingsContext = createContext<SettingsContextType | undefined>(undefined)
 
 export function SettingsProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState(defaultSettings)
+  const [settings, setSettings] = useState<UserSettings>(defaultSettings)
+  const [isLoaded, setIsLoaded] = useState(false)
 
   // Load settings from localStorage on mount
   useEffect(() => {
-    const savedSettings = localStorage.getItem("userSettings")
-    if (savedSettings) {
-      try {
-        const parsedSettings = JSON.parse(savedSettings)
-        setSettings((prev) => ({ ...prev, ...parsedSettings }))
-      } catch (error) {
-        console.error("Failed to parse settings from localStorage", error)
+    try {
+      const savedSettings = localStorage.getItem("userSettings")
+      if (savedSettings) {
+        setSettings({
+          ...defaultSettings,
+          ...JSON.parse(savedSettings),
+        })
       }
+      setIsLoaded(true)
+    } catch (error) {
+      console.error("Failed to load settings:", error)
+      setIsLoaded(true)
     }
   }, [])
 
-  const updateSettings = (newSettings: Partial<typeof settings>) => {
-    setSettings((prev) => {
-      const updated = { ...prev, ...newSettings }
+  const updateSettings = async (newSettings: Partial<UserSettings>) => {
+    try {
+      const updatedSettings = {
+        ...settings,
+        ...newSettings,
+      }
+
+      // Simulate API call
+      await new Promise((resolve) => setTimeout(resolve, 500))
+
       // Save to localStorage
-      localStorage.setItem("userSettings", JSON.stringify(updated))
-      return updated
-    })
+      localStorage.setItem("userSettings", JSON.stringify(updatedSettings))
+
+      // Update state
+      setSettings(updatedSettings)
+
+      return { success: true }
+    } catch (error) {
+      console.error("Failed to save settings:", error)
+      return { success: false, error }
+    }
   }
 
-  return <SettingsContext.Provider value={{ ...settings, updateSettings }}>{children}</SettingsContext.Provider>
+  return <SettingsContext.Provider value={{ settings, updateSettings, isLoaded }}>{children}</SettingsContext.Provider>
 }
 
 export function useSettings() {

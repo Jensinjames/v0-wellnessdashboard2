@@ -17,7 +17,6 @@ import {
 import { useTracking, type TrackingSession } from "@/context/tracking-context"
 import { useWellness } from "@/context/wellness-context"
 import { getCategoryColorClass } from "@/types/wellness"
-import { cn } from "@/lib/utils"
 
 // Format milliseconds to HH:MM:SS
 export function formatDuration(ms: number): string {
@@ -85,11 +84,11 @@ export function ActivityTimer({ session }: ActivityTimerProps) {
   return (
     <>
       <Card className="mb-3 overflow-hidden">
-        <div className={cn(colorClass, "h-1")}></div>
+        <div className={colorClass + " h-1"}></div>
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Badge variant="outline" className={cn(textColorClass)}>
+              <Badge variant="outline" className={textColorClass}>
                 {category.name}
               </Badge>
               <span className="font-medium">{metric.name}</span>
@@ -100,7 +99,6 @@ export function ActivityTimer({ session }: ActivityTimerProps) {
             </div>
           </div>
 
-          {/* Notes section */}
           {editingNotes ? (
             <div className="mt-2">
               <Textarea
@@ -152,7 +150,6 @@ export function ActivityTimer({ session }: ActivityTimerProps) {
         </CardContent>
       </Card>
 
-      {/* Stop confirmation dialog */}
       <Dialog open={showStopDialog} onOpenChange={setShowStopDialog}>
         <DialogContent>
           <DialogHeader>
