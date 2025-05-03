@@ -5,6 +5,8 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { SettingsProvider } from "@/context/settings-context"
 import { DashboardSidebar } from "@/components/dashboard-sidebar"
 import { MobileNav } from "@/components/mobile-nav"
+import { CriticalErrorBoundary } from "@/components/error-boundary/specialized-boundaries"
+import { GlobalErrorInitializer } from "@/components/global-error-initializer"
 
 export const metadata: Metadata = {
   title: "Wellness Dashboard",
@@ -20,13 +22,16 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="min-h-screen bg-background font-sans antialiased">
+        <GlobalErrorInitializer />
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false} disableTransitionOnChange>
           <SettingsProvider>
-            <div className="flex min-h-screen flex-col md:flex-row">
-              <DashboardSidebar />
-              <main className="flex-1 dashboard-component">{children}</main>
-              <MobileNav />
-            </div>
+            <CriticalErrorBoundary>
+              <div className="flex min-h-screen flex-col md:flex-row">
+                <DashboardSidebar />
+                <main className="flex-1 dashboard-component">{children}</main>
+                <MobileNav />
+              </div>
+            </CriticalErrorBoundary>
           </SettingsProvider>
         </ThemeProvider>
       </body>
