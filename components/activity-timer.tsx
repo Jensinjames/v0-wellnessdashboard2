@@ -1,86 +1,181 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { useState } from "react"
+import { Play, Pause, StopCircle, X, Clock, Edit, Check } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { useTracking, type TrackingSession } from "@/context/tracking-context"
+import { useWellness } from "@/context/wellness-context"
+import { getCategoryColorClass } from "@/types/wellness"
 
-// Move formatDuration to module level so it can be properly exported
-export function formatDuration(seconds: number): string {
-  const hours = Math.floor(seconds / 3600)
-  const minutes = Math.floor((seconds % 3600) / 60)
-  const secs = seconds % 60
+// Format milliseconds to HH:MM:SS
+export function formatDuration(ms: number): string {
+  const totalSeconds = Math.floor(ms / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
 
   return [
     hours.toString().padStart(2, "0"),
     minutes.toString().padStart(2, "0"),
-    secs.toString().padStart(2, "0"),
+    seconds.toString().padStart(2, "0"),
   ].join(":")
 }
 
-// Format milliseconds to HH:MM:SS
-export function formatDurationMs(ms: number): string {
-  return formatDuration(Math.floor(ms / 1000))
-}
-
 interface ActivityTimerProps {
-  session: {
-    id: string
-    categoryId: string
-    metricId: string
-    startTime: Date
-    endTime?: Date
-    duration: number
-    isActive: boolean
-    notes?: string
-  }
+  session: TrackingSession
 }
 
 export function ActivityTimer({ session }: ActivityTimerProps) {
-  const [isRunning, setIsRunning] = useState(session.isActive)
-  const [time, setTime] = useState(session.duration / 1000) // Convert milliseconds to seconds
+  const { pauseTracking, resumeTracking, stopTracking, discardTracking, updateNotes } = useTracking()
+  const { categories } = useWellness()
+  const [showStopDialog, setShowStopDialog] = useState(false)
+  const [editingNotes, setEditingNotes] = useState(false)
+  const [notes, setNotes] = useState(session.notes || "")
 
-  useEffect(() => {
-    let interval: NodeJS.Timeout | null = null
+  // Find category and metric information
+  const category = categories.find((c) => c.id === session.categoryId)
+  const metric = category?.metrics.find((m) => m.id === session.metricId)
 
-    if (isRunning) {
-      interval = setInterval(() => {
-        setTime((prevTime) => prevTime + 1)
-      }, 1000)
-    } else if (interval) {
-      clearInterval(interval)
+  const handlePauseResume = () => {
+    if (session.isActive) {
+      pauseTracking(session.id)
+    } else {
+      resumeTracking(session.id)
     }
-
-    return () => {
-      if (interval) clearInterval(interval)
-    }
-  }, [isRunning])
-
-  const handleStartStop = () => {
-    setIsRunning(!isRunning)
   }
 
+  const handleStop = () => {
+    setShowStopDialog(true)
+  }
+
+  const confirmStop = () => {
+    stopTracking(session.id)
+    setShowStopDialog(false)
+  }
+
+  const handleDiscard = () => {
+    discardTracking(session.id)
+    setShowStopDialog(false)
+  }
+
+  const handleSaveNotes = () => {
+    updateNotes(session.id, notes)
+    setEditingNotes(false)
+  }
+
+  if (!category || !metric) {
+    return null
+  }
+
+  const colorClass = getCategoryColorClass(category, "bg")
+  const textColorClass = getCategoryColorClass(category, "text")
+
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle>
-          {session.categoryId} - {session.metricId}
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <div className="flex flex-col items-center">
-          <div
-            className={cn("text-4xl font-mono font-bold mb-4", isRunning ? "text-primary" : "text-muted-foreground")}
-          >
-            {formatDuration(time)}
+    <>
+      <Card className="mb-3 overflow-hidden">
+        <div className={`${colorClass} h-1`} />
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className={textColorClass}>
+                {category.name}
+              </Badge>
+              <span className="font-medium">{metric.name}</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <Clock className="h-4 w-4 text-muted-foreground" />
+              <span className="font-mono font-medium">{formatDuration(session.duration)}</span>
+            </div>
           </div>
-          <div className="flex space-x-2">
-            <Button onClick={handleStartStop} variant={isRunning ? "destructive" : "default"}>
-              {isRunning ? "Stop" : "Start"}
+
+          {/* Notes section */}
+          {editingNotes ? (
+            <div className="mt-2">
+              <Textarea
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Add notes about this activity..."
+                className="h-20 text-sm"
+              />
+              <div className="mt-2 flex justify-end gap-2">
+                <Button size="sm" variant="ghost" onClick={() => setEditingNotes(false)}>
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={handleSaveNotes}>
+                  <Check className="mr-1 h-4 w-4" />
+                  Save
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <>
+              {session.notes && <p className="mt-2 text-sm text-muted-foreground">{session.notes}</p>}
+              <div className="mt-2 flex justify-between">
+                <Button size="sm" variant="ghost" onClick={() => setEditingNotes(true)}>
+                  <Edit className="mr-1 h-4 w-4" />
+                  {session.notes ? "Edit Notes" : "Add Notes"}
+                </Button>
+                <div className="flex gap-2">
+                  <Button size="sm" variant="outline" onClick={handlePauseResume}>
+                    {session.isActive ? (
+                      <>
+                        <Pause className="mr-1 h-4 w-4" />
+                        Pause
+                      </>
+                    ) : (
+                      <>
+                        <Play className="mr-1 h-4 w-4" />
+                        Resume
+                      </>
+                    )}
+                  </Button>
+                  <Button size="sm" variant="destructive" onClick={handleStop}>
+                    <StopCircle className="mr-1 h-4 w-4" />
+                    Stop
+                  </Button>
+                </div>
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Stop confirmation dialog */}
+      <Dialog open={showStopDialog} onOpenChange={setShowStopDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Stop Activity Tracking</DialogTitle>
+            <DialogDescription>
+              Do you want to save this tracking session or discard it? Saving will add{" "}
+              {(session.duration / (1000 * 60 * 60)).toFixed(2)} hours to your {metric.name} metric.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowStopDialog(false)}>
+              Cancel
             </Button>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
+            <Button variant="destructive" onClick={handleDiscard}>
+              <X className="mr-1 h-4 w-4" />
+              Discard
+            </Button>
+            <Button onClick={confirmStop}>
+              <Check className="mr-1 h-4 w-4" />
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }

@@ -1,25 +1,119 @@
 "use client"
 
-import { useEffect } from "react"
-import { useRouter } from "next/navigation"
-import { useUser } from "@/hooks/use-user"
-import { LoadingSection } from "@/components/ui/loading/loading-section"
+import { useState } from "react"
+import { DailyMetrics } from "@/components/daily-metrics"
+import { CategoryOverview } from "@/components/category-overview"
+import { CategoryDetails } from "@/components/category-details"
+import { AddEntryForm } from "@/components/add-entry-form"
+import { EntriesList } from "@/components/entries-list"
+import { DashboardHeader } from "@/components/dashboard-header"
+import { WellnessTrends } from "@/components/wellness-trends"
+import { ActiveTracking } from "@/components/active-tracking"
+import { WellnessProvider } from "@/context/wellness-context"
+import { TrackingProvider } from "@/context/tracking-context"
+import type { WellnessEntryData } from "@/types/wellness"
+import { Button } from "@/components/ui/button"
+import { BarChart3, Grid2X2 } from "lucide-react"
 
-export default function Home() {
-  const router = useRouter()
-  const { user, isLoading } = useUser()
+export default function Dashboard() {
+  const [isAddEntryOpen, setIsAddEntryOpen] = useState(false)
+  const [entryToEdit, setEntryToEdit] = useState<WellnessEntryData | null>(null)
+  const [comparisonMode, setComparisonMode] = useState(false)
 
-  useEffect(() => {
-    // Only redirect if we've finished loading and know the user state
-    if (!isLoading) {
-      if (user) {
-        router.push("/dashboard")
-      } else {
-        router.push("/login")
-      }
-    }
-  }, [user, isLoading, router])
+  // Open the form for a new entry
+  const handleAddNewEntry = () => {
+    setEntryToEdit(null)
+    setIsAddEntryOpen(true)
+  }
 
-  // Show loading while determining auth state
-  return <LoadingSection />
+  // Handle editing an entry
+  const handleEditEntry = (entry: WellnessEntryData) => {
+    setEntryToEdit(entry)
+    setIsAddEntryOpen(true)
+  }
+
+  // Toggle comparison mode
+  const toggleComparisonMode = () => {
+    setComparisonMode(!comparisonMode)
+  }
+
+  return (
+    <WellnessProvider>
+      <TrackingProvider>
+        <div className="min-h-screen bg-gray-50">
+          <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+            <div className="space-y-6">
+              <DashboardHeader onAddEntry={handleAddNewEntry} />
+
+              <div className="grid gap-6">
+                <section>
+                  <h2 className="mb-3 text-sm font-medium">Daily Overview</h2>
+                  <DailyMetrics />
+                </section>
+
+                <section>
+                  <div className="flex items-center justify-between mb-3">
+                    <h2 className="text-sm font-medium">Category Performance</h2>
+                    <div className="flex items-center gap-2">
+                      <div className="text-xs text-muted-foreground mr-2">
+                        {comparisonMode ? "Comparison Mode" : "Daily Progress"}
+                      </div>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-8 gap-1"
+                        onClick={toggleComparisonMode}
+                        aria-pressed={comparisonMode}
+                        aria-label={comparisonMode ? "Switch to standard view" : "Switch to comparison view"}
+                      >
+                        {comparisonMode ? (
+                          <>
+                            <Grid2X2 className="h-4 w-4" />
+                            <span className="hidden sm:inline">Standard View</span>
+                          </>
+                        ) : (
+                          <>
+                            <BarChart3 className="h-4 w-4" />
+                            <span className="hidden sm:inline">Compare Categories</span>
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+                  <CategoryOverview
+                    showGoals={true}
+                    showTimeAllocations={true}
+                    showSubcategoryProgress={true}
+                    interactive={!comparisonMode}
+                    maxCategories={7}
+                    comparisonMode={comparisonMode}
+                  />
+                </section>
+
+                <section>
+                  <ActiveTracking />
+                </section>
+
+                <section>
+                  <h2 className="mb-3 text-sm font-medium">Detailed Analysis</h2>
+                  <CategoryDetails />
+                </section>
+
+                <section>
+                  <h2 className="mb-3 text-sm font-medium">Wellness Trends</h2>
+                  <WellnessTrends />
+                </section>
+
+                <section>
+                  <EntriesList onEdit={handleEditEntry} />
+                </section>
+              </div>
+            </div>
+          </div>
+
+          <AddEntryForm open={isAddEntryOpen} onOpenChange={setIsAddEntryOpen} entryToEdit={entryToEdit} />
+        </div>
+      </TrackingProvider>
+    </WellnessProvider>
+  )
 }

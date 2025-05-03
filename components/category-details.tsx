@@ -8,7 +8,6 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ChevronUp, ChevronDown, Minus } from "lucide-react"
-import { cn } from "@/lib/utils"
 
 type ComparisonPeriod = "current" | "week" | "month" | "quarter"
 
@@ -111,14 +110,13 @@ export function CategoryDetails() {
             <p className="text-muted-foreground">
               Previous: {data.previousValue.toFixed(1)}
               <span
-                className={cn(
-                  "ml-2",
+                className={`ml-2 ${
                   data.changePercent > 0
                     ? "text-green-500"
                     : data.changePercent < 0
                       ? "text-red-500"
-                      : "text-muted-foreground",
-                )}
+                      : "text-muted-foreground"
+                }`}
               >
                 {data.changePercent > 0 ? "+" : ""}
                 {data.changePercent.toFixed(1)}%
@@ -331,10 +329,9 @@ export function CategoryDetails() {
                     {getCategoryData(category.id, comparisonPeriod).map((metric, index) => (
                       <button
                         key={`legend-${metric.id}`}
-                        className={cn(
-                          "flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors",
-                          highlightedMetric === metric.id ? "bg-muted ring-1 ring-ring" : "hover:bg-muted/50",
-                        )}
+                        className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors ${
+                          highlightedMetric === metric.id ? "bg-muted ring-1 ring-ring" : "hover:bg-muted/50"
+                        }`}
                         onClick={() => setHighlightedMetric(highlightedMetric === metric.id ? null : metric.id)}
                         aria-pressed={highlightedMetric === metric.id}
                         aria-label={`Highlight ${metric.name} metric`}
@@ -342,18 +339,12 @@ export function CategoryDetails() {
                         <div
                           className="h-3 w-3 rounded-sm"
                           style={{
-                            background: `linear-gradient(135deg, ${metric.color} 0%, ${adjustColorShade(
-                              metric.color,
-                              20,
-                            )} 100%)`,
+                            background: `linear-gradient(135deg, ${metric.color} 0%, ${adjustColorShade(metric.color, 20)} 100%)`,
                           }}
                           aria-hidden="true"
                         />
                         <span
-                          className={cn(
-                            "text-xs",
-                            highlightedMetric === metric.id ? "font-medium" : "text-muted-foreground",
-                          )}
+                          className={`text-xs ${highlightedMetric === metric.id ? "font-medium" : "text-muted-foreground"}`}
                         >
                           {metric.name}
                         </span>
@@ -365,14 +356,13 @@ export function CategoryDetails() {
                   {getCategoryData(category.id, comparisonPeriod).map((metric) => (
                     <div
                       key={metric.id}
-                      className={cn(
-                        "space-y-2 p-2 rounded-md transition-colors",
-                        highlightedMetric === metric.id ? "bg-muted/50" : "",
-                      )}
+                      className={`space-y-2 p-2 rounded-md transition-colors ${
+                        highlightedMetric === metric.id ? "bg-muted/50" : ""
+                      }`}
                     >
                       <div className="flex items-center justify-between">
                         <span
-                          className={cn("text-sm", highlightedMetric === metric.id ? "font-semibold" : "font-medium")}
+                          className={`text-sm ${highlightedMetric === metric.id ? "font-semibold" : "font-medium"}`}
                         >
                           {metric.name}
                         </span>
@@ -388,10 +378,7 @@ export function CategoryDetails() {
                           className="h-full transition-all duration-500 ease-in-out"
                           style={{
                             width: `${Math.min(100, (metric.value / metric.goal) * 100)}%`,
-                            background: `linear-gradient(90deg, ${metric.color} 0%, ${adjustColorShade(
-                              metric.color,
-                              20,
-                            )} 100%)`,
+                            background: `linear-gradient(90deg, ${metric.color} 0%, ${adjustColorShade(metric.color, 20)} 100%)`,
                             opacity: highlightedMetric === null || highlightedMetric === metric.id ? 1 : 0.5,
                           }}
                           aria-hidden="true"
@@ -405,14 +392,13 @@ export function CategoryDetails() {
                             Previous: {metric.previousValue.toFixed(1)}
                           </span>
                           <span
-                            className={cn(
-                              "text-xs",
+                            className={`text-xs ${
                               metric.changePercent > 0
                                 ? "text-green-500"
                                 : metric.changePercent < 0
                                   ? "text-red-500"
-                                  : "text-muted-foreground",
-                            )}
+                                  : "text-muted-foreground"
+                            }`}
                           >
                             {metric.changePercent > 0 ? "+" : ""}
                             {metric.changePercent.toFixed(1)}%

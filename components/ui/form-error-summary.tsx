@@ -1,30 +1,15 @@
-import type { FieldValues, UseFormReturn } from "react-hook-form"
-
-interface FormErrorSummaryProps<T extends FieldValues = FieldValues> {
-  errors?: string[]
-  form?: UseFormReturn<T>
+interface FormErrorSummaryProps {
+  errors: string[]
   title?: string
   className?: string
 }
 
-export function FormErrorSummary<T extends FieldValues = FieldValues>({
+export function FormErrorSummary({
   errors,
-  form,
   title = "Please correct the following errors:",
   className = "",
-}: FormErrorSummaryProps<T>) {
-  // If direct errors array is provided, use it
-  // Otherwise, if form is provided, extract errors from it
-  const errorMessages =
-    errors ||
-    (form && Object.keys(form.formState.errors).length > 0
-      ? Object.entries(form.formState.errors).map(
-          ([key, error]) => `${key}: ${error?.message?.toString() || "Invalid value"}`,
-        )
-      : [])
-
-  // If no errors, don't render anything
-  if (!errorMessages || errorMessages.length === 0) return null
+}: FormErrorSummaryProps) {
+  if (errors.length === 0) return null
 
   return (
     <div
@@ -36,7 +21,7 @@ export function FormErrorSummary<T extends FieldValues = FieldValues>({
         {title}
       </h4>
       <ul className="list-disc pl-5 space-y-1">
-        {errorMessages.map((error, index) => (
+        {errors.map((error, index) => (
           <li key={index}>{error}</li>
         ))}
       </ul>

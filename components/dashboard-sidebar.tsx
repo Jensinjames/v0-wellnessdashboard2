@@ -1,100 +1,151 @@
 "use client"
 
-import type React from "react"
-
-import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { cn } from "@/lib/utils"
+import type * as React from "react"
+import { BarChart3, Calendar, Clock, Home, LineChart, ListTodo, Settings, Timer, BarChart2 } from "lucide-react"
+import { useIsMobile } from "@/hooks/use-mobile"
+import {
+  Sidebar,
+  SidebarContent,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarProvider,
+  SidebarRail,
+  SidebarTrigger,
+} from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
-import { ScrollArea } from "@/components/ui/scroll-area"
-import { UserProfile } from "@/components/auth/user-profile"
-import { BarChart, Home, Settings, ListTodo, Activity, LayoutDashboard, Database } from "lucide-react"
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
-interface SidebarProps extends React.HTMLAttributes<HTMLDivElement> {}
-
-export function DashboardSidebar({ className }: SidebarProps) {
-  const pathname = usePathname()
+export function DashboardSidebar({ children }: { children: React.ReactNode }) {
+  const isMobile = useIsMobile()
 
   return (
-    <div className={cn("pb-12 hidden md:block border-r", className)}>
-      <div className="space-y-4 py-4">
-        <div className="px-4 py-2 flex items-center justify-between">
-          <h2 className="text-lg font-semibold tracking-tight">Wellness Dashboard</h2>
-          <UserProfile />
-        </div>
-        <div className="px-3">
-          <ScrollArea className="h-[calc(100vh-8rem)]">
-            <div className="space-y-1">
-              <Button asChild variant={pathname === "/" ? "secondary" : "ghost"} className="w-full justify-start">
-                <Link href="/">
-                  <Home className="mr-2 h-4 w-4" />
-                  Home
-                </Link>
-              </Button>
-              <Button
-                asChild
-                variant={pathname === "/activity" ? "secondary" : "ghost"}
-                className="w-full justify-start"
-              >
-                <Link href="/activity">
-                  <Activity className="mr-2 h-4 w-4" />
-                  Activity
-                </Link>
-              </Button>
-              <Button
-                asChild
-                variant={pathname === "/categories" ? "secondary" : "ghost"}
-                className="w-full justify-start"
-              >
-                <Link href="/categories">
-                  <ListTodo className="mr-2 h-4 w-4" />
-                  Categories
-                </Link>
-              </Button>
-              <Button
-                asChild
-                variant={pathname === "/activity-patterns" ? "secondary" : "ghost"}
-                className="w-full justify-start"
-              >
-                <Link href="/activity-patterns">
-                  <BarChart className="mr-2 h-4 w-4" />
-                  Patterns
-                </Link>
-              </Button>
-              <Button
-                asChild
-                variant={pathname === "/category-management" ? "secondary" : "ghost"}
-                className="w-full justify-start"
-              >
-                <Link href="/category-management">
-                  <LayoutDashboard className="mr-2 h-4 w-4" />
-                  Management
-                </Link>
-              </Button>
-              <Button
-                asChild
-                variant={pathname === "/data-management" ? "secondary" : "ghost"}
-                className="w-full justify-start"
-              >
-                <Link href="/data-management">
-                  <Database className="mr-2 h-4 w-4" />
-                  Data
-                </Link>
-              </Button>
-              <Button
-                asChild
-                variant={pathname === "/settings" ? "secondary" : "ghost"}
-                className="w-full justify-start"
-              >
-                <Link href="/settings">
-                  <Settings className="mr-2 h-4 w-4" />
-                  Settings
-                </Link>
+    <SidebarProvider defaultOpen={!isMobile}>
+      <div className="flex min-h-screen">
+        <Sidebar className="border-r">
+          <SidebarHeader className="flex flex-col gap-4 px-4 py-4">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
+                <BarChart3 className="h-4 w-4 text-primary-foreground" />
+              </div>
+              <span className="text-lg font-semibold">Wellness Dashboard</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Avatar className="h-8 w-8">
+                <AvatarImage src="/placeholder.svg?height=32&width=32" alt="User" />
+                <AvatarFallback>U</AvatarFallback>
+              </Avatar>
+              <div className="flex flex-col">
+                <span className="text-sm font-medium">User Profile</span>
+                <span className="text-xs text-muted-foreground">user@example.com</span>
+              </div>
+            </div>
+          </SidebarHeader>
+          <SidebarContent>
+            <SidebarGroup>
+              <SidebarGroupLabel>Dashboard</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild isActive>
+                      <a href="/">
+                        <Home className="h-4 w-4" />
+                        <span>Overview</span>
+                      </a>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild>
+                      <a href="/categories">
+                        <ListTodo className="h-4 w-4" />
+                        <span>Categories</span>
+                      </a>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild>
+                      <a href="/tracking">
+                        <Timer className="h-4 w-4" />
+                        <span>Time Tracking</span>
+                      </a>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild>
+                      <a href="/activity-patterns">
+                        <BarChart2 className="h-4 w-4" />
+                        <span>Activity Patterns</span>
+                      </a>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>Analytics</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild>
+                      <a href="/trends">
+                        <LineChart className="h-4 w-4" />
+                        <span>Trends</span>
+                      </a>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild>
+                      <a href="/calendar">
+                        <Calendar className="h-4 w-4" />
+                        <span>Calendar</span>
+                      </a>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild>
+                      <a href="/history">
+                        <Clock className="h-4 w-4" />
+                        <span>History</span>
+                      </a>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+            <SidebarGroup>
+              <SidebarGroupLabel>Settings</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  <SidebarMenuItem>
+                    <SidebarMenuButton asChild>
+                      <a href="/settings">
+                        <Settings className="h-4 w-4" />
+                        <span>Preferences</span>
+                      </a>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </SidebarContent>
+          <SidebarRail />
+        </Sidebar>
+        <div className="flex-1">
+          <div className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6">
+            <SidebarTrigger />
+            <div className="ml-auto flex items-center gap-2">
+              <Button variant="outline" size="sm">
+                Help
               </Button>
             </div>
-          </ScrollArea>
+          </div>
+          <main className="flex-1">{children}</main>
         </div>
       </div>
-    </div>
+    </SidebarProvider>
   )
 }

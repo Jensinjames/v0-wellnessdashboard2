@@ -6,95 +6,119 @@
   :root {
     --background: 0 0% 100%;
     --foreground: 222.2 84% 4.9%;
+
     --card: 0 0% 100%;
     --card-foreground: 222.2 84% 4.9%;
+
     --popover: 0 0% 100%;
     --popover-foreground: 222.2 84% 4.9%;
-    --primary: 221.2 83.2% 53.3%;
+
+    --primary: 222.2 47.4% 11.2%;
     --primary-foreground: 210 40% 98%;
+
     --secondary: 210 40% 96.1%;
     --secondary-foreground: 222.2 47.4% 11.2%;
+
     --muted: 210 40% 96.1%;
     --muted-foreground: 215.4 16.3% 46.9%;
+
     --accent: 210 40% 96.1%;
     --accent-foreground: 222.2 47.4% 11.2%;
+
     --destructive: 0 84.2% 60.2%;
     --destructive-foreground: 210 40% 98%;
+
     --border: 214.3 31.8% 91.4%;
     --input: 214.3 31.8% 91.4%;
-    --ring: 221.2 83.2% 53.3%;
+    --ring: 222.2 84% 4.9%;
+
     --radius: 0.5rem;
 
     /* Chart colors */
-    --chart-1: 221.2 83.2% 53.3%;
-    --chart-2: 142.1 76.2% 36.3%;
-    --chart-3: 43.3 96.4% 56.3%;
-    --chart-4: 262.1 83.3% 57.8%;
-    --chart-5: 316.6 73.1% 52.4%;
+    --chart-1: 222.2 47.4% 11.2%;
+    --chart-2: 221.2 83.2% 53.3%;
+    --chart-3: 226.3 70.7% 40.2%;
+    --chart-4: 224.3 76.3% 48%;
+    --chart-5: 220.9 39.3% 11%;
 
-    /* Sidebar colors */
-    --sidebar-background: 210 40% 98%;
-    --sidebar-foreground: 222.2 47.4% 11.2%;
-    --sidebar-primary: 221.2 83.2% 53.3%;
-    --sidebar-primary-foreground: 210 40% 98%;
-    --sidebar-accent: 210 40% 96.1%;
-    --sidebar-accent-foreground: 222.2 47.4% 11.2%;
-    --sidebar-border: 214.3 31.8% 91.4%;
-    --sidebar-ring: 221.2 83.2% 53.3%;
+    /* Color palette for categories */
+    --green-50: 142, 76%, 97%;
+    --green-100: 141, 84%, 93%;
+    --green-200: 141, 79%, 85%;
+    --green-300: 142, 77%, 73%;
+    --green-400: 142, 69%, 58%;
+    --green-500: 142, 71%, 45%;
+    --green-600: 142, 76%, 36%;
+    --green-700: 142, 72%, 29%;
+    --green-800: 143, 64%, 24%;
+    --green-900: 144, 61%, 20%;
+    --green-950: 145, 80%, 10%;
 
-    /* Surface colors */
-    --surface-50: 0 0% 100%;
-    --surface-100: 210 40% 98%;
-    --surface-200: 214 32% 91%;
-    --surface-300: 213 27% 84%;
-    --surface-400: 215 20% 65%;
-    --surface-500: 220 9% 46%;
-    --surface-600: 215 14% 34%;
-    --surface-700: 216 19% 26%;
-    --surface-800: 215 28% 17%;
-    --surface-900: 221 39% 11%;
+    --yellow-50: 54, 100%, 95%;
+    --yellow-100: 55, 92%, 88%;
+    --yellow-200: 52, 98%, 77%;
+    --yellow-300: 50, 97%, 63%;
+    --yellow-400: 48, 96%, 53%;
+    --yellow-500: 45, 93%, 47%;
+    --yellow-600: 40, 96%, 40%;
+    --yellow-700: 35, 92%, 33%;
+    --yellow-800: 32, 81%, 29%;
+    --yellow-900: 28, 73%, 26%;
+    --yellow-950: 26, 83%, 14%;
 
-    /* Font variable */
-    --font-sans: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --red-50: 0, 86%, 97%;
+    --red-100: 0, 93%, 94%;
+    --red-200: 0, 96%, 89%;
+    --red-300: 0, 94%, 82%;
+    --red-400: 0, 91%, 71%;
+    --red-500: 0, 84%, 60%;
+    --red-600: 0, 72%, 51%;
+    --red-700: 0, 74%, 42%;
+    --red-800: 0, 70%, 35%;
+    --red-900: 0, 63%, 31%;
+    --red-950: 0, 75%, 15%;
+
+    --pink-50: 327, 73%, 97%;
+    --pink-100: 326, 78%, 95%;
+    --pink-200: 326, 85%, 90%;
+    --pink-300: 327, 87%, 82%;
+    --pink-400: 329, 86%, 70%;
+    --pink-500: 330, 81%, 60%;
+    --pink-600: 333, 71%, 51%;
+    --pink-700: 335, 78%, 42%;
+    --pink-800: 336, 74%, 35%;
+    --pink-900: 336, 69%, 30%;
+    --pink-950: 336, 84%, 17%;
   }
 
   .dark {
     --background: 222.2 84% 4.9%;
     --foreground: 210 40% 98%;
+
     --card: 222.2 84% 4.9%;
     --card-foreground: 210 40% 98%;
+
     --popover: 222.2 84% 4.9%;
     --popover-foreground: 210 40% 98%;
-    --primary: 217.2 91.2% 59.8%;
+
+    --primary: 210 40% 98%;
     --primary-foreground: 222.2 47.4% 11.2%;
+
     --secondary: 217.2 32.6% 17.5%;
     --secondary-foreground: 210 40% 98%;
+
     --muted: 217.2 32.6% 17.5%;
     --muted-foreground: 215 20.2% 65.1%;
+
     --accent: 217.2 32.6% 17.5%;
     --accent-foreground: 210 40% 98%;
+
     --destructive: 0 62.8% 30.6%;
     --destructive-foreground: 210 40% 98%;
+
     --border: 217.2 32.6% 17.5%;
     --input: 217.2 32.6% 17.5%;
-    --ring: 224.3 76.3% 48%;
-
-    /* Chart colors */
-    --chart-1: 217.2 91.2% 59.8%;
-    --chart-2: 142.1 70.6% 45.3%;
-    --chart-3: 43.3 74.6% 49.0%;
-    --chart-4: 262.1 83.3% 57.8%;
-    --chart-5: 316.6 73.1% 52.4%;
-
-    /* Sidebar colors */
-    --sidebar-background: 222.2 84% 4.9%;
-    --sidebar-foreground: 210 40% 98%;
-    --sidebar-primary: 217.2 91.2% 59.8%;
-    --sidebar-primary-foreground: 222.2 47.4% 11.2%;
-    --sidebar-accent: 217.2 32.6% 17.5%;
-    --sidebar-accent-foreground: 210 40% 98%;
-    --sidebar-border: 217.2 32.6% 17.5%;
-    --sidebar-ring: 224.3 76.3% 48%;
+    --ring: 212.7 26.8% 83.9%;
   }
 }
 
@@ -103,70 +127,49 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground font-sans;
+    @apply bg-background text-foreground;
   }
 }
 
 /* Mobile optimizations */
 @layer utilities {
-  .text-balance {
-    text-wrap: balance;
-  }
-
   /* Extra small screens */
   .xs\:grid-cols-2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-}
 
-/* Mobile-specific styles */
-@media (max-width: 768px) {
-  button,
-  [role="button"],
-  a {
-    min-height: 44px;
-    min-width: 44px;
+  /* Improve touch targets on mobile */
+  @media (max-width: 768px) {
+    button,
+    [role="button"],
+    a {
+      min-height: 44px;
+      min-width: 44px;
+    }
+
+    /* Ensure tooltips don't get cut off */
+    [data-radix-popper-content-wrapper] {
+      @apply !max-w-[calc(100vw-20px)];
+    }
+
+    /* Improve chart interactions */
+    .recharts-wrapper .recharts-tooltip-cursor {
+      @apply !stroke-2;
+    }
+
+    .recharts-default-tooltip {
+      padding: 0.5rem;
+      max-width: 200px;
+    }
   }
 
-  /* Ensure tooltips don't get cut off */
-  [data-radix-popper-content-wrapper] {
-    max-width: calc(100vw - 20px);
+  /* Prevent text overflow in charts */
+  .recharts-text.recharts-label {
+    @apply text-xs;
   }
 
-  /* Improve chart interactions */
-  .recharts-wrapper .recharts-tooltip-cursor {
-    stroke-width: 2px;
+  /* Improve chart touch targets */
+  .recharts-dot {
+    @apply cursor-pointer;
   }
-
-  .recharts-default-tooltip {
-    padding: 0.5rem;
-    max-width: 200px;
-  }
-}
-
-/* Chart text styles */
-.recharts-text.recharts-label {
-  font-size: 0.75rem;
-}
-
-/* Chart interaction styles */
-.recharts-dot {
-  cursor: pointer;
-}
-
-/* Fix for visibility issues */
-.dashboard-component {
-  visibility: visible;
-  opacity: 1;
-  display: block;
-}
-
-/* Ensure proper rendering of dynamic routes */
-[data-dynamic-route] {
-  display: block;
-}
-
-/* Fix for parallel routes */
-[data-parallel-route] {
-  display: block;
 }

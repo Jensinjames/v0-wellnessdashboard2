@@ -41,7 +41,7 @@ export function CategoryOverview({
   maxCategories = DEFAULT_MAX_CATEGORIES,
   comparisonMode = false,
 }: CategoryOverviewProps) {
-  const { categories = [], entries = [], goals = [] } = useWellness()
+  const { categories, entries, goals } = useWellness()
   const { isMobile } = useMobileDetection()
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
   const [comparisonMetric, setComparisonMetric] = useState<ComparisonMetric>("progress")
@@ -49,7 +49,7 @@ export function CategoryOverview({
 
   // Initialize with enabled categories, up to the max limit
   const [selectedCategories, setSelectedCategories] = useState<string[]>(
-    (categories || [])
+    categories
       .filter((c) => c.enabled)
       .slice(0, 5)
       .map((c) => c.id),
@@ -64,7 +64,7 @@ export function CategoryOverview({
 
   // Filter entries for today - memoized to avoid recalculation
   const todayEntries = useMemo(() => {
-    return (entries || []).filter((entry) => {
+    return entries.filter((entry) => {
       const entryDate = new Date(entry.date)
       entryDate.setHours(0, 0, 0, 0)
       return entryDate.getTime() === today.getTime()
@@ -73,12 +73,12 @@ export function CategoryOverview({
 
   // Calculate progress for each category - memoized to avoid recalculation
   const categoryProgress = useMemo(() => {
-    return (categories || [])
+    return categories
       .filter((category) => category.enabled)
       .slice(0, maxCategories)
       .map((category) => {
         // Get all metrics for this category
-        const categoryMetrics = category.metrics || []
+        const categoryMetrics = category.metrics
 
         // Calculate total progress
         let totalProgress = 0
@@ -89,12 +89,12 @@ export function CategoryOverview({
 
         const subcategoryProgress = categoryMetrics.map((metric) => {
           // Find goal for this metric
-          const goal = (goals || []).find((g) => g.categoryId === category.id && g.metricId === metric.id)
+          const goal = goals.find((g) => g.categoryId === category.id && g.metricId === metric.id)
           const goalValue = goal ? goal.value : metric.defaultGoal
 
           // Find today's entry for this metric
           const metricEntries = todayEntries.flatMap((entry) =>
-            (entry.metrics || []).filter((m) => m.categoryId === category.id && m.metricId === metric.id),
+            entry.metrics.filter((m) => m.categoryId === category.id && m.metricId === metric.id),
           )
 
           // Sum up all values for this metric today

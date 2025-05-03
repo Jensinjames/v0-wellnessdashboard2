@@ -1,7 +1,5 @@
 "use client"
 
-import { Button } from "@/components/ui/button"
-
 import type React from "react"
 
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -9,9 +7,10 @@ import { useForm } from "react-hook-form"
 import { format } from "date-fns"
 import { CalendarIcon } from "lucide-react"
 import * as z from "zod"
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
 import * as LucideIcons from "lucide-react"
 
+import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import {
@@ -28,10 +27,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Slider } from "@/components/ui/slider"
 import { cn } from "@/lib/utils"
 import { useWellness } from "@/context/wellness-context"
-import { useLoading } from "@/context/loading-context"
-import { LoadingButton } from "@/components/ui/loading/loading-button"
-import { FormErrorBoundary } from "@/components/error-boundary/specialized-boundaries"
-import { FormStatus } from "@/components/ui/form-status"
 import {
   type WellnessCategory,
   type WellnessEntryData,
@@ -48,11 +43,6 @@ interface AddEntryFormProps {
 
 export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormProps) {
   const { categories, addEntry, updateEntry } = useWellness()
-  const { withLoading } = useLoading()
-  const [formStatus, setFormStatus] = useState<{
-    message: string
-    type: "loading" | "success" | "error"
-  } | null>(null)
   const enabledCategories = categories.filter((cat) => cat.enabled)
 
   // Create a dynamic form schema based on categories
@@ -124,62 +114,36 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
   }, [entryToEdit, form])
 
   // Form submission handler
-  async function onSubmit(data: FormValues) {
-    setFormStatus({ message: "Saving your entry...", type: "loading" })
+  function onSubmit(data: FormValues) {
+    // Convert form data to entry format
+    const metrics: WellnessEntryMetric[] = []
 
-    try {
-      // Convert form data to entry format
-      const metrics: WellnessEntryMetric[] = []
+    enabledCategories.forEach((category) => {
+      category.metrics.forEach((metric) => {
+        const fieldName = `${category.id}_${metric.id}`
+        const value = data[fieldName as keyof FormValues] as number
 
-      enabledCategories.forEach((category) => {
-        category.metrics.forEach((metric) => {
-          const fieldName = `${category.id}_${metric.id}`
-          const value = data[fieldName as keyof FormValues] as number
-
-          metrics.push({
-            categoryId: category.id,
-            metricId: metric.id,
-            value,
-          })
+        metrics.push({
+          categoryId: category.id,
+          metricId: metric.id,
+          value,
         })
       })
+    })
 
-      const entryData: WellnessEntryData = {
-        id: data.id || crypto.randomUUID(),
-        date: data.date,
-        metrics,
-      }
-
-      // Use withLoading to handle loading state
-      await withLoading("save-entry", async () => {
-        if (entryToEdit) {
-          await updateEntry(entryToEdit.id, entryData)
-        } else {
-          await addEntry(entryData)
-        }
-
-        // Simulate network delay
-        await new Promise((resolve) => setTimeout(resolve, 500))
-      })
-
-      setFormStatus({ message: "Entry saved successfully!", type: "success" })
-
-      // Close the dialog after a short delay
-      setTimeout(() => {
-        onOpenChange(false)
-        setFormStatus(null)
-      }, 1000)
-    } catch (error) {
-      setFormStatus({
-        message: "Failed to save entry. Please try again.",
-        type: "error",
-      })
-
-      // Clear error status after a delay
-      setTimeout(() => {
-        setFormStatus(null)
-      }, 3000)
+    const entryData: WellnessEntryData = {
+      id: data.id || crypto.randomUUID(),
+      date: data.date,
+      metrics,
     }
+
+    if (entryToEdit) {
+      updateEntry(entryToEdit.id, entryData)
+    } else {
+      addEntry(entryData)
+    }
+
+    onOpenChange(false)
   }
 
   // Get icon component by name
@@ -200,114 +164,103 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
           </DialogDescription>
         </DialogHeader>
 
-        <FormErrorBoundary>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {formStatus && <FormStatus variant={formStatus.type} message={formStatus.message} className="mb-4" />}
-
-              {/* Date Picker */}
-              <FormField
-                control={form.control}
-                name="date"
-                render={({ field }) => (
-                  <FormItem className="flex flex-col">
-                    <FormLabel>Date</FormLabel>
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <FormControl>
-                          <Button
-                            variant={"outline"}
-                            className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}
-                          >
-                            {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                          </Button>
-                        </FormControl>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0" align="start">
-                        <Calendar
-                          mode="single"
-                          selected={field.value}
-                          onSelect={field.onChange}
-                          disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
-                          initialFocus
-                        />
-                      </PopoverContent>
-                    </Popover>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              {/* Category Tabs */}
-              <Tabs defaultValue={enabledCategories[0]?.id} className="w-full">
-                <TabsList className="grid grid-cols-4 w-full">
-                  {enabledCategories.slice(0, 4).map((category) => (
-                    <TabsTrigger key={category.id} value={category.id}>
-                      {category.name}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
-
-                {/* Generate tab content for each category */}
-                {enabledCategories.map((category) => (
-                  <TabsContent key={category.id} value={category.id} className="space-y-4 pt-4">
-                    <div className={`bg-${category.color}-50 p-4 rounded-md space-y-4`}>
-                      <h3 className={`font-medium text-${category.color}-800`}>{category.name} Activities</h3>
-
-                      {/* Generate form fields for each metric in the category */}
-                      {category.metrics.map((metric) => (
-                        <MetricEntryField
-                          key={`${category.id}_${metric.id}`}
-                          category={category}
-                          metric={metric}
-                          form={form}
-                        />
-                      ))}
-                    </div>
-                  </TabsContent>
-                ))}
-              </Tabs>
-
-              {/* Additional categories section */}
-              {enabledCategories.length > 4 && (
-                <div className="space-y-4">
-                  <h3 className="text-lg font-medium">Additional Categories</h3>
-
-                  {enabledCategories.slice(4).map((category) => (
-                    <div key={category.id} className={`bg-${category.color}-50 p-4 rounded-md space-y-4 mb-4`}>
-                      <h3 className={`font-medium text-${category.color}-800`}>{category.name} Activities</h3>
-
-                      {/* Generate form fields for each metric in the category */}
-                      {category.metrics.map((metric) => (
-                        <MetricEntryField
-                          key={`${category.id}_${metric.id}`}
-                          category={category}
-                          metric={metric}
-                          form={form}
-                        />
-                      ))}
-                    </div>
-                  ))}
-                </div>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            {/* Date Picker */}
+            <FormField
+              control={form.control}
+              name="date"
+              render={({ field }) => (
+                <FormItem className="flex flex-col">
+                  <FormLabel>Date</FormLabel>
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <FormControl>
+                        <Button
+                          variant={"outline"}
+                          className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}
+                        >
+                          {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
+                        </Button>
+                      </FormControl>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0" align="start">
+                      <Calendar
+                        mode="single"
+                        selected={field.value}
+                        onSelect={field.onChange}
+                        disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                  <FormMessage />
+                </FormItem>
               )}
+            />
 
-              <DialogFooter>
-                <Button
-                  type="button"
-                  variant="outline"
-                  onClick={() => onOpenChange(false)}
-                  disabled={formStatus?.type === "loading"}
-                >
-                  Cancel
-                </Button>
-                <LoadingButton type="submit" isLoading={formStatus?.type === "loading"} loadingText="Saving...">
-                  {entryToEdit ? "Update" : "Save"} Entry
-                </LoadingButton>
-              </DialogFooter>
-            </form>
-          </Form>
-        </FormErrorBoundary>
+            {/* Category Tabs */}
+            <Tabs defaultValue={enabledCategories[0]?.id} className="w-full">
+              <TabsList className="grid grid-cols-4 w-full">
+                {enabledCategories.slice(0, 4).map((category) => (
+                  <TabsTrigger key={category.id} value={category.id}>
+                    {category.name}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+
+              {/* Generate tab content for each category */}
+              {enabledCategories.map((category) => (
+                <TabsContent key={category.id} value={category.id} className="space-y-4 pt-4">
+                  <div className={`bg-${category.color}-50 p-4 rounded-md space-y-4`}>
+                    <h3 className={`font-medium text-${category.color}-800`}>{category.name} Activities</h3>
+
+                    {/* Generate form fields for each metric in the category */}
+                    {category.metrics.map((metric) => (
+                      <MetricEntryField
+                        key={`${category.id}_${metric.id}`}
+                        category={category}
+                        metric={metric}
+                        form={form}
+                      />
+                    ))}
+                  </div>
+                </TabsContent>
+              ))}
+            </Tabs>
+
+            {/* Additional categories section */}
+            {enabledCategories.length > 4 && (
+              <div className="space-y-4">
+                <h3 className="text-lg font-medium">Additional Categories</h3>
+
+                {enabledCategories.slice(4).map((category) => (
+                  <div key={category.id} className={`bg-${category.color}-50 p-4 rounded-md space-y-4 mb-4`}>
+                    <h3 className={`font-medium text-${category.color}-800`}>{category.name} Activities</h3>
+
+                    {/* Generate form fields for each metric in the category */}
+                    {category.metrics.map((metric) => (
+                      <MetricEntryField
+                        key={`${category.id}_${metric.id}`}
+                        category={category}
+                        metric={metric}
+                        form={form}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button type="submit">{entryToEdit ? "Update" : "Save"} Entry</Button>
+            </DialogFooter>
+          </form>
+        </Form>
       </DialogContent>
     </Dialog>
   )
