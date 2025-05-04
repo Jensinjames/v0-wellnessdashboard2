@@ -11,6 +11,7 @@ import type { LucideIcon } from "lucide-react"
 import { getCategoryColorClass } from "@/types/wellness"
 import type { CategoryProgressData } from "./types"
 import { formatTime, formatValue } from "./utils"
+import { useMobileDetection } from "@/hooks/use-mobile-detection"
 
 interface CategoryCardProps {
   category: CategoryProgressData
@@ -31,6 +32,8 @@ export function CategoryCard({
   interactive,
   onCardClick,
 }: CategoryCardProps) {
+  const { isMobile, isSmallMobile } = useMobileDetection()
+
   // Get icon component by name
   const getIconByName = (name: string): LucideIcon => {
     return (Icons[name as keyof typeof Icons] as LucideIcon) || Icons.Activity
@@ -41,39 +44,55 @@ export function CategoryCard({
   const bgColorClass = getCategoryColorClass({ ...category, metrics: [] }, "bg")
 
   // Safely handle color classes
-  const safeColorClass = colorClass || "text-gray-600"
-  const safeBgColorClass = bgColorClass || "bg-gray-100"
-  const lightBgColorClass = safeBgColorClass.replace("600", "100")
+  const safeColorClass = colorClass || "text-gray-600 dark:text-gray-400"
+  const safeBgColorClass = bgColorClass || "bg-gray-100 dark:bg-gray-800"
+  const lightBgColorClass = safeBgColorClass.replace(/600|500/g, "100").replace(/800/g, "700")
+
+  // Determine if subcategories should be shown based on screen size and expanded state
+  const shouldShowSubcategories =
+    (isExpanded || showSubcategoryProgress) && category.subcategories.length > 0 && (!isSmallMobile || isExpanded)
 
   return (
     <Card
       key={category.id}
       className={cn(
-        "overflow-hidden transition-all duration-300",
-        interactive && "cursor-pointer hover:shadow-md",
-        isExpanded && "sm:col-span-2 lg:col-span-2",
+        "overflow-hidden transition-all duration-300 h-full",
+        interactive && "cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all",
+        isExpanded ? "sm:col-span-2 lg:col-span-2" : "",
+        "border rounded-xl",
+        category.name.toLowerCase().includes("health") && "card-shadow-green",
+        category.name.toLowerCase().includes("mind") && "card-shadow-purple",
+        category.name.toLowerCase().includes("life") && "card-shadow-orange",
+        category.name.toLowerCase().includes("faith") && "card-shadow-blue",
       )}
       onClick={interactive ? () => onCardClick(category.id) : undefined}
     >
-      <CardContent className="p-4">
+      <CardContent className={cn("p-4", isSmallMobile ? "p-3" : "", "h-full flex flex-col")}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <div className={cn("p-1.5 rounded-md", lightBgColorClass)}>
-              <Icon className={cn("h-4 w-4", safeColorClass)} />
+            <div className={cn("p-1.5 rounded-md", safeBgColorClass)}>
+              <Icon className={cn("h-4 w-4", "text-white")} aria-hidden="true" />
             </div>
-            <h3 className="font-medium">{category.name}</h3>
+            <h3 className={cn("font-medium truncate", isSmallMobile ? "text-sm" : "")}>{category.name}</h3>
           </div>
-          <div className="text-sm font-medium">{Math.round(category.progress)}%</div>
+          <div className={cn("text-sm font-medium", isSmallMobile ? "text-xs" : "")}>
+            {Math.round(category.progress)}%
+          </div>
         </div>
 
         <Progress
           value={category.progress}
-          className="h-2 mb-3"
+          className="h-2 mb-3 bg-gray-100"
           indicatorClassName={safeBgColorClass}
           aria-label={`${category.name} progress: ${Math.round(category.progress)}%`}
         />
 
-        <div className="flex items-center justify-between text-xs text-muted-foreground">
+        <div
+          className={cn(
+            "flex items-center justify-between text-muted-foreground",
+            isSmallMobile ? "text-xs" : "text-xs",
+          )}
+        >
           {showGoals && (
             <div>
               Goal: <span className="font-medium">{category.totalGoal}</span>
@@ -92,13 +111,13 @@ export function CategoryCard({
           )}
         </div>
 
-        {(isExpanded || showSubcategoryProgress) && category.subcategories.length > 0 && (
-          <div className="mt-4 space-y-3">
+        {shouldShowSubcategories && (
+          <div className={cn("mt-4 space-y-3 flex-grow", isSmallMobile ? "mt-3 space-y-2" : "")}>
             <VisuallyHidden>Subcategory breakdown</VisuallyHidden>
             {category.subcategories.map((subcategory) => (
               <div key={subcategory.id} className="space-y-1">
-                <div className="flex items-center justify-between text-xs">
-                  <div>{subcategory.name}</div>
+                <div className={cn("flex items-center justify-between", isSmallMobile ? "text-xs" : "text-xs")}>
+                  <div className="truncate max-w-[60%]">{subcategory.name}</div>
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -117,7 +136,7 @@ export function CategoryCard({
                 </div>
                 <Progress
                   value={subcategory.progress}
-                  className="h-1.5"
+                  className={cn("h-1.5 bg-gray-100", isSmallMobile ? "h-1" : "")}
                   indicatorClassName={safeBgColorClass}
                   aria-label={`${subcategory.name} progress: ${Math.round(subcategory.progress)}%`}
                 />
@@ -127,11 +146,11 @@ export function CategoryCard({
         )}
 
         {interactive && (
-          <div className="mt-4 text-center">
+          <div className={cn("mt-auto pt-3", isSmallMobile ? "pt-2" : "")}>
             <Button
-              variant="ghost"
-              size="sm"
-              className="text-xs w-full"
+              variant="outline"
+              size={isSmallMobile ? "sm" : "sm"}
+              className={cn("text-xs w-full rounded-full", isSmallMobile ? "py-1 px-2" : "")}
               onClick={(e) => {
                 e.stopPropagation()
                 onCardClick(category.id)
