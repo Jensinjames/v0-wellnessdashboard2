@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation"
 import type { User, Session } from "@supabase/supabase-js"
 import { getSupabaseClient } from "@/lib/supabase"
 import { toast } from "@/components/ui/use-toast"
-import { logDatabaseError } from "@/utils/db-error-handler"
+import { logDatabaseError, safeDbOperation } from "@/utils/db-error-handler"
 
 // Define types for auth credentials and user profile
 export interface SignUpCredentials {
@@ -79,11 +79,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       console.log(`Ensuring profile exists for user: ${userId}`)
 
       // First check if the profile exists
-      const {
-        data: existingProfile,
-        error: checkError,
-        count,
-      } = await supabase.from("profiles").select("*", { count: "exact" }).eq("id", userId).single()
+      const { data: existingProfile, error: checkError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", userId)
+        .single()
 
       // If profile exists, return it
       if (!checkError && existingProfile) {
@@ -102,7 +102,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Get user details to create profile
       const { data: userData, error: userError } = await supabase.auth.getUser()
 
-      if (userError || !userData.user) {
+      if (userError || !userData?.user) {
         logDatabaseError(userError || new Error("No user found"), "getting user for profile creation", { userId })
         return null
       }
@@ -184,12 +184,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       console.log(`Fetching profile for user: ${userId} (Attempt: ${profileFetchAttempts.current[userId]})`)
 
-      // First check if the profile exists
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
+      // First check if the profile exists - use safe operation
+      const { data, error } = await safeDbOperation(async () => {
+        const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
+
+        if (error) throw error
+        return data
+      }, "fetching profile")
 
       if (error) {
         // If no profile exists, ensure one is created
-        if (error.message.includes("No rows found")) {
+        if (error.message?.includes("No rows found")) {
           console.log(`No profile found for user ${userId}, creating one...`)
           const newProfile = await ensureProfile(userId)
 
@@ -202,7 +207,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return newProfile
         }
 
-        logDatabaseError(error, "fetching profile", { userId })
+        console.error("Error fetching profile:", error)
         fetchingProfile.current[userId] = false
         return null
       }
@@ -215,6 +220,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return data as UserProfile
     } catch (error) {
+      console.error("Unexpected error in fetchProfile:", error)
       logDatabaseError(error, "fetching profile", { userId })
       fetchingProfile.current[userId] = false
       return null
@@ -418,6 +424,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const newProfile = await ensureProfile(data.user.id)
           if (newProfile) {
             setProfile(newProfile)
+          } else {
+            // If we still can't create a profile, show a warning but don't block sign-in
+            console.error("Failed to create profile during sign-in")
+            toast({
+              title: "Profile setup incomplete",
+              description: "Your profile could not be fully set up. Some features may be limited.",
+              variant: "warning",
+            })
           }
         }
       }

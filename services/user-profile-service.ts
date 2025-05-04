@@ -3,7 +3,7 @@
  */
 
 import { createClient } from "@/lib/supabase-server"
-import { safeDbOperation, logDatabaseError } from "@/utils/db-error-handler"
+import { logDatabaseError } from "@/utils/db-error-handler"
 import type { Profile } from "@/types/profile"
 
 /**
@@ -57,7 +57,7 @@ export async function createUserProfile(
     }
 
     // Insert the profile
-    const { error: insertError } = await supabase.from("profiles").insert(defaultProfile)
+    const { data, error: insertError } = await supabase.from("profiles").insert(defaultProfile).select().single()
 
     if (insertError) {
       logDatabaseError(insertError, "creating user profile")
@@ -70,10 +70,11 @@ export async function createUserProfile(
     console.log(`Successfully created profile for user ${userId}`)
     return { success: true, error: null }
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error"
     logDatabaseError(error, "createUserProfile")
     return {
       success: false,
-      error: `Unexpected error creating profile: ${error instanceof Error ? error.message : "Unknown error"}`,
+      error: `Unexpected error creating profile: ${errorMessage}`,
     }
   }
 }
@@ -84,12 +85,26 @@ export async function createUserProfile(
 export async function getUserProfile(userId: string): Promise<{ profile: Profile | null; error: string | null }> {
   const supabase = createClient()
 
-  return safeDbOperation(async () => {
+  try {
     const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
 
-    if (error) throw error
-    return data as Profile
-  }, "getUserProfile")
+    if (error) {
+      logDatabaseError(error, "getUserProfile")
+      return {
+        profile: null,
+        error: error.message || "Failed to fetch user profile",
+      }
+    }
+
+    return { profile: data as Profile, error: null }
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error"
+    logDatabaseError(error, "getUserProfile")
+    return {
+      profile: null,
+      error: `Unexpected error fetching profile: ${errorMessage}`,
+    }
+  }
 }
 
 /**
@@ -118,10 +133,11 @@ export async function updateUserProfile(
 
     return { success: true, error: null }
   } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : "Unknown error"
     logDatabaseError(error, "updateUserProfile")
     return {
       success: false,
-      error: `Unexpected error updating profile: ${error instanceof Error ? error.message : "Unknown error"}`,
+      error: `Unexpected error updating profile: ${errorMessage}`,
     }
   }
 }

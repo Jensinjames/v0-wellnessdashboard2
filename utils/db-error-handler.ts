@@ -18,13 +18,18 @@ export function logDatabaseError(error: any, operation: string, details?: Record
     details,
   }
 
-  console.error(`Database error during ${operation}:`, {
+  // Format the error object properly
+  const errorInfo = {
     message: error instanceof Error ? error.message : String(error),
-    code: error.code,
-    details: error.details,
-    hint: error.hint,
+    code: error?.code,
+    details: error?.details,
+    hint: error?.hint,
     context: errorContext,
-  })
+    // Include the full error for debugging
+    fullError: JSON.stringify(error, Object.getOwnPropertyNames(error), 2),
+  }
+
+  console.error(`Database error during ${operation}:`, errorInfo)
 }
 
 /**
@@ -32,24 +37,24 @@ export function logDatabaseError(error: any, operation: string, details?: Record
  */
 export function formatDatabaseErrorMessage(error: any): string {
   // Handle specific error codes
-  if (error.code === "23505") {
+  if (error?.code === "23505") {
     return "This record already exists."
   }
 
-  if (error.code === "23503") {
+  if (error?.code === "23503") {
     return "This operation references a record that does not exist."
   }
 
-  if (error.code === "42P01") {
+  if (error?.code === "42P01") {
     return "The database is not properly set up. Please contact support."
   }
 
-  if (error.code === "28000" || error.code === "28P01") {
+  if (error?.code === "28000" || error?.code === "28P01") {
     return "Authentication failed. Please check your credentials."
   }
 
   // Return a user-friendly message or the original error if available
-  return error.message || "An unexpected database error occurred. Please try again."
+  return error?.message || "An unexpected database error occurred. Please try again."
 }
 
 /**
@@ -79,7 +84,7 @@ export function handleCommonDatabaseErrors(
   logDatabaseError(error, operation)
 
   // Determine if we should retry based on error type
-  const shouldRetry = !isDuplicateKeyError(error) && !error.message?.includes("permission denied")
+  const shouldRetry = !isDuplicateKeyError(error) && !error?.message?.includes("permission denied")
 
   return {
     shouldRetry,
@@ -91,19 +96,24 @@ export function handleCommonDatabaseErrors(
  * Safely execute a database operation with error handling
  * @param operation - Function that performs the database operation
  * @param operationName - Name of the operation for error logging
- * @param fallbackValue - Value to return if the operation fails
- * @returns Result of the operation or fallback value
+ * @returns Result of the operation or fallback value with error information
  */
 export async function safeDbOperation<T>(
   operation: () => Promise<T>,
   operationName: string,
-  fallbackValue: T,
-): Promise<T> {
+  fallbackValue?: T,
+): Promise<{ data: T | null; error: any | null }> {
   try {
-    return await operation()
+    const result = await operation()
+    return { data: result, error: null }
   } catch (error) {
     logDatabaseError(error, operationName)
-    console.error(`Error during ${operationName}:`, error)
-    return fallbackValue
+    return {
+      data: fallbackValue || null,
+      error: {
+        message: formatDatabaseErrorMessage(error),
+        originalError: error,
+      },
+    }
   }
 }
