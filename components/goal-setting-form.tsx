@@ -176,7 +176,11 @@ export function GoalSettingForm() {
                         <FormItem className="flex items-center space-x-2">
                           <FormLabel>Enable</FormLabel>
                           <FormControl>
-                            <Switch checked={field.value} onCheckedChange={field.onChange} />
+                            <Switch
+                              checked={field.value}
+                              onCheckedChange={field.onChange}
+                              aria-label={`Enable ${category.name} tracking`}
+                            />
                           </FormControl>
                         </FormItem>
                       )}
@@ -218,7 +222,11 @@ export function GoalSettingForm() {
                           <FormItem className="flex items-center space-x-2">
                             <FormLabel>Enable</FormLabel>
                             <FormControl>
-                              <Switch checked={field.value} onCheckedChange={field.onChange} />
+                              <Switch
+                                checked={field.value}
+                                onCheckedChange={field.onChange}
+                                aria-label={`Enable ${category.name} tracking`}
+                              />
                             </FormControl>
                           </FormItem>
                         )}
@@ -314,6 +322,10 @@ function MetricGoalField({ category, metric, form }: MetricGoalFieldProps) {
               value={[field.value]}
               onValueChange={(value) => field.onChange(value[0])}
               disabled={!isEnabled}
+              aria-label={`${metric.name} goal value: ${field.value}`}
+              aria-valuemin={metric.min}
+              aria-valuemax={metric.max}
+              aria-valuenow={field.value}
             />
           </FormControl>
           <FormDescription>{metric.description}</FormDescription>

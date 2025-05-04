@@ -140,7 +140,15 @@ export function ActivityForm() {
               <div className="space-y-2">
                 <Label htmlFor="intensity">Intensity (1-5)</Label>
                 <div className="pt-2">
-                  <Slider id="intensity" min={1} max={5} step={1} value={intensity} onValueChange={setIntensity} />
+                  <Slider
+                    id="intensity"
+                    min={1}
+                    max={5}
+                    step={1}
+                    value={intensity}
+                    onValueChange={setIntensity}
+                    aria-label={`Intensity level: ${intensity[0]} out of 5`}
+                  />
                 </div>
                 <div className="flex justify-between text-xs text-muted-foreground">
                   <span>Low</span>
@@ -177,7 +185,9 @@ export function ActivityForm() {
           </Button>
 
           {submitSuccess && (
-            <div className="p-3 bg-green-50 text-green-700 rounded-md text-center">Activity saved successfully!</div>
+            <div className="p-3 bg-green-50 text-green-700 rounded-md text-center" role="status" aria-live="polite">
+              Activity saved successfully!
+            </div>
           )}
         </form>
       </CardContent>

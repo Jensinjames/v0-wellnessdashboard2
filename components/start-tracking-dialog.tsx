@@ -85,7 +85,7 @@ export function StartTrackingDialog({ open, onOpenChange }: StartTrackingDialogP
                     defaultValue={field.value}
                   >
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger aria-label="Select wellness category">
                         <SelectValue placeholder="Select a category" />
                       </SelectTrigger>
                     </FormControl>
@@ -110,7 +110,7 @@ export function StartTrackingDialog({ open, onOpenChange }: StartTrackingDialogP
                   <FormLabel>Metric</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!selectedCategoryId}>
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger aria-label="Select metric to track">
                         <SelectValue placeholder="Select a metric" />
                       </SelectTrigger>
                     </FormControl>

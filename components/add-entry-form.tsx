@@ -333,6 +333,10 @@ function MetricEntryField({ category, metric, form }: MetricEntryFieldProps) {
               value={[field.value]}
               onValueChange={(value) => field.onChange(value[0])}
               className="py-4"
+              aria-label={`${metric.name} value: ${field.value}`}
+              aria-valuemin={metric.min}
+              aria-valuemax={metric.max}
+              aria-valuenow={field.value}
             />
           </FormControl>
           <FormMessage />

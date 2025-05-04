@@ -438,9 +438,9 @@ export function CategoryManagement() {
                             <div
                               {...provided.dragHandleProps}
                               className="mr-2 cursor-grab active:cursor-grabbing"
-                              aria-label="Drag to reorder"
+                              aria-label={`Drag to reorder ${category.name}`}
                             >
-                              <GripVertical className="h-5 w-5 text-muted-foreground" />
+                              <GripVertical className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
                             </div>
 
                             <div
@@ -467,6 +467,7 @@ export function CategoryManagement() {
                                 size="sm"
                                 onClick={() => toggleAccordionItem(category.id)}
                                 aria-expanded={expandedItems.includes(category.id)}
+                                aria-controls={`category-metrics-${category.id}`}
                               >
                                 {expandedItems.includes(category.id) ? "Collapse" : "Expand"}
                               </Button>
@@ -488,7 +489,7 @@ export function CategoryManagement() {
 
                           {/* Metrics section - only shown when expanded */}
                           {expandedItems.includes(category.id) && (
-                            <div className="border-t p-4">
+                            <div className="border-t p-4" id={`category-metrics-${category.id}`}>
                               <div className="mb-3 flex items-center justify-between">
                                 <h4 className="font-medium">Metrics</h4>
                                 <Button variant="outline" size="sm" onClick={() => handleAddMetric(category.id)}>

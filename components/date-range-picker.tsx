@@ -44,8 +44,9 @@ export function DatePicker({ date, onDateChange, className }: DatePickerProps) {
           <Button
             variant="outline"
             className={cn("w-full justify-start text-left font-normal", !selectedDate && "text-muted-foreground")}
+            aria-label={selectedDate ? `Selected date: ${format(selectedDate, "PPP")}` : "Pick a date"}
           >
-            <Calendar className="mr-2 h-4 w-4" />
+            <Calendar className="mr-2 h-4 w-4" aria-hidden="true" />
             {selectedDate ? format(selectedDate, "PPP") : <span>Pick a date</span>}
           </Button>
         </PopoverTrigger>

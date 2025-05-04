@@ -228,13 +228,14 @@ export function EntriesList({ onEdit }: EntriesListProps) {
                 categories={categories}
               />
             ) : (
-              <div className="flex flex-col items-center justify-center py-12">
+              <div className="flex flex-col items-center justify-center py-12" role="status" aria-live="polite">
                 <div className="rounded-full bg-muted p-3">
                   <svg
                     xmlns="http://www.w3.org/2000/svg"
                     viewBox="0 0 20 20"
                     fill="currentColor"
                     className="h-6 w-6 text-muted-foreground"
+                    aria-hidden="true"
                   >
                     <path
                       fillRule="evenodd"
@@ -351,9 +352,10 @@ function EntriesTable({
                         onClick={() => onEdit(entry)}
                         title="Edit entry"
                         className="h-8 w-8 rounded-full"
+                        aria-label={`Edit entry from ${format(new Date(entry.date), "MMM d, yyyy")}`}
                       >
-                        <Edit2 className="h-4 w-4" />
-                        <span className="sr-only">Edit</span>
+                        <Edit2 className="h-4 w-4" aria-hidden="true" />
+                        <span className="sr-only">Edit entry from {format(new Date(entry.date), "MMM d, yyyy")}</span>
                       </Button>
                       <Button
                         variant="ghost"
@@ -361,9 +363,10 @@ function EntriesTable({
                         onClick={() => onDelete(entry.id)}
                         title="Delete entry"
                         className="h-8 w-8 rounded-full text-red-500 hover:bg-red-50 hover:text-red-600"
+                        aria-label={`Delete entry from ${format(new Date(entry.date), "MMM d, yyyy")}`}
                       >
-                        <Trash2 className="h-4 w-4" />
-                        <span className="sr-only">Delete</span>
+                        <Trash2 className="h-4 w-4" aria-hidden="true" />
+                        <span className="sr-only">Delete entry from {format(new Date(entry.date), "MMM d, yyyy")}</span>
                       </Button>
                     </div>
                   </TableCell>
