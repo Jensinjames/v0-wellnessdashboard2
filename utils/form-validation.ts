@@ -244,3 +244,32 @@ export const createDateSchema = (options: {
 
   return options.required ? schema : schema.optional()
 }
+
+// Activity form validation schema
+export const activityFormSchema = z.object({
+  title: z.string().min(3, "Title must be at least 3 characters").max(100, "Title cannot exceed 100 characters"),
+  category: z.string().min(1, "Please select a category"),
+  duration: z.number().min(1, "Duration must be at least 1 minute"),
+  date: z.date(),
+  notes: z.string().max(500, "Notes cannot exceed 500 characters").optional(),
+})
+
+// Activity form validation function
+export const validateActivityForm = (data: any) => {
+  try {
+    const result = activityFormSchema.safeParse(data)
+    if (!result.success) {
+      const formattedErrors = result.error.format()
+      return {
+        valid: false,
+        errors: collectFormErrors(formattedErrors, data),
+      }
+    }
+    return { valid: true }
+  } catch (error) {
+    return {
+      valid: false,
+      errors: ["An unexpected error occurred during validation"],
+    }
+  }
+}

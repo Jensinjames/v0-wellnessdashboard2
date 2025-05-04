@@ -1,423 +1,211 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
-import { z } from "zod"
-import { CalendarIcon } from "lucide-react"
-import { format } from "date-fns"
+import type React from "react"
 
+import { useState, useEffect } from "react"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { Calendar } from "@/components/ui/calendar"
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { Slider } from "@/components/ui/slider"
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
-import { cn } from "@/lib/utils"
+import { Switch } from "@/components/ui/switch"
+import { DatePicker } from "@/components/date-range-picker"
 import { CharacterCounter } from "@/components/ui/character-counter"
 import { FormErrorSummary } from "@/components/ui/form-error-summary"
-import { VisuallyHidden } from "@/components/ui/visually-hidden"
-import { createInterdependentFormSchema } from "@/utils/interdependent-validation"
-
-// Define the category template type
-type CategoryTemplate = {
-  id: string
-  name: string
-  description: string
-  subcategories: string[]
-  defaultGoal?: number
-  unit?: string
-  minValue?: number
-  maxValue?: number
-}
-
-// Sample categories for demonstration
-const categories: CategoryTemplate[] = [
-  {
-    id: "exercise",
-    name: "Exercise",
-    description: "Physical activities to improve fitness",
-    subcategories: ["Cardio", "Strength", "Flexibility", "Sports"],
-    defaultGoal: 30,
-    unit: "minutes",
-    minValue: 0,
-    maxValue: 240,
-  },
-  {
-    id: "nutrition",
-    name: "Nutrition",
-    description: "Dietary habits and food intake",
-    subcategories: ["Meals", "Hydration", "Supplements"],
-    defaultGoal: 2000,
-    unit: "calories",
-    minValue: 0,
-    maxValue: 5000,
-  },
-  {
-    id: "sleep",
-    name: "Sleep",
-    description: "Sleep duration and quality",
-    subcategories: ["Duration", "Quality"],
-    defaultGoal: 8,
-    unit: "hours",
-    minValue: 0,
-    maxValue: 12,
-  },
-  {
-    id: "mindfulness",
-    name: "Mindfulness",
-    description: "Mental wellness activities",
-    subcategories: ["Meditation", "Breathing", "Journaling"],
-    defaultGoal: 15,
-    unit: "minutes",
-    minValue: 0,
-    maxValue: 120,
-  },
-]
-
-// Create the form schema
-const formSchema = z.object({
-  category: z.string({
-    required_error: "Please select a category",
-  }),
-  subcategory: z.string({
-    required_error: "Please select a subcategory",
-  }),
-  date: z.date({
-    required_error: "Please select a date",
-  }),
-  duration: z
-    .number({
-      required_error: "Please enter a duration",
-    })
-    .min(0, {
-      message: "Duration must be at least 0",
-    }),
-  value: z
-    .number({
-      required_error: "Please enter a value",
-    })
-    .min(0, {
-      message: "Value must be at least 0",
-    }),
-  notes: z
-    .string()
-    .max(500, {
-      message: "Notes must be 500 characters or less",
-    })
-    .optional(),
-})
-
-// Create the interdependent form schema
-const activityFormSchema = createInterdependentFormSchema(formSchema, (data) => {
-  const category = categories.find((c) => c.id === data.category)
-  const validations = []
-
-  if (category) {
-    // Validate that subcategory is valid for the selected category
-    if (!category.subcategories.includes(data.subcategory)) {
-      validations.push({
-        path: ["subcategory"],
-        message: `${data.subcategory} is not a valid subcategory for ${category.name}`,
-        type: "warning",
-      })
-    }
-
-    // Validate that duration is within reasonable limits
-    if (data.duration > category.maxValue!) {
-      validations.push({
-        path: ["duration"],
-        message: `Duration exceeds the maximum of ${category.maxValue} ${category.unit} for ${category.name}`,
-        type: "warning",
-      })
-    }
-
-    // Validate that value is within reasonable limits
-    if (data.value > category.maxValue!) {
-      validations.push({
-        path: ["value"],
-        message: `Value exceeds the maximum of ${category.maxValue} for ${category.name}`,
-        type: "warning",
-      })
-    }
-  }
-
-  return validations
-})
-
-// Define the form values type
-type FormValues = z.infer<typeof formSchema>
+import { validateActivityForm } from "@/utils/form-validation"
+import type { Activity } from "@/types/wellness"
+import { generateId } from "@/utils/id-generator"
 
 export function ActivityForm() {
-  const [selectedCategory, setSelectedCategory] = useState<CategoryTemplate | null>(null)
-  const [statusMessage, setStatusMessage] = useState("")
+  const [date, setDate] = useState<Date>(new Date())
+  const [category, setCategory] = useState<string>("")
+  const [duration, setDuration] = useState<number>(30)
+  const [intensity, setIntensity] = useState<number[]>([3])
+  const [notes, setNotes] = useState<string>("")
+  const [reminder, setReminder] = useState<boolean>(false)
+  const [errors, setErrors] = useState<Record<string, string>>({})
+  const [activities, setActivities] = useState<Activity[]>([])
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false)
+  const [submitSuccess, setSubmitSuccess] = useState<boolean>(false)
 
-  // Initialize the form
-  const form = useForm<FormValues>({
-    resolver: zodResolver(activityFormSchema),
-    defaultValues: {
-      category: "",
-      subcategory: "",
-      date: new Date(),
-      duration: 0,
-      value: 0,
-      notes: "",
-    },
-  })
-
-  // Watch for category changes
-  const watchedCategory = form.watch("category")
-
-  // Update selected category when the form value changes
+  // Load saved activities from localStorage on component mount
   useEffect(() => {
-    const category = categories.find((c) => c.id === watchedCategory)
-    setSelectedCategory(category || null)
-
-    // Reset subcategory when category changes
-    if (category) {
-      form.setValue("subcategory", category.subcategories[0])
-      form.setValue("duration", category.defaultGoal || 0)
-      form.setValue("value", category.defaultGoal || 0)
+    const savedActivities = localStorage.getItem("activities")
+    if (savedActivities) {
+      try {
+        setActivities(JSON.parse(savedActivities))
+      } catch (e) {
+        console.error("Error parsing saved activities:", e)
+        setActivities([])
+      }
     }
-  }, [watchedCategory, form])
+  }, [])
 
-  // Handle form submission
-  function onSubmit(data: FormValues) {
-    console.log("Form submitted:", data)
-    // Here you would typically save the data to your state or API
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSubmitting(true)
+    setSubmitSuccess(false)
 
-    // Show success message
-    setStatusMessage("Activity logged successfully!")
+    // Validate form
+    const validationErrors = validateActivityForm({ category, duration, intensity: intensity[0], notes })
+    setErrors(validationErrors)
 
-    // Clear the message after 3 seconds
-    setTimeout(() => {
-      setStatusMessage("")
-    }, 3000)
+    if (Object.keys(validationErrors).length === 0) {
+      // Create new activity
+      const newActivity: Activity = {
+        id: generateId(),
+        date: date.toISOString(),
+        category,
+        duration,
+        intensity: intensity[0],
+        notes,
+        reminder,
+      }
 
-    // Reset form
-    form.reset({
-      category: "",
-      subcategory: "",
-      date: new Date(),
-      duration: 0,
-      value: 0,
-      notes: "",
-    })
+      // Add to activities list
+      const updatedActivities = [...activities, newActivity]
+      setActivities(updatedActivities)
+
+      // Save to localStorage
+      localStorage.setItem("activities", JSON.stringify(updatedActivities))
+
+      // Reset form
+      setCategory("")
+      setDuration(30)
+      setIntensity([3])
+      setNotes("")
+      setReminder(false)
+
+      // Show success message
+      setSubmitSuccess(true)
+    }
+
+    setIsSubmitting(false)
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold">Log Activity</h2>
-        <p className="text-muted-foreground">Record your wellness activities to track your progress</p>
-      </div>
+    <Card>
+      <CardHeader>
+        <CardTitle>Log Activity</CardTitle>
+        <CardDescription>Record your wellness activities to track your progress over time.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form onSubmit={handleSubmit} className="space-y-6">
+          {Object.keys(errors).length > 0 && <FormErrorSummary errors={errors} />}
 
-      {statusMessage && (
-        <div
-          className="bg-green-100 border border-green-400 text-green-700 px-4 py-3 rounded relative"
-          role="alert"
-          aria-live="polite"
-        >
-          {statusMessage}
-        </div>
-      )}
+          <div className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="date">Date</Label>
+                <DatePicker date={date} setDate={setDate} />
+              </div>
 
-      <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-          <FormErrorSummary form={form} />
+              <div className="space-y-2">
+                <Label htmlFor="category">Category</Label>
+                <Select value={category} onValueChange={setCategory}>
+                  <SelectTrigger id="category" aria-invalid={!!errors.category}>
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="exercise">Exercise</SelectItem>
+                    <SelectItem value="meditation">Meditation</SelectItem>
+                    <SelectItem value="reading">Reading</SelectItem>
+                    <SelectItem value="nutrition">Nutrition</SelectItem>
+                    <SelectItem value="sleep">Sleep</SelectItem>
+                    <SelectItem value="social">Social</SelectItem>
+                    <SelectItem value="learning">Learning</SelectItem>
+                    <SelectItem value="creative">Creative</SelectItem>
+                  </SelectContent>
+                </Select>
+                {errors.category && <p className="text-sm text-red-500">{errors.category}</p>}
+              </div>
+            </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {/* Category Field */}
-            <FormField
-              control={form.control}
-              name="category"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Category</FormLabel>
-                  <FormControl>
-                    <select className="w-full p-2 border border-input rounded-md" {...field}>
-                      <option value="" disabled>
-                        Select a category
-                      </option>
-                      {categories.map((category) => (
-                        <option key={category.id} value={category.id}>
-                          {category.name}
-                        </option>
-                      ))}
-                    </select>
-                  </FormControl>
-                  <FormDescription>Select the wellness category</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="duration">Duration (minutes)</Label>
+                <Input
+                  id="duration"
+                  type="number"
+                  min="1"
+                  value={duration}
+                  onChange={(e) => setDuration(Number.parseInt(e.target.value) || 0)}
+                  aria-invalid={!!errors.duration}
+                />
+                {errors.duration && <p className="text-sm text-red-500">{errors.duration}</p>}
+              </div>
 
-            {/* Subcategory Field */}
-            <FormField
-              control={form.control}
-              name="subcategory"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Subcategory</FormLabel>
-                  <FormControl>
-                    <select
-                      className="w-full p-2 border border-input rounded-md"
-                      {...field}
-                      disabled={!selectedCategory}
-                    >
-                      <option value="" disabled>
-                        Select a subcategory
-                      </option>
-                      {selectedCategory?.subcategories.map((sub) => (
-                        <option key={sub} value={sub}>
-                          {sub}
-                        </option>
-                      ))}
-                    </select>
-                  </FormControl>
-                  <FormDescription>Select the specific activity type</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+              <div className="space-y-2">
+                <Label htmlFor="intensity">Intensity (1-5)</Label>
+                <div className="pt-2">
+                  <Slider id="intensity" min={1} max={5} step={1} value={intensity} onValueChange={setIntensity} />
+                </div>
+                <div className="flex justify-between text-xs text-muted-foreground">
+                  <span>Low</span>
+                  <span>Medium</span>
+                  <span>High</span>
+                </div>
+              </div>
+            </div>
 
-            {/* Date Field */}
-            <FormField
-              control={form.control}
-              name="date"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Date</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant={"outline"}
-                          className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}
-                        >
-                          {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
-                        disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <FormDescription>When did you perform this activity?</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="space-y-2">
+              <div className="flex justify-between items-center">
+                <Label htmlFor="notes">Notes</Label>
+                <CharacterCounter value={notes} maxLength={200} />
+              </div>
+              <Textarea
+                id="notes"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Add any additional notes about this activity..."
+                maxLength={200}
+                aria-invalid={!!errors.notes}
+              />
+              {errors.notes && <p className="text-sm text-red-500">{errors.notes}</p>}
+            </div>
 
-            {/* Duration Field */}
-            <FormField
-              control={form.control}
-              name="duration"
-              render={({ field: { onChange, value, ...fieldProps } }) => (
-                <FormItem>
-                  <FormLabel>Duration ({selectedCategory?.unit || "units"})</FormLabel>
-                  <FormControl>
-                    <div className="space-y-4">
-                      <Slider
-                        min={0}
-                        max={selectedCategory?.maxValue || 100}
-                        step={1}
-                        value={[value]}
-                        onValueChange={(vals) => onChange(vals[0])}
-                        disabled={!selectedCategory}
-                      />
-                      <Input
-                        type="number"
-                        onChange={(e) => onChange(Number(e.target.value))}
-                        value={value}
-                        {...fieldProps}
-                        disabled={!selectedCategory}
-                      />
-                    </div>
-                  </FormControl>
-                  <FormDescription>How long did you perform this activity?</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Value Field */}
-            <FormField
-              control={form.control}
-              name="value"
-              render={({ field: { onChange, value, ...fieldProps } }) => (
-                <FormItem>
-                  <FormLabel>Value</FormLabel>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            onChange={(e) => onChange(Number(e.target.value))}
-                            value={value}
-                            {...fieldProps}
-                            disabled={!selectedCategory}
-                          />
-                        </FormControl>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>For example: calories, steps, weight, etc.</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                  <FormDescription>Enter the measured value for this activity</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            {/* Notes Field */}
-            <FormField
-              control={form.control}
-              name="notes"
-              render={({ field }) => (
-                <FormItem className="col-span-1 md:col-span-2">
-                  <FormLabel>Notes</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <Textarea
-                        placeholder="Add any additional notes or observations"
-                        className="min-h-[100px] resize-y"
-                        {...field}
-                      />
-                      <CharacterCounter
-                        value={field.value || ""}
-                        maxLength={500}
-                        className="absolute bottom-2 right-2 text-xs text-muted-foreground"
-                      />
-                    </div>
-                  </FormControl>
-                  <FormDescription>Optional details about your activity</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
+            <div className="flex items-center space-x-2">
+              <Switch id="reminder" checked={reminder} onCheckedChange={setReminder} />
+              <Label htmlFor="reminder">Set reminder for next time</Label>
+            </div>
           </div>
 
-          <div className="flex justify-end">
-            <Button type="submit" disabled={!selectedCategory}>
-              Log Activity
-            </Button>
-          </div>
+          <Button type="submit" disabled={isSubmitting} className="w-full">
+            {isSubmitting ? "Saving..." : "Save Activity"}
+          </Button>
 
-          <VisuallyHidden aria-live="polite">{statusMessage}</VisuallyHidden>
+          {submitSuccess && (
+            <div className="p-3 bg-green-50 text-green-700 rounded-md text-center">Activity saved successfully!</div>
+          )}
         </form>
-      </Form>
-    </div>
+      </CardContent>
+
+      {activities && activities.length > 0 && (
+        <CardFooter className="flex flex-col">
+          <h3 className="text-lg font-medium mb-2">Recent Activities</h3>
+          <div className="w-full space-y-2">
+            {activities
+              .slice(-3)
+              .reverse()
+              .map((activity) => (
+                <div key={activity.id} className="p-3 bg-muted rounded-md">
+                  <div className="flex justify-between">
+                    <span className="font-medium capitalize">{activity.category}</span>
+                    <span className="text-sm text-muted-foreground">
+                      {new Date(activity.date).toLocaleDateString()}
+                    </span>
+                  </div>
+                  <div className="text-sm">
+                    {activity.duration} minutes • Intensity: {activity.intensity}/5
+                  </div>
+                  {activity.notes && <div className="text-sm mt-1">{activity.notes}</div>}
+                </div>
+              ))}
+          </div>
+        </CardFooter>
+      )}
+    </Card>
   )
 }

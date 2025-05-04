@@ -64,3 +64,12 @@ export function generateTimestampId(prefix = ""): string {
   const randomStr = Math.random().toString(36).substring(2, 7)
   return prefix ? `${prefix}-${timestamp}-${randomStr}` : `${timestamp}-${randomStr}`
 }
+
+/**
+ * Simple function to generate a unique ID
+ * This is a simpler version that doesn't check against existing IDs
+ * @returns A unique ID string
+ */
+export function generateId(): string {
+  return Date.now().toString(36) + Math.random().toString(36).substring(2, 7)
+}

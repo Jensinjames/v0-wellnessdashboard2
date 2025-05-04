@@ -1,3 +1,5 @@
+"use client"
+
 import { ActivityForm } from "@/components/activity-form"
 
 export default function ActivityPage() {

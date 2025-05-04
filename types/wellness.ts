@@ -317,3 +317,14 @@ export function getCategoryColorClass(
 ): string {
   return `${type}-${category.color}-600`
 }
+
+export interface Activity {
+  id: string
+  categoryId: string
+  categoryName: string
+  subcategoryId: string
+  subcategoryName: string
+  date: string
+  duration: number
+  value: number
+}
