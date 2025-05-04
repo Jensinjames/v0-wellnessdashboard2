@@ -1,7 +1,7 @@
-import type React from "react"
+import type * as React from "react"
 import { cn } from "@/lib/utils"
 import { useIconContext } from "@/context/icon-context"
-import { getCategoryColorKey, getCategoryColorClasses } from "@/utils/category-color-utils"
+import { getCategoryColorKey } from "@/utils/category-color-utils"
 
 interface ColoredTabProps extends React.HTMLAttributes<HTMLButtonElement> {
   categoryId: string
@@ -20,14 +20,19 @@ export function ColoredTab({ categoryId, isActive = false, label, color, classNa
   const categoryColor = iconPref?.color || color || getCategoryColorKey(categoryId)
 
   // Get category color classes
-  const colorClasses = getCategoryColorClasses(categoryId, categoryColor)
+  const getColorClasses = () => {
+    const activeClasses = `bg-${categoryColor}-100 dark:bg-${categoryColor}-900 text-${categoryColor}-800 dark:text-${categoryColor}-200 border-b-2 border-${categoryColor}-600 dark:border-${categoryColor}-500`
+    const inactiveClasses = `text-slate-600 dark:text-slate-400 hover:text-${categoryColor}-700 hover:dark:text-${categoryColor}-300 hover:bg-${categoryColor}-50 hover:dark:bg-${categoryColor}-950`
+
+    return isActive ? activeClasses : inactiveClasses
+  }
 
   return (
     <button
       type="button"
       className={cn(
         "px-4 py-2 text-sm font-medium transition-colors rounded-t-lg focus:outline-none focus:ring-2 focus:ring-offset-2",
-        isActive ? colorClasses.active : colorClasses.inactive,
+        getColorClasses(),
         className,
       )}
       aria-selected={isActive}
