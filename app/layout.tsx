@@ -4,6 +4,7 @@ import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from "@/context/auth-context"
+import { ProfileProvider } from "@/context/profile-context"
 import { ScreenReaderAnnouncerProvider } from "@/components/accessibility/screen-reader-announcer"
 
 const inter = Inter({ subsets: ["latin"] })
@@ -28,7 +29,9 @@ export default function RootLayout({
       <body className={inter.className}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
           <AuthProvider>
-            <ScreenReaderAnnouncerProvider>{children}</ScreenReaderAnnouncerProvider>
+            <ProfileProvider>
+              <ScreenReaderAnnouncerProvider>{children}</ScreenReaderAnnouncerProvider>
+            </ProfileProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>
