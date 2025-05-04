@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { z } from "zod"
@@ -11,7 +11,7 @@ import { Input } from "@/components/ui/input"
 import { CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle, Eye, EyeOff } from "lucide-react"
+import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
 
@@ -27,12 +27,21 @@ export function SignInForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
+  const [isClient, setIsClient] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { signIn } = useAuth()
+
+  // Set isClient to true when component mounts (client-side only)
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
+
+  // Only use auth hook on the client side
+  const auth = useAuth()
+  const { signIn } = auth || { signIn: null }
 
   // Get the redirect path from URL params or default to dashboard
-  const redirectTo = searchParams.get("redirect") || "/dashboard"
+  const redirectTo = searchParams?.get("redirect") || "/dashboard"
 
   const form = useForm<SignInFormValues>({
     resolver: zodResolver(signInSchema),
@@ -44,6 +53,11 @@ export function SignInForm() {
   })
 
   const onSubmit = async (values: SignInFormValues) => {
+    if (!signIn) {
+      setError("Authentication is not available. Please try again later.")
+      return
+    }
+
     setIsLoading(true)
     setError(null)
 
@@ -83,6 +97,21 @@ export function SignInForm() {
       console.error(err)
       setIsLoading(false)
     }
+  }
+
+  // If not on client yet, show a simple loading state
+  if (!isClient) {
+    return (
+      <>
+        <CardHeader>
+          <CardTitle>Sign in</CardTitle>
+          <CardDescription>Loading sign in form...</CardDescription>
+        </CardHeader>
+        <CardContent className="flex justify-center py-8">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-primary"></div>
+        </CardContent>
+      </>
+    )
   }
 
   return (
@@ -204,6 +233,7 @@ export function SignInForm() {
             >
               {isLoading ? (
                 <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
                   <span className="sr-only">Signing in, please wait</span>
                   <span aria-hidden="true">Signing in...</span>
                 </>
@@ -229,3 +259,6 @@ export function SignInForm() {
     </>
   )
 }
+
+// Add default export for dynamic import
+export default SignInForm

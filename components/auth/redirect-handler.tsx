@@ -1,36 +1,34 @@
 "use client"
 
-import { useEffect } from "react"
+import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { useAuth } from "@/context/auth-context"
 
-interface RedirectHandlerProps {
-  defaultRedirect?: string
-}
-
-export function RedirectHandler({ defaultRedirect = "/dashboard" }: RedirectHandlerProps) {
+export function RedirectHandler() {
+  const [isClient, setIsClient] = useState(false)
   const router = useRouter()
-  const { user, isLoading } = useAuth()
 
+  // Set isClient to true when component mounts (client-side only)
   useEffect(() => {
-    if (isLoading) return
+    setIsClient(true)
 
-    if (user) {
-      // Check for stored redirect path
-      const storedRedirect = sessionStorage.getItem("redirectAfterAuth")
+    // Only run this effect on the client side
+    if (typeof window !== "undefined") {
+      // Check if there's a redirect path stored in session storage
+      const redirectPath = sessionStorage.getItem("redirectAfterAuth")
 
-      // Use stored redirect or default
-      const redirectPath = storedRedirect || defaultRedirect
-
-      // Clear stored redirect
-      if (storedRedirect) {
+      if (redirectPath) {
+        // Clear the stored path
         sessionStorage.removeItem("redirectAfterAuth")
+
+        // Redirect to the stored path
+        router.push(redirectPath)
       }
-
-      // Redirect user
-      router.push(redirectPath)
     }
-  }, [user, isLoading, defaultRedirect, router])
+  }, [router])
 
+  // This component doesn't render anything visible
   return null
 }
+
+// Add default export for dynamic import
+export default RedirectHandler

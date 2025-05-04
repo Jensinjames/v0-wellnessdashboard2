@@ -1,14 +1,13 @@
-import { Suspense } from "react"
-import { ForgotPasswordForm } from "@/components/auth/forgot-password-form"
 import { AuthLayout } from "@/components/auth/auth-layout"
-import { AuthFormLoading } from "@/components/auth/auth-layout"
+import ForgotPasswordClient from "./client"
+
+// Add config to disable static generation
+export const dynamic = "force-dynamic"
 
 export default function ForgotPasswordPage() {
   return (
-    <AuthLayout>
-      <Suspense fallback={<AuthFormLoading />}>
-        <ForgotPasswordForm />
-      </Suspense>
+    <AuthLayout title="Forgot Password" redirectIfAuthenticated={false}>
+      <ForgotPasswordClient />
     </AuthLayout>
   )
 }

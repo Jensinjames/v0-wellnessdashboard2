@@ -1,19 +1,18 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { z } from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { useAuth } from "@/context/auth-context"
 import { Input } from "@/components/ui/input"
 import { CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle } from "lucide-react"
-import { FormLoadingButton } from "@/components/auth/form-loading-button"
+import { AlertCircle, Loader2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { useAuth } from "@/context/auth-context"
 
 const forgotPasswordSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -25,8 +24,17 @@ export function ForgotPasswordForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isSubmitted, setIsSubmitted] = useState(false)
+  const [isClient, setIsClient] = useState(false)
   const router = useRouter()
-  const { resetPassword } = useAuth()
+
+  // Set isClient to true when component mounts (client-side only)
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
+
+  // Only use auth hook on the client side
+  const auth = useAuth()
+  const { resetPassword } = auth || { resetPassword: null }
 
   const form = useForm<ForgotPasswordFormValues>({
     resolver: zodResolver(forgotPasswordSchema),
@@ -36,6 +44,11 @@ export function ForgotPasswordForm() {
   })
 
   const onSubmit = async (values: ForgotPasswordFormValues) => {
+    if (!resetPassword) {
+      setError("Authentication is not available. Please try again later.")
+      return
+    }
+
     setIsLoading(true)
     setError(null)
 
@@ -54,6 +67,21 @@ export function ForgotPasswordForm() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // If not on client yet, show a simple loading state
+  if (!isClient) {
+    return (
+      <>
+        <CardHeader>
+          <CardTitle>Forgot password</CardTitle>
+          <CardDescription>Loading form...</CardDescription>
+        </CardHeader>
+        <CardContent className="flex justify-center py-8">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-primary"></div>
+        </CardContent>
+      </>
+    )
   }
 
   if (isSubmitted) {
@@ -103,9 +131,16 @@ export function ForgotPasswordForm() {
                 </FormItem>
               )}
             />
-            <FormLoadingButton isLoading={isLoading} loadingText="Sending reset link...">
-              Send reset link
-            </FormLoadingButton>
+            <Button type="submit" className="w-full" disabled={isLoading}>
+              {isLoading ? (
+                <>
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  <span>Sending reset link...</span>
+                </>
+              ) : (
+                "Send reset link"
+              )}
+            </Button>
           </form>
         </Form>
       </CardContent>
@@ -120,3 +155,6 @@ export function ForgotPasswordForm() {
     </>
   )
 }
+
+// Add default export for dynamic import
+export default ForgotPasswordForm

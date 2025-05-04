@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -35,8 +35,14 @@ export function ResetPasswordForm() {
   const [error, setError] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [isClient, setIsClient] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
+
+  // Set isClient to true when component mounts (client-side only)
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
 
   const form = useForm<ResetPasswordFormValues>({
     resolver: zodResolver(resetPasswordSchema),
@@ -66,6 +72,21 @@ export function ResetPasswordForm() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // If not on client yet, show a simple loading state
+  if (!isClient) {
+    return (
+      <>
+        <CardHeader>
+          <CardTitle>Reset Password</CardTitle>
+          <CardDescription>Loading reset password form...</CardDescription>
+        </CardHeader>
+        <CardContent className="flex justify-center py-8">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-primary"></div>
+        </CardContent>
+      </>
+    )
   }
 
   return (
@@ -155,3 +176,6 @@ export function ResetPasswordForm() {
     </>
   )
 }
+
+// Add default export for dynamic import
+export default ResetPasswordForm

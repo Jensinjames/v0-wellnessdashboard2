@@ -1,14 +1,13 @@
-import { Suspense } from "react"
-import { ResetPasswordForm } from "@/components/auth/reset-password-form"
 import { AuthLayout } from "@/components/auth/auth-layout"
-import { AuthFormLoading } from "@/components/auth/auth-layout"
+import ResetPasswordClient from "./client"
+
+// Fix: Use hyphen instead of underscore in force-dynamic
+export const dynamic = "force-dynamic"
 
 export default function ResetPasswordPage() {
   return (
     <AuthLayout>
-      <Suspense fallback={<AuthFormLoading />}>
-        <ResetPasswordForm />
-      </Suspense>
+      <ResetPasswordClient />
     </AuthLayout>
   )
 }
