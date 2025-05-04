@@ -7,6 +7,7 @@ import type { User, Session } from "@supabase/supabase-js"
 import { getSupabaseClient } from "@/lib/supabase"
 import { toast } from "@/components/ui/use-toast"
 import { logDatabaseError, safeDbOperation } from "@/utils/db-error-handler"
+import { validateUserData } from "@/utils/validation"
 
 // Define types for auth credentials and user profile
 export interface SignUpCredentials {
@@ -109,7 +110,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const user = userData.user
 
-      // Create new profile
+      // Create new profile with validated data
       const newProfile = {
         id: user.id,
         email: user.email || "",
@@ -121,37 +122,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       console.log("Creating new profile:", newProfile)
 
-      const { data: createdProfile, error: createError } = await supabase
-        .from("profiles")
-        .insert([newProfile])
-        .select()
-        .single()
-
-      if (createError) {
-        // Check if it's a duplicate key error (profile might have been created in a race condition)
-        if (createError.code === "23505") {
-          console.log("Profile already exists (race condition), fetching existing profile")
-
-          const { data: existingProfile, error: fetchError } = await supabase
-            .from("profiles")
-            .select("*")
-            .eq("id", userId)
-            .single()
-
-          if (fetchError) {
-            logDatabaseError(fetchError, "fetching existing profile after duplicate key error", { userId })
-            return null
-          }
-
-          return existingProfile as UserProfile
-        }
-
-        logDatabaseError(createError, "creating profile", { userId, profile: newProfile })
+      // Validate profile data before insertion
+      const validationResult = validateUserData(newProfile)
+      if (!validationResult.isValid) {
+        console.error("Profile validation failed:", validationResult.errors)
         return null
       }
 
-      console.log("Profile created successfully:", createdProfile)
-      return createdProfile as UserProfile
+      // Try to insert with retry logic
+      let retryCount = 0
+      const maxRetries = 3
+      let lastError = null
+
+      while (retryCount < maxRetries) {
+        try {
+          const { data: createdProfile, error: createError } = await supabase
+            .from("profiles")
+            .insert([newProfile])
+            .select()
+            .single()
+
+          if (createError) {
+            // Check if it's a duplicate key error (profile might have been created in a race condition)
+            if (createError.code === "23505") {
+              console.log("Profile already exists (race condition), fetching existing profile")
+
+              const { data: existingProfile, error: fetchError } = await supabase
+                .from("profiles")
+                .select("*")
+                .eq("id", userId)
+                .single()
+
+              if (fetchError) {
+                logDatabaseError(fetchError, "fetching existing profile after duplicate key error", { userId })
+                lastError = fetchError
+                retryCount++
+                continue
+              }
+
+              return existingProfile as UserProfile
+            }
+
+            logDatabaseError(createError, "creating profile", { userId, profile: newProfile })
+            lastError = createError
+            retryCount++
+
+            // Add delay between retries
+            await new Promise((resolve) => setTimeout(resolve, 1000 * retryCount))
+            continue
+          }
+
+          console.log("Profile created successfully:", createdProfile)
+          return createdProfile as UserProfile
+        } catch (error) {
+          logDatabaseError(error, "creating profile in retry loop", { userId, retryCount })
+          lastError = error
+          retryCount++
+
+          // Add delay between retries
+          await new Promise((resolve) => setTimeout(resolve, 1000 * retryCount))
+        }
+      }
+
+      // If we get here, all retries failed
+      console.error(`Failed to create profile after ${maxRetries} attempts. Last error:`, lastError)
+      return null
     } catch (error) {
       logDatabaseError(error, "ensuring profile exists", { userId })
       return null
@@ -322,63 +357,144 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       console.log(`Signing up user: ${email}`)
 
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: full_name || "",
-          },
-          emailRedirectTo: `${window.location.origin}/auth/verify-email`,
-        },
-      })
-
-      if (error) {
-        console.error("Sign up error:", error)
+      // Validate input data
+      if (!email || !password) {
+        const errorMessage = "Email and password are required"
+        console.error("Sign up validation error:", errorMessage)
         toast({
           title: "Sign up failed",
-          description: error.message,
+          description: errorMessage,
           variant: "destructive",
         })
-        return { error, data: null }
+        return { error: { message: errorMessage }, data: null }
       }
 
-      console.log("Sign up successful:", data)
+      // Email format validation
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(email)) {
+        const errorMessage = "Please enter a valid email address"
+        console.error("Sign up validation error:", errorMessage)
+        toast({
+          title: "Sign up failed",
+          description: errorMessage,
+          variant: "destructive",
+        })
+        return { error: { message: errorMessage }, data: null }
+      }
 
-      // The profile will be created automatically by the database trigger
-      // But we'll check and create it manually if needed as a fallback
-      if (data.user) {
+      // Password strength validation
+      if (password.length < 8) {
+        const errorMessage = "Password must be at least 8 characters long"
+        console.error("Sign up validation error:", errorMessage)
+        toast({
+          title: "Sign up failed",
+          description: errorMessage,
+          variant: "destructive",
+        })
+        return { error: { message: errorMessage }, data: null }
+      }
+
+      // Create user account with retry logic
+      let signUpAttempts = 0
+      const maxSignUpAttempts = 3
+      let lastError = null
+
+      while (signUpAttempts < maxSignUpAttempts) {
         try {
-          // Wait a moment to allow the trigger to run
-          await new Promise((resolve) => setTimeout(resolve, 500))
+          const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              data: {
+                full_name: full_name || "",
+              },
+              emailRedirectTo: `${window.location.origin}/auth/verify-email`,
+            },
+          })
 
-          console.log(`Checking if profile was created for user: ${data.user.id}`)
-          const profile = await fetchProfile(data.user.id)
+          if (error) {
+            console.error("Sign up error:", error)
 
-          if (profile) {
-            console.log("Profile exists:", profile)
-          } else {
-            console.warn("Profile not created by trigger, creating manually")
-            await ensureProfile(data.user.id)
+            // Handle specific error cases
+            if (error.message.includes("already registered")) {
+              toast({
+                title: "Account already exists",
+                description: "This email is already registered. Please sign in instead.",
+                variant: "destructive",
+              })
+              return { error, data: null }
+            }
+
+            // For other errors, retry
+            lastError = error
+            signUpAttempts++
+            await new Promise((resolve) => setTimeout(resolve, 1000 * signUpAttempts))
+            continue
           }
-        } catch (profileError) {
-          console.error("Error checking/creating profile during sign-up:", profileError)
-          // Don't fail the sign-up process if profile creation fails
-          // We'll try again when the user signs in
+
+          console.log("Sign up successful:", data)
+
+          // The profile will be created automatically by the database trigger
+          // But we'll check and create it manually if needed as a fallback
+          if (data.user) {
+            try {
+              // Wait a moment to allow the trigger to run
+              await new Promise((resolve) => setTimeout(resolve, 1000))
+
+              console.log(`Checking if profile was created for user: ${data.user.id}`)
+              const profile = await fetchProfile(data.user.id)
+
+              if (profile) {
+                console.log("Profile exists:", profile)
+              } else {
+                console.warn("Profile not created by trigger, creating manually")
+                const newProfile = await ensureProfile(data.user.id)
+
+                if (!newProfile) {
+                  console.error("Failed to create profile manually")
+                  // Don't fail the sign-up process, but log the error
+                  toast({
+                    title: "Account created",
+                    description:
+                      "Your account was created, but there was an issue setting up your profile. Some features may be limited until you complete your profile.",
+                    variant: "warning",
+                  })
+                }
+              }
+            } catch (profileError) {
+              console.error("Error checking/creating profile during sign-up:", profileError)
+              // Don't fail the sign-up process if profile creation fails
+              // We'll try again when the user signs in
+            }
+          }
+
+          toast({
+            title: "Sign up successful",
+            description: "Please check your email to verify your account.",
+          })
+
+          return { error: null, data }
+        } catch (error: any) {
+          console.error(`Sign up attempt ${signUpAttempts + 1} failed:`, error)
+          lastError = error
+          signUpAttempts++
+          await new Promise((resolve) => setTimeout(resolve, 1000 * signUpAttempts))
         }
       }
 
+      // If we get here, all attempts failed
+      console.error(`Sign up failed after ${maxSignUpAttempts} attempts`)
       toast({
-        title: "Sign up successful",
-        description: "Please check your email to verify your account.",
+        title: "Sign up failed",
+        description: lastError?.message || "An unexpected error occurred. Please try again later.",
+        variant: "destructive",
       })
-
-      return { error: null, data }
+      return { error: lastError, data: null }
     } catch (error: any) {
       console.error("Exception during sign up:", error)
       toast({
         title: "Sign up failed",
-        description: error.message || "An unexpected error occurred",
+        description: error.message || "An unexpected error occurred. Please try again later or contact support.",
         variant: "destructive",
       })
       return { error, data: null }

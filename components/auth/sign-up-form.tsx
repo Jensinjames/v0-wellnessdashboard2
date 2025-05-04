@@ -42,6 +42,7 @@ export function SignUpForm() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isSubmitted, setIsSubmitted] = useState(false)
   const [isCreatingProfile, setIsCreatingProfile] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
   const router = useRouter()
   const searchParams = useSearchParams()
   const { signUp } = useAuth()
@@ -77,7 +78,26 @@ export function SignUpForm() {
 
       if (signUpError) {
         console.error("Sign-up error:", signUpError)
-        setError(signUpError.message || "Failed to create account. Please try again.")
+
+        // Handle specific error cases
+        if (signUpError.message?.includes("already registered")) {
+          setError("This email is already registered. Please sign in instead.")
+        } else if (signUpError.message?.includes("database") || signUpError.message?.includes("Database")) {
+          // Database-specific errors
+          setError("There was an issue connecting to the database. Please try again later.")
+
+          // If this is a database error, we might want to retry after a short delay
+          if (retryCount < 2) {
+            setTimeout(() => {
+              setRetryCount(retryCount + 1)
+              form.handleSubmit(onSubmit)()
+            }, 2000)
+            return
+          }
+        } else {
+          setError(signUpError.message || "Failed to create account. Please try again.")
+        }
+
         setIsLoading(false)
         return
       }
@@ -348,5 +368,5 @@ export function SignUpForm() {
   )
 }
 
-// Add default export
+// Add default export to fix the deployment error
 export default SignUpForm
