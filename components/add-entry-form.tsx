@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form"
 import { format } from "date-fns"
 import { CalendarIcon } from "lucide-react"
 import * as z from "zod"
-import { useEffect } from "react"
+import { useEffect, useRef } from "react"
 import * as LucideIcons from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -44,6 +44,8 @@ interface AddEntryFormProps {
 export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormProps) {
   const { categories, addEntry, updateEntry } = useWellness()
   const enabledCategories = categories.filter((cat) => cat.enabled)
+  const statusRef = useRef<HTMLDivElement>(null)
+  const valueChangesRef = useRef<HTMLDivElement>(null)
 
   // Create a dynamic form schema based on categories
   const createFormSchema = () => {
@@ -108,10 +110,20 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
     if (entryToEdit) {
       const values = getDefaultValues()
       form.reset(values)
+
+      // Announce to screen readers
+      if (statusRef.current) {
+        statusRef.current.textContent = `Editing entry from ${format(new Date(entryToEdit.date), "MMMM d, yyyy")}`
+      }
     } else {
       form.reset(getDefaultValues())
+
+      // Announce to screen readers
+      if (statusRef.current && open) {
+        statusRef.current.textContent = "Adding a new wellness entry"
+      }
     }
-  }, [entryToEdit, form])
+  }, [entryToEdit, form, open])
 
   // Form submission handler
   function onSubmit(data: FormValues) {
@@ -139,8 +151,18 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
 
     if (entryToEdit) {
       updateEntry(entryToEdit.id, entryData)
+
+      // Announce to screen readers
+      if (statusRef.current) {
+        statusRef.current.textContent = `Entry for ${format(data.date, "MMMM d, yyyy")} has been updated successfully`
+      }
     } else {
       addEntry(entryData)
+
+      // Announce to screen readers
+      if (statusRef.current) {
+        statusRef.current.textContent = `New entry for ${format(data.date, "MMMM d, yyyy")} has been added successfully`
+      }
     }
 
     onOpenChange(false)
@@ -153,116 +175,146 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-        <DialogHeader>
-          <DialogTitle>{entryToEdit ? "Edit Wellness Entry" : "Add New Wellness Entry"}</DialogTitle>
-          <DialogDescription>
-            {entryToEdit
-              ? "Update your wellness entry details below."
-              : "Record your daily activities and metrics across all wellness categories."}
-          </DialogDescription>
-        </DialogHeader>
+    <>
+      {/* Hidden status announcer for screen readers */}
+      <div className="sr-only" aria-live="assertive" aria-atomic="true" ref={statusRef}></div>
 
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-            {/* Date Picker */}
-            <FormField
-              control={form.control}
-              name="date"
-              render={({ field }) => (
-                <FormItem className="flex flex-col">
-                  <FormLabel>Date</FormLabel>
-                  <Popover>
-                    <PopoverTrigger asChild>
-                      <FormControl>
-                        <Button
-                          variant={"outline"}
-                          className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}
-                        >
-                          {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
-                          <CalendarIcon className="ml-auto h-4 w-4 opacity-50" />
-                        </Button>
-                      </FormControl>
-                    </PopoverTrigger>
-                    <PopoverContent className="w-auto p-0" align="start">
-                      <Calendar
-                        mode="single"
-                        selected={field.value}
-                        onSelect={field.onChange}
-                        disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
-                        initialFocus
-                      />
-                    </PopoverContent>
-                  </Popover>
-                  <FormMessage />
-                </FormItem>
+      {/* Hidden value changes announcer for screen readers */}
+      <div className="sr-only" aria-live="polite" aria-atomic="true" ref={valueChangesRef}></div>
+
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>{entryToEdit ? "Edit Wellness Entry" : "Add New Wellness Entry"}</DialogTitle>
+            <DialogDescription>
+              {entryToEdit
+                ? "Update your wellness entry details below."
+                : "Record your daily activities and metrics across all wellness categories."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6" id="entry-form">
+              {/* Date Picker */}
+              <FormField
+                control={form.control}
+                name="date"
+                render={({ field }) => (
+                  <FormItem className="flex flex-col">
+                    <FormLabel htmlFor="entry-date">Date</FormLabel>
+                    <Popover>
+                      <PopoverTrigger asChild>
+                        <FormControl>
+                          <Button
+                            id="entry-date"
+                            variant={"outline"}
+                            className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}
+                            aria-label={field.value ? `Selected date: ${format(field.value, "PPP")}` : "Select a date"}
+                          >
+                            {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
+                            <CalendarIcon className="ml-auto h-4 w-4 opacity-50" aria-hidden="true" />
+                          </Button>
+                        </FormControl>
+                      </PopoverTrigger>
+                      <PopoverContent className="w-auto p-0" align="start">
+                        <Calendar
+                          mode="single"
+                          selected={field.value}
+                          onSelect={(date) => {
+                            field.onChange(date)
+                            // Announce date change to screen readers
+                            if (valueChangesRef.current && date) {
+                              valueChangesRef.current.textContent = `Date set to ${format(date, "MMMM d, yyyy")}`
+                            }
+                          }}
+                          disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
+                          initialFocus
+                        />
+                      </PopoverContent>
+                    </Popover>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              {/* Category Tabs */}
+              <Tabs defaultValue={enabledCategories[0]?.id} className="w-full">
+                <TabsList className="grid grid-cols-4 w-full">
+                  {enabledCategories.slice(0, 4).map((category) => (
+                    <TabsTrigger key={category.id} value={category.id} id={`tab-${category.id}`}>
+                      {category.name}
+                    </TabsTrigger>
+                  ))}
+                </TabsList>
+
+                {/* Generate tab content for each category */}
+                {enabledCategories.map((category) => (
+                  <TabsContent
+                    key={category.id}
+                    value={category.id}
+                    className="space-y-4 pt-4"
+                    id={`tabpanel-${category.id}`}
+                  >
+                    <div className={`bg-${category.color}-50 p-4 rounded-md space-y-4`}>
+                      <h3 className={`font-medium text-${category.color}-800`}>{category.name} Activities</h3>
+
+                      {/* Generate form fields for each metric in the category */}
+                      {category.metrics.map((metric) => (
+                        <MetricEntryField
+                          key={`${category.id}_${metric.id}`}
+                          category={category}
+                          metric={metric}
+                          form={form}
+                          valueChangesRef={valueChangesRef}
+                        />
+                      ))}
+                    </div>
+                  </TabsContent>
+                ))}
+              </Tabs>
+
+              {/* Additional categories section */}
+              {enabledCategories.length > 4 && (
+                <div className="space-y-4">
+                  <h3 className="text-lg font-medium">Additional Categories</h3>
+
+                  {enabledCategories.slice(4).map((category) => (
+                    <div key={category.id} className={`bg-${category.color}-50 p-4 rounded-md space-y-4 mb-4`}>
+                      <h3 className={`font-medium text-${category.color}-800`}>{category.name} Activities</h3>
+
+                      {/* Generate form fields for each metric in the category */}
+                      {category.metrics.map((metric) => (
+                        <MetricEntryField
+                          key={`${category.id}_${metric.id}`}
+                          category={category}
+                          metric={metric}
+                          form={form}
+                          valueChangesRef={valueChangesRef}
+                        />
+                      ))}
+                    </div>
+                  ))}
+                </div>
               )}
-            />
 
-            {/* Category Tabs */}
-            <Tabs defaultValue={enabledCategories[0]?.id} className="w-full">
-              <TabsList className="grid grid-cols-4 w-full">
-                {enabledCategories.slice(0, 4).map((category) => (
-                  <TabsTrigger key={category.id} value={category.id}>
-                    {category.name}
-                  </TabsTrigger>
-                ))}
-              </TabsList>
-
-              {/* Generate tab content for each category */}
-              {enabledCategories.map((category) => (
-                <TabsContent key={category.id} value={category.id} className="space-y-4 pt-4">
-                  <div className={`bg-${category.color}-50 p-4 rounded-md space-y-4`}>
-                    <h3 className={`font-medium text-${category.color}-800`}>{category.name} Activities</h3>
-
-                    {/* Generate form fields for each metric in the category */}
-                    {category.metrics.map((metric) => (
-                      <MetricEntryField
-                        key={`${category.id}_${metric.id}`}
-                        category={category}
-                        metric={metric}
-                        form={form}
-                      />
-                    ))}
-                  </div>
-                </TabsContent>
-              ))}
-            </Tabs>
-
-            {/* Additional categories section */}
-            {enabledCategories.length > 4 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">Additional Categories</h3>
-
-                {enabledCategories.slice(4).map((category) => (
-                  <div key={category.id} className={`bg-${category.color}-50 p-4 rounded-md space-y-4 mb-4`}>
-                    <h3 className={`font-medium text-${category.color}-800`}>{category.name} Activities</h3>
-
-                    {/* Generate form fields for each metric in the category */}
-                    {category.metrics.map((metric) => (
-                      <MetricEntryField
-                        key={`${category.id}_${metric.id}`}
-                        category={category}
-                        metric={metric}
-                        form={form}
-                      />
-                    ))}
-                  </div>
-                ))}
-              </div>
-            )}
-
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-                Cancel
-              </Button>
-              <Button type="submit">{entryToEdit ? "Update" : "Save"} Entry</Button>
-            </DialogFooter>
-          </form>
-        </Form>
-      </DialogContent>
-    </Dialog>
+              <DialogFooter>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => onOpenChange(false)}
+                  aria-label="Cancel entry form"
+                >
+                  Cancel
+                </Button>
+                <Button type="submit" aria-label={entryToEdit ? "Update entry" : "Save entry"}>
+                  {entryToEdit ? "Update" : "Save"} Entry
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        </DialogContent>
+      </Dialog>
+    </>
   )
 }
 
@@ -279,10 +331,24 @@ interface MetricEntryFieldProps {
     step: number
   }
   form: any
+  valueChangesRef: React.RefObject<HTMLDivElement>
 }
 
-function MetricEntryField({ category, metric, form }: MetricEntryFieldProps) {
+function MetricEntryField({ category, metric, form, valueChangesRef }: MetricEntryFieldProps) {
   const fieldName = `${category.id}_${metric.id}` as any
+  const fieldId = `${category.id}-${metric.id}`
+
+  // Announce value changes to screen readers
+  const announceValueChange = (value: number) => {
+    if (valueChangesRef.current) {
+      const unitLabel =
+        metric.unit === "level" && metric.id === "stressLevel"
+          ? getStressLevelLabel(value)
+          : getUnitLabel(metric.unit, value)
+
+      valueChangesRef.current.textContent = `${metric.name} set to ${value} ${unitLabel}`
+    }
+  }
 
   // Render different input types based on the metric unit
   if (metric.unit === "count") {
@@ -292,15 +358,23 @@ function MetricEntryField({ category, metric, form }: MetricEntryFieldProps) {
         name={fieldName}
         render={({ field }) => (
           <FormItem>
-            <FormLabel>{metric.name}</FormLabel>
+            <FormLabel htmlFor={fieldId}>{metric.name}</FormLabel>
             <FormControl>
               <Input
+                id={fieldId}
                 type="number"
                 min={metric.min}
                 max={metric.max}
                 step={metric.step}
                 {...field}
-                onChange={(e) => field.onChange(Number(e.target.value))}
+                onChange={(e) => {
+                  const value = Number(e.target.value)
+                  field.onChange(value)
+                  announceValueChange(value)
+                }}
+                aria-valuemin={metric.min}
+                aria-valuemax={metric.max}
+                aria-valuenow={field.value}
               />
             </FormControl>
             <FormMessage />
@@ -318,7 +392,7 @@ function MetricEntryField({ category, metric, form }: MetricEntryFieldProps) {
       render={({ field }) => (
         <FormItem>
           <div className="flex justify-between">
-            <FormLabel>{metric.name}</FormLabel>
+            <FormLabel htmlFor={fieldId}>{metric.name}</FormLabel>
             <span className="text-sm">
               {metric.unit === "level" && metric.id === "stressLevel"
                 ? `${field.value} - ${getStressLevelLabel(field.value)}`
@@ -327,11 +401,15 @@ function MetricEntryField({ category, metric, form }: MetricEntryFieldProps) {
           </div>
           <FormControl>
             <Slider
+              id={fieldId}
               min={metric.min}
               max={metric.max}
               step={metric.step}
               value={[field.value]}
-              onValueChange={(value) => field.onChange(value[0])}
+              onValueChange={(value) => {
+                field.onChange(value[0])
+                announceValueChange(value[0])
+              }}
               className="py-4"
               aria-label={`${metric.name} value: ${field.value}`}
               aria-valuemin={metric.min}

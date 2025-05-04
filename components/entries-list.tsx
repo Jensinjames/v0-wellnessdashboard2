@@ -150,12 +150,15 @@ export function EntriesList({ onEdit }: EntriesListProps) {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="h-9 w-[200px] pl-8"
+                aria-label="Search entries by date"
+                id="entries-search"
               />
               <svg
                 xmlns="http://www.w3.org/2000/svg"
                 viewBox="0 0 20 20"
                 fill="currentColor"
                 className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground"
+                aria-hidden="true"
               >
                 <path
                   fillRule="evenodd"
@@ -164,13 +167,15 @@ export function EntriesList({ onEdit }: EntriesListProps) {
                 />
               </svg>
             </div>
-            <Button variant="outline" size="sm" className="h-9 gap-1">
-              <Filter className="h-4 w-4" />
+            <Button variant="outline" size="sm" className="h-9 gap-1" id="filter-button">
+              <Filter className="h-4 w-4" aria-hidden="true" />
               <span className="hidden sm:inline">Filter</span>
+              <span className="sr-only sm:hidden">Filter entries</span>
             </Button>
-            <Button variant="outline" size="sm" className="h-9 gap-1">
-              <ArrowUpDown className="h-4 w-4" />
+            <Button variant="outline" size="sm" className="h-9 gap-1" id="sort-button">
+              <ArrowUpDown className="h-4 w-4" aria-hidden="true" />
               <span className="hidden sm:inline">Sort</span>
+              <span className="sr-only sm:hidden">Sort entries</span>
             </Button>
           </div>
         </div>
@@ -182,6 +187,7 @@ export function EntriesList({ onEdit }: EntriesListProps) {
               <TabsTrigger
                 value="recent"
                 className="relative rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                id="tab-recent"
               >
                 All Entries
                 <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
@@ -191,6 +197,7 @@ export function EntriesList({ onEdit }: EntriesListProps) {
               <TabsTrigger
                 value="thisWeek"
                 className="relative rounded-none border-b-2 border-transparent px-4 py-3 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                id="tab-thisWeek"
               >
                 This Week
                 <span className="ml-2 rounded-full bg-muted px-2 py-0.5 text-xs font-medium">
@@ -200,7 +207,7 @@ export function EntriesList({ onEdit }: EntriesListProps) {
             </TabsList>
           </div>
 
-          <TabsContent value="recent" className="m-0">
+          <TabsContent value="recent" className="m-0" id="panel-recent">
             <EntriesTable
               entries={filteredEntries}
               onEdit={onEdit}
@@ -214,7 +221,7 @@ export function EntriesList({ onEdit }: EntriesListProps) {
             />
           </TabsContent>
 
-          <TabsContent value="thisWeek" className="m-0">
+          <TabsContent value="thisWeek" className="m-0" id="panel-thisWeek">
             {filteredWeekEntries.length > 0 ? (
               <EntriesTable
                 entries={filteredWeekEntries}
@@ -266,10 +273,10 @@ export function EntriesList({ onEdit }: EntriesListProps) {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} id="cancel-delete-button">
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleDelete}>
+            <Button variant="destructive" onClick={handleDelete} id="confirm-delete-button">
               Delete
             </Button>
           </DialogFooter>
@@ -324,12 +331,16 @@ function EntriesTable({
           {entries.length > 0 ? (
             entries.map((entry) => {
               const overallScore = getOverallScore(entry)
+              const entryDate = format(new Date(entry.date), "MMM d, yyyy")
+              const entryId = entry.id
 
               return (
-                <TableRow key={entry.id} className="group">
-                  <TableCell className="font-medium">{format(new Date(entry.date), "MMM d, yyyy")}</TableCell>
+                <TableRow key={entryId} className="group">
+                  <TableCell className="font-medium">{entryDate}</TableCell>
                   <TableCell>
-                    <Badge className={`${getScoreBadgeColor(overallScore)} shadow-sm`}>{overallScore}%</Badge>
+                    <Badge className={`${getScoreBadgeColor(overallScore)} shadow-sm text-white`}>
+                      {overallScore}%
+                    </Badge>
                   </TableCell>
                   {enabledCategories.map((category) => {
                     const categoryScore = getCategoryScore(entry, category.id)
@@ -350,23 +361,23 @@ function EntriesTable({
                         variant="ghost"
                         size="icon"
                         onClick={() => onEdit(entry)}
-                        title="Edit entry"
                         className="h-8 w-8 rounded-full"
-                        aria-label={`Edit entry from ${format(new Date(entry.date), "MMM d, yyyy")}`}
+                        aria-label={`Edit entry from ${entryDate}`}
+                        id={`edit-entry-${entryId}`}
                       >
                         <Edit2 className="h-4 w-4" aria-hidden="true" />
-                        <span className="sr-only">Edit entry from {format(new Date(entry.date), "MMM d, yyyy")}</span>
+                        <span className="sr-only">Edit entry from {entryDate}</span>
                       </Button>
                       <Button
                         variant="ghost"
                         size="icon"
-                        onClick={() => onDelete(entry.id)}
-                        title="Delete entry"
+                        onClick={() => onDelete(entryId)}
                         className="h-8 w-8 rounded-full text-red-500 hover:bg-red-50 hover:text-red-600"
-                        aria-label={`Delete entry from ${format(new Date(entry.date), "MMM d, yyyy")}`}
+                        aria-label={`Delete entry from ${entryDate}`}
+                        id={`delete-entry-${entryId}`}
                       >
                         <Trash2 className="h-4 w-4" aria-hidden="true" />
-                        <span className="sr-only">Delete entry from {format(new Date(entry.date), "MMM d, yyyy")}</span>
+                        <span className="sr-only">Delete entry from {entryDate}</span>
                       </Button>
                     </div>
                   </TableCell>
@@ -383,6 +394,7 @@ function EntriesTable({
                       viewBox="0 0 20 20"
                       fill="currentColor"
                       className="h-6 w-6 text-muted-foreground"
+                      aria-hidden="true"
                     >
                       <path
                         fillRule="evenodd"

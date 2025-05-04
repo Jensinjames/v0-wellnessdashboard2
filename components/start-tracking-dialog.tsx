@@ -68,13 +68,13 @@ export function StartTrackingDialog({ open, onOpenChange }: StartTrackingDialogP
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6" id="tracking-form">
             <FormField
               control={form.control}
               name="categoryId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Category</FormLabel>
+                  <FormLabel htmlFor="tracking-category">Category</FormLabel>
                   <Select
                     onValueChange={(value) => {
                       field.onChange(value)
@@ -85,7 +85,7 @@ export function StartTrackingDialog({ open, onOpenChange }: StartTrackingDialogP
                     defaultValue={field.value}
                   >
                     <FormControl>
-                      <SelectTrigger aria-label="Select wellness category">
+                      <SelectTrigger id="tracking-category" aria-label="Select wellness category">
                         <SelectValue placeholder="Select a category" />
                       </SelectTrigger>
                     </FormControl>
@@ -107,10 +107,10 @@ export function StartTrackingDialog({ open, onOpenChange }: StartTrackingDialogP
               name="metricId"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Metric</FormLabel>
+                  <FormLabel htmlFor="tracking-metric">Metric</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!selectedCategoryId}>
                     <FormControl>
-                      <SelectTrigger aria-label="Select metric to track">
+                      <SelectTrigger id="tracking-metric" aria-label="Select metric to track">
                         <SelectValue placeholder="Select a metric" />
                       </SelectTrigger>
                     </FormControl>
@@ -132,9 +132,14 @@ export function StartTrackingDialog({ open, onOpenChange }: StartTrackingDialogP
               name="notes"
               render={({ field }) => (
                 <FormItem>
-                  <FormLabel>Notes (Optional)</FormLabel>
+                  <FormLabel htmlFor="tracking-notes">Notes (Optional)</FormLabel>
                   <FormControl>
-                    <Textarea placeholder="Add notes about this activity..." className="resize-none" {...field} />
+                    <Textarea
+                      id="tracking-notes"
+                      placeholder="Add notes about this activity..."
+                      className="resize-none"
+                      {...field}
+                    />
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -142,11 +147,11 @@ export function StartTrackingDialog({ open, onOpenChange }: StartTrackingDialogP
             />
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)} id="cancel-tracking-button">
                 Cancel
               </Button>
-              <Button type="submit">
-                <Play className="mr-1 h-4 w-4" />
+              <Button type="submit" id="start-tracking-button">
+                <Play className="mr-1 h-4 w-4" aria-hidden="true" />
                 Start Tracking
               </Button>
             </DialogFooter>

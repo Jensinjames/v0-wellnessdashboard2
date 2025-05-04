@@ -45,7 +45,7 @@ export function CategoryCard({
   const bgColorClass = getCategoryColorClass({ ...category, metrics: [] }, "bg")
 
   // Safely handle color classes
-  const safeColorClass = colorClass || "text-gray-600 dark:text-gray-400"
+  const safeColorClass = colorClass || "text-gray-700 dark:text-gray-300"
   const safeBgColorClass = bgColorClass || "bg-gray-100 dark:bg-gray-800"
   const lightBgColorClass = safeBgColorClass.replace(/600|500/g, "100").replace(/800/g, "700")
 
@@ -57,15 +57,18 @@ export function CategoryCard({
   const renderTrendIcon = (type: string, className: string) => {
     switch (type) {
       case "up":
-        return <ArrowUpIcon className={className} />
+        return <ArrowUpIcon className={className} aria-hidden="true" />
       case "down":
-        return <ArrowDownIcon className={className} />
+        return <ArrowDownIcon className={className} aria-hidden="true" />
       case "minus":
-        return <MinusIcon className={className} />
+        return <MinusIcon className={className} aria-hidden="true" />
       default:
         return null
     }
   }
+
+  const cardId = `category-card-${category.id}`
+  const progressId = `category-progress-${category.id}`
 
   return (
     <Card
@@ -81,6 +84,10 @@ export function CategoryCard({
         category.name.toLowerCase().includes("faith") && "card-shadow-blue",
       )}
       onClick={interactive ? () => onCardClick(category.id) : undefined}
+      id={cardId}
+      role={interactive ? "button" : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      aria-expanded={interactive ? isExpanded : undefined}
     >
       <CardContent className={cn("p-4", isSmallMobile ? "p-3" : "", "h-full flex flex-col")}>
         <div className="flex items-center justify-between mb-3">
@@ -100,6 +107,7 @@ export function CategoryCard({
           className="h-2 mb-3 bg-gray-100"
           indicatorClassName={safeBgColorClass}
           aria-label={`${category.name} progress: ${Math.round(category.progress)}%`}
+          id={progressId}
         />
 
         <div
@@ -129,34 +137,40 @@ export function CategoryCard({
         {shouldShowSubcategories && (
           <div className={cn("mt-4 space-y-3 flex-grow", isSmallMobile ? "mt-3 space-y-2" : "")}>
             <VisuallyHidden>Subcategory breakdown</VisuallyHidden>
-            {category.subcategories.map((subcategory) => (
-              <div key={subcategory.id} className="space-y-1">
-                <div className={cn("flex items-center justify-between", isSmallMobile ? "text-xs" : "text-xs")}>
-                  <div className="truncate max-w-[60%]">{subcategory.name}</div>
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="font-medium">
-                          {formatValue(subcategory.current, subcategory.unit)} /{" "}
-                          {formatValue(subcategory.goal, subcategory.unit)}
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent>
-                        <p>Current: {formatValue(subcategory.current, subcategory.unit)}</p>
-                        <p>Goal: {formatValue(subcategory.goal, subcategory.unit)}</p>
-                        <p>Progress: {Math.round(subcategory.progress)}%</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
+            {category.subcategories.map((subcategory) => {
+              const subcategoryId = `subcategory-${category.id}-${subcategory.id}`
+              const subcategoryProgressId = `subcategory-progress-${category.id}-${subcategory.id}`
+
+              return (
+                <div key={subcategoryId} className="space-y-1" id={subcategoryId}>
+                  <div className={cn("flex items-center justify-between", isSmallMobile ? "text-xs" : "text-xs")}>
+                    <div className="truncate max-w-[60%]">{subcategory.name}</div>
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <div className="font-medium">
+                            {formatValue(subcategory.current, subcategory.unit)} /{" "}
+                            {formatValue(subcategory.goal, subcategory.unit)}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          <p>Current: {formatValue(subcategory.current, subcategory.unit)}</p>
+                          <p>Goal: {formatValue(subcategory.goal, subcategory.unit)}</p>
+                          <p>Progress: {Math.round(subcategory.progress)}%</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  </div>
+                  <Progress
+                    value={subcategory.progress}
+                    className={cn("h-1.5 bg-gray-100", isSmallMobile ? "h-1" : "")}
+                    indicatorClassName={safeBgColorClass}
+                    aria-label={`${subcategory.name} progress: ${Math.round(subcategory.progress)}%`}
+                    id={subcategoryProgressId}
+                  />
                 </div>
-                <Progress
-                  value={subcategory.progress}
-                  className={cn("h-1.5 bg-gray-100", isSmallMobile ? "h-1" : "")}
-                  indicatorClassName={safeBgColorClass}
-                  aria-label={`${subcategory.name} progress: ${Math.round(subcategory.progress)}%`}
-                />
-              </div>
-            ))}
+              )
+            })}
           </div>
         )}
 
@@ -170,6 +184,9 @@ export function CategoryCard({
                 e.stopPropagation()
                 onCardClick(category.id)
               }}
+              id={`toggle-details-${category.id}`}
+              aria-controls={cardId}
+              aria-expanded={isExpanded}
             >
               {isExpanded ? "Show Less" : "Show Details"}
             </Button>

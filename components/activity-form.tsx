@@ -92,20 +92,20 @@ export function ActivityForm() {
         <CardDescription>Record your wellness activities to track your progress over time.</CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6" id="activity-form">
           {Object.keys(errors).length > 0 && <FormErrorSummary errors={errors} />}
 
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="date">Date</Label>
-                <DatePicker date={date} setDate={setDate} />
+                <Label htmlFor="activity-date">Date</Label>
+                <DatePicker date={date} setDate={setDate} id="activity-date" />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="category">Category</Label>
+                <Label htmlFor="activity-category">Category</Label>
                 <Select value={category} onValueChange={setCategory}>
-                  <SelectTrigger id="category" aria-invalid={!!errors.category}>
+                  <SelectTrigger id="activity-category" aria-invalid={!!errors.category}>
                     <SelectValue placeholder="Select category" />
                   </SelectTrigger>
                   <SelectContent>
@@ -125,9 +125,9 @@ export function ActivityForm() {
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="duration">Duration (minutes)</Label>
+                <Label htmlFor="activity-duration">Duration (minutes)</Label>
                 <Input
-                  id="duration"
+                  id="activity-duration"
                   type="number"
                   min="1"
                   value={duration}
@@ -138,15 +138,18 @@ export function ActivityForm() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="intensity">Intensity (1-5)</Label>
+                <Label htmlFor="activity-intensity">Intensity (1-5)</Label>
                 <div className="pt-2">
                   <Slider
-                    id="intensity"
+                    id="activity-intensity"
                     min={1}
                     max={5}
                     step={1}
                     value={intensity}
                     onValueChange={setIntensity}
+                    aria-valuemin={1}
+                    aria-valuemax={5}
+                    aria-valuenow={intensity[0]}
                     aria-label={`Intensity level: ${intensity[0]} out of 5`}
                   />
                 </div>
@@ -160,11 +163,11 @@ export function ActivityForm() {
 
             <div className="space-y-2">
               <div className="flex justify-between items-center">
-                <Label htmlFor="notes">Notes</Label>
+                <Label htmlFor="activity-notes">Notes</Label>
                 <CharacterCounter value={notes} maxLength={200} />
               </div>
               <Textarea
-                id="notes"
+                id="activity-notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Add any additional notes about this activity..."
@@ -175,17 +178,27 @@ export function ActivityForm() {
             </div>
 
             <div className="flex items-center space-x-2">
-              <Switch id="reminder" checked={reminder} onCheckedChange={setReminder} />
-              <Label htmlFor="reminder">Set reminder for next time</Label>
+              <Switch
+                id="activity-reminder"
+                checked={reminder}
+                onCheckedChange={setReminder}
+                aria-label="Set reminder for next time"
+              />
+              <Label htmlFor="activity-reminder">Set reminder for next time</Label>
             </div>
           </div>
 
-          <Button type="submit" disabled={isSubmitting} className="w-full">
+          <Button type="submit" disabled={isSubmitting} className="w-full" id="save-activity-button">
             {isSubmitting ? "Saving..." : "Save Activity"}
           </Button>
 
           {submitSuccess && (
-            <div className="p-3 bg-green-50 text-green-700 rounded-md text-center" role="status" aria-live="polite">
+            <div
+              className="p-3 bg-green-50 text-green-700 rounded-md text-center"
+              role="status"
+              aria-live="polite"
+              id="success-message"
+            >
               Activity saved successfully!
             </div>
           )}
@@ -200,7 +213,7 @@ export function ActivityForm() {
               .slice(-3)
               .reverse()
               .map((activity) => (
-                <div key={activity.id} className="p-3 bg-muted rounded-md">
+                <div key={activity.id} className="p-3 bg-muted rounded-md" id={`activity-${activity.id}`}>
                   <div className="flex justify-between">
                     <span className="font-medium capitalize">{activity.category}</span>
                     <span className="text-sm text-muted-foreground">
