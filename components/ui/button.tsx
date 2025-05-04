@@ -46,11 +46,18 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     // Check if the button has only an icon as a child
     const hasOnlyIconChild =
-      React.Children.count(children) === 1 && React.isValidElement(children) && typeof children.type !== "string"
+      React.Children.count(children) === 1 &&
+      React.isValidElement(children) &&
+      // Check if it's a Lucide icon or similar component
+      ((typeof children.type === "function" && children.type.name && /icon/i.test(children.type.name)) ||
+        // Check if it's an SVG element
+        (typeof children.type === "string" && children.type.toLowerCase() === "svg") ||
+        // Check if it's a component with a display name containing 'icon'
+        (typeof children.type === "function" && children.type.displayName && /icon/i.test(children.type.displayName)))
 
     // If aria-label is not provided and the button has only an icon, warn in development
     if (process.env.NODE_ENV !== "production" && !props["aria-label"] && hasOnlyIconChild) {
-      console.warn("Button with only icon child should have an aria-label")
+      console.warn(`Button with only icon child should have an aria-label for accessibility. Button ID: ${buttonId}`)
     }
 
     return (

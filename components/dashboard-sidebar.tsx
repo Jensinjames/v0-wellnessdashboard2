@@ -1,151 +1,143 @@
 "use client"
 
-import type * as React from "react"
-import { BarChart3, Calendar, Clock, Home, LineChart, ListTodo, Settings, Timer, BarChart2 } from "lucide-react"
-import { useIsMobile } from "@/hooks/use-mobile"
-import {
-  Sidebar,
-  SidebarContent,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarGroupLabel,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuButton,
-  SidebarMenuItem,
-  SidebarProvider,
-  SidebarRail,
-  SidebarTrigger,
-} from "@/components/ui/sidebar"
-import { Button } from "@/components/ui/button"
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import type React from "react"
 
-export function DashboardSidebar({ children }: { children: React.ReactNode }) {
-  const isMobile = useIsMobile()
+import { useState } from "react"
+import Link from "next/link"
+import { usePathname } from "next/navigation"
+import { cn } from "@/lib/utils"
+import { BarChart3, Calendar, Settings, User, PieChart, Activity, Home, ChevronRight, ChevronLeft } from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { ScrollArea } from "@/components/ui/scroll-area"
+import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { useMobile } from "@/hooks/use-mobile"
+
+interface NavItem {
+  title: string
+  href: string
+  icon: React.ReactNode
+}
+
+export function DashboardSidebar() {
+  const pathname = usePathname()
+  const isMobile = useMobile()
+  const [isCollapsed, setIsCollapsed] = useState(false)
+
+  const navItems: NavItem[] = [
+    {
+      title: "Dashboard",
+      href: "/",
+      icon: <Home className="h-5 w-5" />,
+    },
+    {
+      title: "Activity",
+      href: "/activity",
+      icon: <Activity className="h-5 w-5" />,
+    },
+    {
+      title: "Categories",
+      href: "/categories",
+      icon: <PieChart className="h-5 w-5" />,
+    },
+    {
+      title: "Activity Patterns",
+      href: "/activity-patterns",
+      icon: <BarChart3 className="h-5 w-5" />,
+    },
+    {
+      title: "Calendar",
+      href: "/calendar",
+      icon: <Calendar className="h-5 w-5" />,
+    },
+    {
+      title: "Profile",
+      href: "/profile",
+      icon: <User className="h-5 w-5" />,
+    },
+    {
+      title: "Settings",
+      href: "/settings",
+      icon: <Settings className="h-5 w-5" />,
+    },
+  ]
+
+  const toggleCollapse = () => {
+    setIsCollapsed(!isCollapsed)
+  }
+
+  if (isMobile) {
+    return (
+      <Sheet>
+        <SheetTrigger asChild>
+          <Button variant="outline" size="icon" className="md:hidden">
+            <BarChart3 className="h-5 w-5" />
+            <span className="sr-only">Toggle navigation menu</span>
+          </Button>
+        </SheetTrigger>
+        <SheetContent side="left" className="w-72">
+          <div className="py-4">
+            <h2 className="px-4 text-lg font-semibold tracking-tight mb-4">Navigation</h2>
+            <ScrollArea className="h-[calc(100vh-8rem)]">
+              <div className="space-y-1 p-2">
+                {navItems.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all hover:bg-accent",
+                      pathname === item.href ? "bg-accent text-accent-foreground" : "text-muted-foreground",
+                    )}
+                  >
+                    {item.icon}
+                    {item.title}
+                  </Link>
+                ))}
+              </div>
+            </ScrollArea>
+          </div>
+        </SheetContent>
+      </Sheet>
+    )
+  }
 
   return (
-    <SidebarProvider defaultOpen={!isMobile}>
-      <div className="flex min-h-screen">
-        <Sidebar className="border-r">
-          <SidebarHeader className="flex flex-col gap-4 px-4 py-4">
-            <div className="flex items-center gap-2">
-              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-primary">
-                <BarChart3 className="h-4 w-4 text-primary-foreground" />
-              </div>
-              <span className="text-lg font-semibold">Wellness Dashboard</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Avatar className="h-8 w-8">
-                <AvatarImage src="/placeholder.svg?height=32&width=32" alt="User" />
-                <AvatarFallback>U</AvatarFallback>
-              </Avatar>
-              <div className="flex flex-col">
-                <span className="text-sm font-medium">User Profile</span>
-                <span className="text-xs text-muted-foreground">user@example.com</span>
-              </div>
-            </div>
-          </SidebarHeader>
-          <SidebarContent>
-            <SidebarGroup>
-              <SidebarGroupLabel>Dashboard</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild isActive>
-                      <a href="/">
-                        <Home className="h-4 w-4" />
-                        <span>Overview</span>
-                      </a>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <a href="/categories">
-                        <ListTodo className="h-4 w-4" />
-                        <span>Categories</span>
-                      </a>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <a href="/tracking">
-                        <Timer className="h-4 w-4" />
-                        <span>Time Tracking</span>
-                      </a>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <a href="/activity-patterns">
-                        <BarChart2 className="h-4 w-4" />
-                        <span>Activity Patterns</span>
-                      </a>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-            <SidebarGroup>
-              <SidebarGroupLabel>Analytics</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <a href="/trends">
-                        <LineChart className="h-4 w-4" />
-                        <span>Trends</span>
-                      </a>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <a href="/calendar">
-                        <Calendar className="h-4 w-4" />
-                        <span>Calendar</span>
-                      </a>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <a href="/history">
-                        <Clock className="h-4 w-4" />
-                        <span>History</span>
-                      </a>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-            <SidebarGroup>
-              <SidebarGroupLabel>Settings</SidebarGroupLabel>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  <SidebarMenuItem>
-                    <SidebarMenuButton asChild>
-                      <a href="/settings">
-                        <Settings className="h-4 w-4" />
-                        <span>Preferences</span>
-                      </a>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          </SidebarContent>
-          <SidebarRail />
-        </Sidebar>
-        <div className="flex-1">
-          <div className="sticky top-0 z-10 flex h-16 items-center gap-4 border-b bg-background px-4 md:px-6">
-            <SidebarTrigger />
-            <div className="ml-auto flex items-center gap-2">
-              <Button variant="outline" size="sm">
-                Help
-              </Button>
-            </div>
-          </div>
-          <main className="flex-1">{children}</main>
-        </div>
+    <div
+      className={cn(
+        "flex flex-col border-r bg-background transition-all duration-300",
+        isCollapsed ? "w-[70px]" : "w-[240px]",
+      )}
+    >
+      <div className="flex h-14 items-center px-4 py-2 border-b">
+        {!isCollapsed && <h2 className="text-lg font-semibold tracking-tight">Navigation</h2>}
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn("ml-auto", isCollapsed && "mx-auto")}
+          onClick={toggleCollapse}
+          aria-label={isCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+        >
+          {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronLeft className="h-4 w-4" />}
+        </Button>
       </div>
-    </SidebarProvider>
+      <ScrollArea className="flex-1">
+        <div className={cn("space-y-1 p-2", isCollapsed && "flex flex-col items-center p-1")}>
+          {navItems.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className={cn(
+                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all hover:bg-accent",
+                pathname === item.href ? "bg-accent text-accent-foreground" : "text-muted-foreground",
+                isCollapsed && "flex h-10 w-10 justify-center p-0",
+              )}
+              title={isCollapsed ? item.title : undefined}
+            >
+              {item.icon}
+              {!isCollapsed && <span>{item.title}</span>}
+            </Link>
+          ))}
+        </div>
+      </ScrollArea>
+    </div>
   )
 }

@@ -14,8 +14,12 @@ import { TrackingProvider } from "@/context/tracking-context"
 import type { WellnessEntryData } from "@/types/wellness"
 import { Button } from "@/components/ui/button"
 import { BarChart3, Grid2X2 } from "lucide-react"
+import { isSupabaseConfigured } from "@/lib/supabase"
+import { SupabaseError } from "@/components/supabase-error"
+import { Header } from "@/components/nav/header"
 
-export default function Dashboard() {
+export default function Home() {
+  const supabaseConfigured = isSupabaseConfigured()
   const [isAddEntryOpen, setIsAddEntryOpen] = useState(false)
   const [entryToEdit, setEntryToEdit] = useState<WellnessEntryData | null>(null)
   const [comparisonMode, setComparisonMode] = useState(false)
@@ -38,82 +42,93 @@ export default function Dashboard() {
   }
 
   return (
-    <WellnessProvider>
-      <TrackingProvider>
-        <div className="min-h-screen bg-gray-50">
-          <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-            <div className="space-y-6">
-              <DashboardHeader onAddEntry={handleAddNewEntry} />
+    <div>
+      <Header />
+      <main className="container py-6">
+        <h1 className="text-3xl font-bold mb-6">Welcome to Wellness Dashboard</h1>
+        <p className="text-lg text-muted-foreground">
+          Track and manage your wellness activities to improve your overall health and wellbeing.
+        </p>
+      </main>
+      {!supabaseConfigured && <SupabaseError />}
 
-              <div className="grid gap-6">
-                <section>
-                  <h2 className="mb-3 text-sm font-medium">Daily Overview</h2>
-                  <DailyMetrics />
-                </section>
+      <WellnessProvider>
+        <TrackingProvider>
+          <div className="min-h-screen bg-gray-50">
+            <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
+              <div className="space-y-6">
+                <DashboardHeader onAddEntry={handleAddNewEntry} />
 
-                <section>
-                  <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-sm font-medium">Category Performance</h2>
-                    <div className="flex items-center gap-2">
-                      <div className="text-xs text-muted-foreground mr-2">
-                        {comparisonMode ? "Comparison Mode" : "Daily Progress"}
+                <div className="grid gap-6">
+                  <section>
+                    <h2 className="mb-3 text-sm font-medium">Daily Overview</h2>
+                    <DailyMetrics />
+                  </section>
+
+                  <section>
+                    <div className="flex items-center justify-between mb-3">
+                      <h2 className="text-sm font-medium">Category Performance</h2>
+                      <div className="flex items-center gap-2">
+                        <div className="text-xs text-muted-foreground mr-2">
+                          {comparisonMode ? "Comparison Mode" : "Daily Progress"}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          className="h-8 gap-1"
+                          onClick={toggleComparisonMode}
+                          aria-pressed={comparisonMode}
+                          aria-label={comparisonMode ? "Switch to standard view" : "Switch to comparison view"}
+                        >
+                          {comparisonMode ? (
+                            <>
+                              <Grid2X2 className="h-4 w-4" />
+                              <span className="hidden sm:inline">Standard View</span>
+                            </>
+                          ) : (
+                            <>
+                              <BarChart3 className="h-4 w-4" />
+                              <span className="hidden sm:inline">Compare Categories</span>
+                            </>
+                          )}
+                        </Button>
                       </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-1"
-                        onClick={toggleComparisonMode}
-                        aria-pressed={comparisonMode}
-                        aria-label={comparisonMode ? "Switch to standard view" : "Switch to comparison view"}
-                      >
-                        {comparisonMode ? (
-                          <>
-                            <Grid2X2 className="h-4 w-4" />
-                            <span className="hidden sm:inline">Standard View</span>
-                          </>
-                        ) : (
-                          <>
-                            <BarChart3 className="h-4 w-4" />
-                            <span className="hidden sm:inline">Compare Categories</span>
-                          </>
-                        )}
-                      </Button>
                     </div>
-                  </div>
-                  <CategoryOverview
-                    showGoals={true}
-                    showTimeAllocations={true}
-                    showSubcategoryProgress={true}
-                    interactive={!comparisonMode}
-                    maxCategories={7}
-                    comparisonMode={comparisonMode}
-                  />
-                </section>
+                    <CategoryOverview
+                      showGoals={true}
+                      showTimeAllocations={true}
+                      showSubcategoryProgress={true}
+                      interactive={!comparisonMode}
+                      maxCategories={7}
+                      comparisonMode={comparisonMode}
+                    />
+                  </section>
 
-                <section>
-                  <ActiveTracking />
-                </section>
+                  <section>
+                    <ActiveTracking />
+                  </section>
 
-                <section>
-                  <h2 className="mb-3 text-sm font-medium">Detailed Analysis</h2>
-                  <CategoryDetails />
-                </section>
+                  <section>
+                    <h2 className="mb-3 text-sm font-medium">Detailed Analysis</h2>
+                    <CategoryDetails />
+                  </section>
 
-                <section>
-                  <h2 className="mb-3 text-sm font-medium">Wellness Trends</h2>
-                  <WellnessTrends />
-                </section>
+                  <section>
+                    <h2 className="mb-3 text-sm font-medium">Wellness Trends</h2>
+                    <WellnessTrends />
+                  </section>
 
-                <section>
-                  <EntriesList onEdit={handleEditEntry} />
-                </section>
+                  <section>
+                    <EntriesList onEdit={handleEditEntry} />
+                  </section>
+                </div>
               </div>
             </div>
-          </div>
 
-          <AddEntryForm open={isAddEntryOpen} onOpenChange={setIsAddEntryOpen} entryToEdit={entryToEdit} />
-        </div>
-      </TrackingProvider>
-    </WellnessProvider>
+            <AddEntryForm open={isAddEntryOpen} onOpenChange={setIsAddEntryOpen} entryToEdit={entryToEdit} />
+          </div>
+        </TrackingProvider>
+      </WellnessProvider>
+    </div>
   )
 }
