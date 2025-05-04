@@ -1,4 +1,5 @@
 "use client"
+
 import { useRef } from "react"
 
 // A map to track used IDs and prevent duplicates
@@ -31,6 +32,11 @@ export function generateUniqueId(baseId: string): string {
 
 let globalId = 0
 
+/**
+ * React hook that returns a unique ID.
+ * IMPORTANT: This hook can ONLY be used in client components.
+ * Add "use client" directive to any file that uses this hook.
+ */
 export function useUniqueId(prefix = "id"): string {
   const idRef = useRef<string | null>(null)
 
