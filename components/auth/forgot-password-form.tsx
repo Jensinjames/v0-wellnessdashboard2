@@ -7,12 +7,13 @@ import { z } from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useAuth } from "@/context/auth-context"
-import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle, Loader2 } from "lucide-react"
+import { AlertCircle } from "lucide-react"
+import { FormLoadingButton } from "@/components/auth/form-loading-button"
+import { Button } from "@/components/ui/button"
 
 const forgotPasswordSchema = z.object({
   email: z.string().email("Please enter a valid email address"),
@@ -57,7 +58,7 @@ export function ForgotPasswordForm() {
 
   if (isSubmitted) {
     return (
-      <Card className="w-full max-w-md mx-auto">
+      <>
         <CardHeader>
           <CardTitle>Check your email</CardTitle>
           <CardDescription>We've sent a password reset link to your email address.</CardDescription>
@@ -70,12 +71,12 @@ export function ForgotPasswordForm() {
             <Button variant="outline">Back to sign in</Button>
           </Link>
         </CardFooter>
-      </Card>
+      </>
     )
   }
 
   return (
-    <Card className="w-full max-w-md mx-auto">
+    <>
       <CardHeader>
         <CardTitle>Forgot password</CardTitle>
         <CardDescription>Enter your email to reset your password</CardDescription>
@@ -102,16 +103,9 @@ export function ForgotPasswordForm() {
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Sending reset link...
-                </>
-              ) : (
-                "Send reset link"
-              )}
-            </Button>
+            <FormLoadingButton isLoading={isLoading} loadingText="Sending reset link...">
+              Send reset link
+            </FormLoadingButton>
           </form>
         </Form>
       </CardContent>
@@ -123,6 +117,6 @@ export function ForgotPasswordForm() {
           </Link>
         </p>
       </CardFooter>
-    </Card>
+    </>
   )
 }

@@ -12,11 +12,13 @@ export interface SignUpCredentials {
   email: string
   password: string
   full_name?: string
+  persistSession?: boolean
 }
 
 export interface SignInCredentials {
   email: string
   password: string
+  persistSession?: boolean
 }
 
 export interface PasswordUpdateData {
@@ -41,7 +43,7 @@ interface AuthContextType {
   isLoading: boolean
   signUp: (credentials: SignUpCredentials) => Promise<{ error: any | null; data: any | null }>
   signIn: (credentials: SignInCredentials) => Promise<{ error: any | null; data: any | null }>
-  signOut: () => Promise<void>
+  signOut: (redirectTo?: string) => Promise<void>
   updatePassword: (data: PasswordUpdateData) => Promise<{ error: any | null }>
   resetPassword: (email: string) => Promise<{ error: any | null }>
   refreshProfile: () => Promise<void>
@@ -221,15 +223,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * Signs up a new user with email, password, and optional full name.
    * Displays appropriate toast notifications for success or failure.
    */
-  const signUp = async (credentials: SignUpCredentials) => {
+  const signUp = async ({ email, password, full_name, persistSession = false }: SignUpCredentials) => {
     try {
       const { data, error } = await supabase.auth.signUp({
-        email: credentials.email,
-        password: credentials.password,
+        email,
+        password,
         options: {
           data: {
-            full_name: credentials.full_name || "",
+            full_name: full_name || "",
           },
+          emailRedirectTo: `${window.location.origin}/auth/verify-email`,
+          // Set persistence based on the persistSession flag
+          persistSession,
         },
       })
 
@@ -261,11 +266,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * Signs in a user with email and password.
    * Ensures a profile exists for the user and displays appropriate toast notifications.
    */
-  const signIn = async (credentials: SignInCredentials) => {
+  const signIn = async ({ email, password, persistSession = false }: SignInCredentials) => {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
-        email: credentials.email,
-        password: credentials.password,
+        email,
+        password,
+        options: {
+          // Set persistence based on the persistSession flag
+          persistSession,
+        },
       })
 
       if (error) {
@@ -302,7 +311,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * Signs out the current user and redirects to the sign-in page.
    * Displays appropriate toast notifications for success or failure.
    */
-  const signOut = async () => {
+  const signOut = async (redirectTo = "/auth/sign-in") => {
     try {
       const { error } = await supabase.auth.signOut()
 
@@ -315,7 +324,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
-      router.push("/auth/sign-in")
+      router.push(redirectTo)
       toast({
         title: "Sign out successful",
         description: "You have been successfully signed out.",

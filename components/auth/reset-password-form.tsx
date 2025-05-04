@@ -6,11 +6,15 @@ import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
 import { z } from "zod"
 
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
+import { Button } from "@/components/ui/button"
+import { Eye, EyeOff } from "lucide-react"
+import { FormLoadingButton } from "@/components/auth/form-loading-button"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AlertCircle } from "lucide-react"
 
 const resetPasswordSchema = z
   .object({
@@ -28,6 +32,9 @@ type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>
 
 export function ResetPasswordForm() {
   const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const router = useRouter()
   const { toast } = useToast()
 
@@ -41,6 +48,7 @@ export function ResetPasswordForm() {
 
   async function onSubmit(data: ResetPasswordFormValues) {
     setIsLoading(true)
+    setError(null)
 
     try {
       // Here you would typically call your API to reset the password
@@ -53,24 +61,26 @@ export function ResetPasswordForm() {
       })
 
       router.push("/auth/sign-in")
-    } catch (error) {
-      toast({
-        title: "Something went wrong",
-        description: "There was an error resetting your password. Please try again.",
-        variant: "destructive",
-      })
+    } catch (error: any) {
+      setError(error.message || "There was an error resetting your password. Please try again.")
     } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <Card className="w-full max-w-md">
+    <>
       <CardHeader>
         <CardTitle>Reset Password</CardTitle>
         <CardDescription>Enter your new password below to reset your password.</CardDescription>
       </CardHeader>
       <CardContent>
+        {error && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
             <FormField
@@ -80,7 +90,23 @@ export function ResetPasswordForm() {
                 <FormItem>
                   <FormLabel>New Password</FormLabel>
                   <FormControl>
-                    <Input type="password" placeholder="Enter your new password" {...field} />
+                    <div className="relative">
+                      <Input
+                        type={showPassword ? "text" : "password"}
+                        placeholder="Enter your new password"
+                        {...field}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3"
+                        onClick={() => setShowPassword(!showPassword)}
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                      >
+                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
@@ -93,15 +119,31 @@ export function ResetPasswordForm() {
                 <FormItem>
                   <FormLabel>Confirm Password</FormLabel>
                   <FormControl>
-                    <Input type="password" placeholder="Confirm your new password" {...field} />
+                    <div className="relative">
+                      <Input
+                        type={showConfirmPassword ? "text" : "password"}
+                        placeholder="Confirm your new password"
+                        {...field}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3"
+                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                        aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                      >
+                        {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </Button>
+                    </div>
                   </FormControl>
                   <FormMessage />
                 </FormItem>
               )}
             />
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? "Resetting..." : "Reset Password"}
-            </Button>
+            <FormLoadingButton isLoading={isLoading} loadingText="Resetting Password...">
+              Reset Password
+            </FormLoadingButton>
           </form>
         </Form>
       </CardContent>
@@ -110,6 +152,6 @@ export function ResetPasswordForm() {
           Back to Sign In
         </Button>
       </CardFooter>
-    </Card>
+    </>
   )
 }

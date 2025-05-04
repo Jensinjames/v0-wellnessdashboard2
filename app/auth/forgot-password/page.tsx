@@ -1,11 +1,14 @@
-"use client"
-
+import { Suspense } from "react"
 import { ForgotPasswordForm } from "@/components/auth/forgot-password-form"
+import { AuthLayout } from "@/components/auth/auth-layout"
+import { AuthFormLoading } from "@/components/auth/auth-layout"
 
 export default function ForgotPasswordPage() {
   return (
-    <div className="container flex h-screen items-center justify-center">
-      <ForgotPasswordForm />
-    </div>
+    <AuthLayout>
+      <Suspense fallback={<AuthFormLoading />}>
+        <ForgotPasswordForm />
+      </Suspense>
+    </AuthLayout>
   )
 }

@@ -10,27 +10,44 @@ export async function middleware(req: NextRequest) {
     data: { session },
   } = await supabase.auth.getSession()
 
+  // Get the pathname from the URL
+  const pathname = req.nextUrl.pathname
+
   // Protected routes
-  const protectedRoutes = ["/dashboard", "/profile", "/categories"]
-  const isProtectedRoute = protectedRoutes.some((route) => req.nextUrl.pathname.startsWith(route))
+  const protectedRoutes = ["/dashboard", "/profile", "/categories", "/activity", "/settings"]
+  const isProtectedRoute = protectedRoutes.some((route) => pathname.startsWith(route))
 
   // Auth routes that should redirect if already logged in
-  const authRoutes = ["/auth/sign-in", "/auth/sign-up"]
-  const isAuthRoute = authRoutes.some((route) => req.nextUrl.pathname.startsWith(route))
+  const authRoutes = ["/auth/sign-in", "/auth/sign-up", "/auth/forgot-password", "/auth/reset-password"]
+  const isAuthRoute = authRoutes.some((route) => pathname.startsWith(route))
 
   // Profile completion routes
   const profileCompletionRoutes = ["/profile/complete"]
-  const isProfileCompletionRoute = profileCompletionRoutes.some((route) => req.nextUrl.pathname.startsWith(route))
+  const isProfileCompletionRoute = profileCompletionRoutes.some((route) => pathname.startsWith(route))
+
+  // Store the original URL to redirect back after authentication
+  const returnToPath = pathname !== "/auth/sign-in" && pathname !== "/auth/sign-up" ? pathname : null
 
   // Handle authentication redirects
   if (isProtectedRoute && !session) {
     const redirectUrl = new URL("/auth/sign-in", req.url)
-    redirectUrl.searchParams.set("redirect", req.nextUrl.pathname)
+
+    // Add the return path as a query parameter if it exists
+    if (returnToPath) {
+      redirectUrl.searchParams.set("redirect", returnToPath)
+    }
+
     return NextResponse.redirect(redirectUrl)
   }
 
+  // Redirect authenticated users away from auth pages
   if (isAuthRoute && session) {
-    return NextResponse.redirect(new URL("/", req.url))
+    // Check if there's a redirect parameter
+    const redirectParam = req.nextUrl.searchParams.get("redirect")
+
+    // Redirect to the specified path or default to dashboard
+    const redirectPath = redirectParam || "/dashboard"
+    return NextResponse.redirect(new URL(redirectPath, req.url))
   }
 
   // Handle profile completion redirects
@@ -46,8 +63,16 @@ export async function middleware(req: NextRequest) {
       // If profile doesn't exist or has incomplete status, redirect to profile completion
       if (error || !profile || !profile.completion_status || !profile.completion_status.is_complete) {
         // Only redirect if not already on a profile completion page
-        if (!req.nextUrl.pathname.startsWith("/profile/complete")) {
-          return NextResponse.redirect(new URL("/profile/complete", req.url))
+        if (!pathname.startsWith("/profile/complete")) {
+          // Store the original URL to redirect back after profile completion
+          const redirectUrl = new URL("/profile/complete", req.url)
+
+          // Add the return path as a query parameter
+          if (returnToPath) {
+            redirectUrl.searchParams.set("redirect", returnToPath)
+          }
+
+          return NextResponse.redirect(redirectUrl)
         }
       }
     } catch (error) {

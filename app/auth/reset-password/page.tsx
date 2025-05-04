@@ -1,11 +1,14 @@
-"use client"
-
+import { Suspense } from "react"
 import { ResetPasswordForm } from "@/components/auth/reset-password-form"
+import { AuthLayout } from "@/components/auth/auth-layout"
+import { AuthFormLoading } from "@/components/auth/auth-layout"
 
 export default function ResetPasswordPage() {
   return (
-    <div className="container flex h-screen items-center justify-center">
-      <ResetPasswordForm />
-    </div>
+    <AuthLayout>
+      <Suspense fallback={<AuthFormLoading />}>
+        <ResetPasswordForm />
+      </Suspense>
+    </AuthLayout>
   )
 }

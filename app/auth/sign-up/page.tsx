@@ -1,9 +1,14 @@
+import { Suspense } from "react"
 import { SignUpForm } from "@/components/auth/sign-up-form"
+import { AuthLayout } from "@/components/auth/auth-layout"
+import { AuthFormLoading } from "@/components/auth/auth-layout"
 
 export default function SignUpPage() {
   return (
-    <div className="container flex h-screen items-center justify-center">
-      <SignUpForm />
-    </div>
+    <AuthLayout>
+      <Suspense fallback={<AuthFormLoading />}>
+        <SignUpForm />
+      </Suspense>
+    </AuthLayout>
   )
 }
