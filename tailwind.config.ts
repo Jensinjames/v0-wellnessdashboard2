@@ -68,11 +68,11 @@ const config: Config = {
           200: "#fecaca",
           300: "#fca5a5",
           400: "#f87171",
-          500: "#ef4444", // Darkened for better contrast
-          600: "#dc2626",
-          700: "#b91c1c",
-          800: "#991b1b",
-          900: "#7f1d1d",
+          500: "#dc2626", // Darkened for better contrast (was #ef4444)
+          600: "#b91c1c", // Darkened for better contrast (was #dc2626)
+          700: "#991b1b",
+          800: "#7f1d1d",
+          900: "#671818", // Added darker shade
         },
         green: {
           50: "#f0fdf4",
@@ -81,10 +81,10 @@ const config: Config = {
           300: "#86efac",
           400: "#4ade80",
           500: "#16a34a", // Darkened for better contrast (was #22c55e)
-          600: "#16a34a",
-          700: "#15803d",
-          800: "#166534",
-          900: "#14532d",
+          600: "#15803d", // Darkened for better contrast (was #16a34a)
+          700: "#166534",
+          800: "#14532d",
+          900: "#0f3d21", // Added darker shade
         },
         blue: {
           50: "#eff6ff",
@@ -93,10 +93,10 @@ const config: Config = {
           300: "#93c5fd",
           400: "#60a5fa",
           500: "#2563eb", // Darkened for better contrast (was #3b82f6)
-          600: "#2563eb",
-          700: "#1d4ed8",
-          800: "#1e40af",
-          900: "#1e3a8a",
+          600: "#1d4ed8", // Darkened for better contrast (was #2563eb)
+          700: "#1e40af",
+          800: "#1e3a8a",
+          900: "#172554", // Added darker shade
         },
         yellow: {
           50: "#fefce8",
@@ -105,10 +105,10 @@ const config: Config = {
           300: "#fde047",
           400: "#facc15",
           500: "#ca8a04", // Darkened for better contrast (was #eab308)
-          600: "#ca8a04",
-          700: "#a16207",
-          800: "#854d0e",
-          900: "#713f12",
+          600: "#a16207", // Darkened for better contrast (was #ca8a04)
+          700: "#854d0e",
+          800: "#713f12",
+          900: "#633112", // Added darker shade
         },
         purple: {
           50: "#faf5ff",
@@ -117,10 +117,10 @@ const config: Config = {
           300: "#d8b4fe",
           400: "#c084fc",
           500: "#9333ea", // Darkened for better contrast (was #a855f7)
-          600: "#9333ea",
-          700: "#7e22ce",
-          800: "#6b21a8",
-          900: "#581c87",
+          600: "#7e22ce", // Darkened for better contrast (was #9333ea)
+          700: "#6b21a8",
+          800: "#581c87",
+          900: "#4c1d95", // Added darker shade
         },
         orange: {
           50: "#fff7ed",
@@ -129,10 +129,10 @@ const config: Config = {
           300: "#fdba74",
           400: "#fb923c",
           500: "#ea580c", // Darkened for better contrast (was #f97316)
-          600: "#ea580c",
-          700: "#c2410c",
-          800: "#9a3412",
-          900: "#7c2d12",
+          600: "#c2410c", // Darkened for better contrast (was #ea580c)
+          700: "#9a3412",
+          800: "#7c2d12",
+          900: "#662211", // Added darker shade
         },
       },
       borderRadius: {

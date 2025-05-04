@@ -1,19 +1,26 @@
 "use client"
 import { BarChart3, Home, ListTodo, Settings, Timer } from "lucide-react"
 import { useIsMobile } from "@/hooks/use-mobile"
+import { useUniqueId } from "@/utils/unique-id"
 
 export function MobileNav() {
   const isMobile = useIsMobile()
+  const navId = useUniqueId("mobile-nav")
 
   if (!isMobile) return null
 
   return (
-    <div className="fixed bottom-0 left-0 z-50 w-full border-t bg-background md:hidden">
+    <nav
+      className="fixed bottom-0 left-0 z-50 w-full border-t bg-background md:hidden"
+      aria-label="Mobile navigation"
+      id={navId}
+    >
       <div className="mx-auto flex h-16 max-w-md items-center justify-around">
         <a
           href="/"
           className="flex flex-col items-center justify-center px-4 py-2 text-primary"
           aria-label="Go to home page"
+          aria-current="page"
         >
           <Home className="h-5 w-5" aria-hidden="true" />
           <span className="text-xs">Home</span>
@@ -59,6 +66,6 @@ export function MobileNav() {
           <span className="text-xs">Settings</span>
         </a>
       </div>
-    </div>
+    </nav>
   )
 }

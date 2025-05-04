@@ -8,6 +8,8 @@ import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip } from "recharts"
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { ChevronUp, ChevronDown, Minus } from "lucide-react"
+import { useUniqueId } from "@/utils/unique-id"
+import { LiveRegion, useScreenReaderAnnouncer } from "@/components/accessibility/screen-reader-announcer"
 
 type ComparisonPeriod = "current" | "week" | "month" | "quarter"
 
@@ -16,6 +18,13 @@ export function CategoryDetails() {
   const [highlightedMetric, setHighlightedMetric] = useState<string | null>(null)
   const [comparisonPeriod, setComparisonPeriod] = useState<ComparisonPeriod>("current")
   const { categories, entries } = useWellness()
+  const { announce } = useScreenReaderAnnouncer()
+
+  // Generate unique IDs
+  const tabsId = useUniqueId("category-tabs")
+  const selectId = useUniqueId("comparison-select")
+  const chartId = useUniqueId("category-chart")
+  const legendId = useUniqueId("chart-legend")
 
   // Get enabled categories
   const enabledCategories = categories.filter((cat) => cat.enabled)
@@ -71,13 +80,13 @@ export function CategoryDetails() {
     if (!category) return "#000000"
 
     const baseColors: Record<string, string> = {
-      faith: "#22c55e",
-      life: "#eab308",
-      work: "#ef4444",
-      health: "#ec4899",
-      mindfulness: "#3b82f6",
-      learning: "#8b5cf6",
-      relationships: "#f97316",
+      faith: "#16a34a", // Darkened green for better contrast
+      life: "#ca8a04", // Darkened yellow for better contrast
+      work: "#dc2626", // Darkened red for better contrast
+      health: "#be185d", // Darkened pink for better contrast
+      mindfulness: "#2563eb", // Darkened blue for better contrast
+      learning: "#7e22ce", // Darkened purple for better contrast
+      relationships: "#ea580c", // Darkened orange for better contrast
     }
 
     const baseColor = baseColors[categoryId] || "#64748b"
@@ -112,9 +121,9 @@ export function CategoryDetails() {
               <span
                 className={`ml-2 ${
                   data.changePercent > 0
-                    ? "text-green-500"
+                    ? "text-green-700" // Darkened for better contrast
                     : data.changePercent < 0
-                      ? "text-red-500"
+                      ? "text-red-700" // Darkened for better contrast
                       : "text-muted-foreground"
                 }`}
               >
@@ -150,11 +159,40 @@ export function CategoryDetails() {
     if (changePercent === null) return null
 
     if (changePercent > 0) {
-      return <ChevronUp className="h-3 w-3 text-green-500" />
+      return <ChevronUp className="h-3 w-3 text-green-700" aria-hidden="true" />
     } else if (changePercent < 0) {
-      return <ChevronDown className="h-3 w-3 text-red-500" />
+      return <ChevronDown className="h-3 w-3 text-red-700" aria-hidden="true" />
     } else {
-      return <Minus className="h-3 w-3 text-muted-foreground" />
+      return <Minus className="h-3 w-3 text-muted-foreground" aria-hidden="true" />
+    }
+  }
+
+  // Handle tab change
+  const handleTabChange = (value: string) => {
+    setActiveTab(value)
+    const category = categories.find((cat) => cat.id === value)
+    if (category) {
+      announce(`Viewing ${category.name} category metrics`, "polite")
+    }
+  }
+
+  // Handle comparison period change
+  const handleComparisonChange = (value: ComparisonPeriod) => {
+    setComparisonPeriod(value)
+    announce(`Changed comparison period to ${getComparisonLabel(value)}`, "polite")
+  }
+
+  // Handle metric highlight
+  const handleMetricHighlight = (metricId: string | null) => {
+    setHighlightedMetric(metricId)
+    if (metricId) {
+      const category = categories.find((cat) => cat.id === activeTab)
+      const metric = category?.metrics.find((m) => m.id === metricId)
+      if (metric) {
+        announce(`Highlighting ${metric.name} metric`, "polite")
+      }
+    } else {
+      announce("Showing all metrics", "polite")
     }
   }
 
@@ -162,8 +200,12 @@ export function CategoryDetails() {
     <Card className="border shadow-sm">
       <CardHeader className="pb-3 flex flex-row items-center justify-between">
         <CardTitle className="text-base font-medium">Category Performance</CardTitle>
-        <Select value={comparisonPeriod} onValueChange={(value) => setComparisonPeriod(value as ComparisonPeriod)}>
-          <SelectTrigger className="h-8 w-[180px]">
+        <Select
+          value={comparisonPeriod}
+          onValueChange={(value) => handleComparisonChange(value as ComparisonPeriod)}
+          id={selectId}
+        >
+          <SelectTrigger className="h-8 w-[180px]" aria-label="Select comparison period">
             <SelectValue placeholder="Select comparison period" />
           </SelectTrigger>
           <SelectContent>
@@ -175,7 +217,7 @@ export function CategoryDetails() {
         </Select>
       </CardHeader>
       <CardContent className="p-0">
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+        <Tabs value={activeTab} onValueChange={handleTabChange} className="w-full" id={tabsId}>
           <div className="border-b px-4">
             <TabsList className="w-full justify-start rounded-none border-b-0 p-0">
               {enabledCategories.slice(0, 4).map((category) => (
@@ -183,6 +225,7 @@ export function CategoryDetails() {
                   key={category.id}
                   value={category.id}
                   className="relative rounded-none border-b-2 border-transparent px-4 py-2 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
+                  id={`category-tab-${category.id}`}
                 >
                   {category.name}
                 </TabsTrigger>
@@ -192,125 +235,137 @@ export function CategoryDetails() {
 
           {enabledCategories.slice(0, 4).map((category) => (
             <TabsContent key={category.id} value={category.id} className="p-4">
-              <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
-                <div className="flex flex-col items-center justify-center">
-                  <div className="mb-2 text-center">
-                    <p className="text-xs text-muted-foreground">
-                      <span className="inline-block h-2 w-2 rounded-full bg-foreground/70 mr-1"></span>
-                      Inner ring: Current values
-                      <span className="inline-block h-2 w-2 rounded-full bg-foreground/30 mx-1 ml-3"></span>
-                      Outer ring: Goals
-                    </p>
-                    {comparisonPeriod !== "current" && (
-                      <p className="text-xs text-muted-foreground mt-1">
-                        <span className="inline-block h-2 w-2 rounded-full bg-foreground/50 mr-1 border border-background"></span>
-                        Middle ring: {getComparisonLabel(comparisonPeriod).replace("vs ", "")}
+              <LiveRegion>
+                <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
+                  <div className="flex flex-col items-center justify-center">
+                    <div className="mb-2 text-center">
+                      <p className="text-xs text-muted-foreground">
+                        <span
+                          className="inline-block h-2 w-2 rounded-full bg-foreground/70 mr-1"
+                          aria-hidden="true"
+                        ></span>
+                        Inner ring: Current values
+                        <span
+                          className="inline-block h-2 w-2 rounded-full bg-foreground/30 mx-1 ml-3"
+                          aria-hidden="true"
+                        ></span>
+                        Outer ring: Goals
                       </p>
-                    )}
-                  </div>
-                  {/* SVG Definitions for gradients */}
-                  <svg width="0" height="0" className="absolute">
-                    <defs>
-                      {getCategoryData(category.id, comparisonPeriod).map((item, index) => (
-                        <linearGradient
-                          key={`gradient-${item.id}`}
-                          id={getCategoryGradientId(category.id, index)}
-                          x1="0%"
-                          y1="0%"
-                          x2="100%"
-                          y2="100%"
-                        >
-                          <stop offset="0%" stopColor={item.color} stopOpacity={0.8} />
-                          <stop offset="100%" stopColor={adjustColorShade(item.color, 20)} stopOpacity={1} />
-                        </linearGradient>
-                      ))}
-                    </defs>
-                  </svg>
+                      {comparisonPeriod !== "current" && (
+                        <p className="text-xs text-muted-foreground mt-1">
+                          <span
+                            className="inline-block h-2 w-2 rounded-full bg-foreground/50 mr-1 border border-background"
+                            aria-hidden="true"
+                          ></span>
+                          Middle ring: {getComparisonLabel(comparisonPeriod).replace("vs ", "")}
+                        </p>
+                      )}
+                    </div>
+                    {/* SVG Definitions for gradients */}
+                    <svg width="0" height="0" className="absolute" aria-hidden="true">
+                      <defs>
+                        {getCategoryData(category.id, comparisonPeriod).map((item, index) => (
+                          <linearGradient
+                            key={`gradient-${item.id}`}
+                            id={getCategoryGradientId(category.id, index)}
+                            x1="0%"
+                            y1="0%"
+                            x2="100%"
+                            y2="100%"
+                          >
+                            <stop offset="0%" stopColor={item.color} stopOpacity={0.8} />
+                            <stop offset="100%" stopColor={adjustColorShade(item.color, 20)} stopOpacity={1} />
+                          </linearGradient>
+                        ))}
+                      </defs>
+                    </svg>
 
-                  {/* Composite Donut Chart */}
-                  <div
-                    className="h-64 w-64"
-                    role="img"
-                    aria-label={`${category.name} metrics visualization with ${getComparisonLabel(comparisonPeriod)}`}
-                  >
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Tooltip content={<CustomTooltip />} />
+                    {/* Composite Donut Chart */}
+                    <div
+                      className="h-64 w-64"
+                      role="img"
+                      aria-label={`${category.name} metrics visualization with ${getComparisonLabel(comparisonPeriod)}`}
+                      id={chartId}
+                    >
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Tooltip content={<CustomTooltip />} />
 
-                        {/* Current values ring */}
-                        <Pie
-                          data={getCategoryData(category.id, comparisonPeriod)}
-                          dataKey="value"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={60}
-                          outerRadius={80}
-                          paddingAngle={2}
-                          startAngle={90}
-                          endAngle={-270}
-                        >
-                          {getCategoryData(category.id, comparisonPeriod).map((entry, index) => (
-                            <Cell
-                              key={`cell-${index}`}
-                              fill={`url(#${getCategoryGradientId(category.id, index)})`}
-                              stroke="var(--background)"
-                              strokeWidth={highlightedMetric === entry.id ? 3 : 2}
-                              opacity={highlightedMetric === null || highlightedMetric === entry.id ? 1 : 0.4}
-                            />
-                          ))}
-                        </Pie>
-
-                        {/* Previous period ring (only shown when comparison is active) */}
-                        {comparisonPeriod !== "current" && (
+                          {/* Current values ring */}
                           <Pie
                             data={getCategoryData(category.id, comparisonPeriod)}
-                            dataKey="previousValue"
+                            dataKey="value"
                             nameKey="name"
                             cx="50%"
                             cy="50%"
-                            innerRadius={45}
-                            outerRadius={55}
+                            innerRadius={60}
+                            outerRadius={80}
                             paddingAngle={2}
                             startAngle={90}
                             endAngle={-270}
                           >
                             {getCategoryData(category.id, comparisonPeriod).map((entry, index) => (
                               <Cell
-                                key={`prev-cell-${index}`}
-                                fill={entry.color}
+                                key={`cell-${index}`}
+                                fill={`url(#${getCategoryGradientId(category.id, index)})`}
                                 stroke="var(--background)"
-                                strokeWidth={1}
-                                opacity={highlightedMetric === null || highlightedMetric === entry.id ? 0.6 : 0.2}
+                                strokeWidth={highlightedMetric === entry.id ? 3 : 2}
+                                opacity={highlightedMetric === null || highlightedMetric === entry.id ? 1 : 0.4}
                               />
                             ))}
                           </Pie>
-                        )}
 
-                        {/* Goal ring */}
-                        <Pie
-                          data={getCategoryData(category.id, comparisonPeriod)}
-                          dataKey="goal"
-                          nameKey="name"
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={85}
-                          outerRadius={90}
-                          paddingAngle={2}
-                          startAngle={90}
-                          endAngle={-270}
-                          stroke="none"
-                        >
-                          {getCategoryData(category.id, comparisonPeriod).map((entry, index) => (
-                            <Cell
-                              key={`goal-cell-${index}`}
-                              fill={adjustColorShade(entry.color, 40)}
-                              opacity={highlightedMetric === null || highlightedMetric === entry.id ? 0.3 : 0.1}
-                            />
-                          ))}
-                        </Pie>
-                      </PieChart>
-                    </ResponsiveContainer>
+                          {/* Previous period ring (only shown when comparison is active) */}
+                          {comparisonPeriod !== "current" && (
+                            <Pie
+                              data={getCategoryData(category.id, comparisonPeriod)}
+                              dataKey="previousValue"
+                              nameKey="name"
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={45}
+                              outerRadius={55}
+                              paddingAngle={2}
+                              startAngle={90}
+                              endAngle={-270}
+                            >
+                              {getCategoryData(category.id, comparisonPeriod).map((entry, index) => (
+                                <Cell
+                                  key={`prev-cell-${index}`}
+                                  fill={entry.color}
+                                  stroke="var(--background)"
+                                  strokeWidth={1}
+                                  opacity={highlightedMetric === null || highlightedMetric === entry.id ? 0.6 : 0.2}
+                                />
+                              ))}
+                            </Pie>
+                          )}
+
+                          {/* Goal ring */}
+                          <Pie
+                            data={getCategoryData(category.id, comparisonPeriod)}
+                            dataKey="goal"
+                            nameKey="name"
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={85}
+                            outerRadius={90}
+                            paddingAngle={2}
+                            startAngle={90}
+                            endAngle={-270}
+                            stroke="none"
+                          >
+                            {getCategoryData(category.id, comparisonPeriod).map((entry, index) => (
+                              <Cell
+                                key={`goal-cell-${index}`}
+                                fill={adjustColorShade(entry.color, 40)}
+                                opacity={highlightedMetric === null || highlightedMetric === entry.id ? 0.3 : 0.1}
+                              />
+                            ))}
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
                     <VisuallyHidden>
                       <ul>
                         {getCategoryData(category.id, comparisonPeriod).map((item) => (
@@ -325,16 +380,17 @@ export function CategoryDetails() {
                   </div>
 
                   {/* Legend */}
-                  <div className="mt-4 flex flex-wrap justify-center gap-2" aria-label="Chart legend">
+                  <div className="mt-4 flex flex-wrap justify-center gap-2" aria-label="Chart legend" id={legendId}>
                     {getCategoryData(category.id, comparisonPeriod).map((metric, index) => (
                       <button
                         key={`legend-${metric.id}`}
                         className={`flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors ${
                           highlightedMetric === metric.id ? "bg-muted ring-1 ring-ring" : "hover:bg-muted/50"
                         }`}
-                        onClick={() => setHighlightedMetric(highlightedMetric === metric.id ? null : metric.id)}
+                        onClick={() => handleMetricHighlight(highlightedMetric === metric.id ? null : metric.id)}
                         aria-pressed={highlightedMetric === metric.id}
                         aria-label={`Highlight ${metric.name} metric`}
+                        id={`legend-item-${metric.id}`}
                       >
                         <div
                           className="h-3 w-3 rounded-sm"
@@ -359,6 +415,7 @@ export function CategoryDetails() {
                       className={`space-y-2 p-2 rounded-md transition-colors ${
                         highlightedMetric === metric.id ? "bg-muted/50" : ""
                       }`}
+                      id={`metric-detail-${metric.id}`}
                     >
                       <div className="flex items-center justify-between">
                         <span
@@ -394,9 +451,9 @@ export function CategoryDetails() {
                           <span
                             className={`text-xs ${
                               metric.changePercent > 0
-                                ? "text-green-500"
+                                ? "text-green-700" // Darkened for better contrast
                                 : metric.changePercent < 0
-                                  ? "text-red-500"
+                                  ? "text-red-700" // Darkened for better contrast
                                   : "text-muted-foreground"
                             }`}
                           >
@@ -408,7 +465,7 @@ export function CategoryDetails() {
                     </div>
                   ))}
                 </div>
-              </div>
+              </LiveRegion>
             </TabsContent>
           ))}
         </Tabs>

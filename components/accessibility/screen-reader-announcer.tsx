@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import type * as React from "react"
 import { useRef, createContext, useContext } from "react"
 
 type AnnouncementPriority = "polite" | "assertive"
@@ -73,15 +73,17 @@ export function LiveRegion({
   atomic = true,
   relevant = "additions text",
   id,
+  className,
 }: {
   children: React.ReactNode
   priority?: AnnouncementPriority
   atomic?: boolean
   relevant?: "additions" | "removals" | "text" | "all" | "additions text"
   id?: string
+  className?: string
 }) {
   return (
-    <div aria-live={priority} aria-atomic={atomic} aria-relevant={relevant} id={id}>
+    <div aria-live={priority} aria-atomic={atomic} aria-relevant={relevant} id={id} className={className}>
       {children}
     </div>
   )

@@ -88,6 +88,7 @@ export function CategoryCard({
       role={interactive ? "button" : undefined}
       tabIndex={interactive ? 0 : undefined}
       aria-expanded={interactive ? isExpanded : undefined}
+      aria-labelledby={`category-title-${category.id}`}
     >
       <CardContent className={cn("p-4", isSmallMobile ? "p-3" : "", "h-full flex flex-col")}>
         <div className="flex items-center justify-between mb-3">
@@ -95,7 +96,12 @@ export function CategoryCard({
             <div className={cn("p-1.5 rounded-md", safeBgColorClass)}>
               <Icon className={cn("h-4 w-4", "text-white")} aria-hidden="true" />
             </div>
-            <h3 className={cn("font-medium truncate", isSmallMobile ? "text-sm" : "")}>{category.name}</h3>
+            <h3
+              id={`category-title-${category.id}`}
+              className={cn("font-medium truncate", isSmallMobile ? "text-sm" : "")}
+            >
+              {category.name}
+            </h3>
           </div>
           <div className={cn("text-sm font-medium", isSmallMobile ? "text-xs" : "")}>
             {Math.round(category.progress)}%

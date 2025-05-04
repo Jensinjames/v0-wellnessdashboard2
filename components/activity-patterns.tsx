@@ -93,6 +93,10 @@ export function ActivityPatterns() {
     announce(`View mode changed to ${mode}`, "polite")
   }
 
+  const uniqueId = () => {
+    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between gap-4">

@@ -18,6 +18,7 @@ export function WellnessTrends() {
   const [timeRange, setTimeRange] = useState<"week" | "month" | "year">("week")
   const [metricType, setMetricType] = useState<"mood" | "energy" | "stress" | "sleep">("mood")
   const { announce } = useScreenReaderAnnouncer()
+  const [activeTab, setActiveTab] = useState("trends")
 
   // Generate unique IDs
   const baseId = useId().replace(/:/g, "-")
@@ -83,6 +84,10 @@ export function WellnessTrends() {
     announce(`Metric changed to ${metricLabels[type]}`, "polite")
   }
 
+  const handleTabChange = (value: string) => {
+    setActiveTab(value)
+  }
+
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between pb-2">
@@ -104,19 +109,34 @@ export function WellnessTrends() {
         </div>
       </CardHeader>
       <CardContent>
-        <Tabs defaultValue="trends" id={tabsId}>
+        <Tabs defaultValue="trends" id={tabsId} onValueChange={handleTabChange}>
           <TabsList className="mb-4">
-            <TabsTrigger value="trends" id={trendsTabId}>
+            <TabsTrigger
+              value="trends"
+              id={trendsTabId}
+              aria-controls={`panel-trends-${tabsId}`}
+              aria-selected={activeTab === "trends"}
+            >
               Trends
             </TabsTrigger>
-            <TabsTrigger value="correlations" id={correlationsTabId}>
+            <TabsTrigger
+              value="correlations"
+              id={`tab-correlations-${generateUniqueId()}`}
+              aria-controls={`panel-correlations-${tabsId}`}
+              aria-selected={activeTab === "correlations"}
+            >
               Correlations
             </TabsTrigger>
-            <TabsTrigger value="insights" id={insightsTabId}>
+            <TabsTrigger
+              value="insights"
+              id={`tab-insights-${generateUniqueId()}`}
+              aria-controls={`panel-insights-${tabsId}`}
+              aria-selected={activeTab === "insights"}
+            >
               Insights
             </TabsTrigger>
           </TabsList>
-          <TabsContent value="trends">
+          <TabsContent value="trends" id={`panel-trends-${tabsId}`}>
             <div className="space-y-4">
               <div className="flex flex-wrap gap-2" role="group" aria-label="Select metric type">
                 <Button
@@ -187,10 +207,11 @@ export function WellnessTrends() {
                     </LineChart>
                   </ResponsiveContainer>
                 </ChartContainer>
+                <span className="sr-only">Chart showing trends for {metricType} over time.</span>
               </LiveRegion>
             </div>
           </TabsContent>
-          <TabsContent value="correlations">
+          <TabsContent value="correlations" id={`panel-correlations-${tabsId}`}>
             <LiveRegion>
               <ChartContainer
                 config={{
@@ -220,9 +241,10 @@ export function WellnessTrends() {
                   </BarChart>
                 </ResponsiveContainer>
               </ChartContainer>
+              <span className="sr-only">Chart showing correlation between sleep and productivity</span>
             </LiveRegion>
           </TabsContent>
-          <TabsContent value="insights">
+          <TabsContent value="insights" id={`panel-insights-${tabsId}`}>
             <div className="space-y-4">
               {insightData.map((insight, index) => {
                 const insightId = generateUniqueId(`insight-${index}`)
@@ -232,10 +254,10 @@ export function WellnessTrends() {
                     id={insightId}
                     className={`rounded-lg border p-4 ${
                       insight.impact === "high"
-                        ? "border-green-700 bg-green-50 dark:border-green-800 dark:bg-green-950"
+                        ? "border-green-700 bg-green-50 dark:border-green-800 dark:bg-green-950 text-green-900 dark:text-green-50"
                         : insight.impact === "medium"
-                          ? "border-blue-700 bg-blue-50 dark:border-blue-800 dark:bg-blue-950"
-                          : "border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900"
+                          ? "border-blue-700 bg-blue-50 dark:border-blue-800 dark:bg-blue-950 text-blue-900 dark:text-blue-50"
+                          : "border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-900 text-gray-900 dark:text-gray-50"
                     }`}
                     role="article"
                     aria-labelledby={`${insightId}-title`}

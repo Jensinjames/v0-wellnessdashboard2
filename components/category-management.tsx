@@ -538,148 +538,155 @@ export function CategoryManagement() {
                   ref={provided.innerRef}
                   className={`space-y-2 ${snapshot.isDraggingOver ? "bg-muted/50 rounded-md p-2" : ""}`}
                 >
-                  {categories.map((category, index) => (
-                    <Draggable key={category.id} draggableId={category.id} index={index}>
-                      {(provided, snapshot) => (
-                        <div
-                          ref={provided.innerRef}
-                          {...provided.draggableProps}
-                          className={`rounded-md border ${
-                            snapshot.isDragging ? "border-primary shadow-md" : "border-border"
-                          }`}
-                        >
-                          <div className="flex items-center p-4">
-                            <div
-                              {...provided.dragHandleProps}
-                              className="mr-2 cursor-grab active:cursor-grabbing"
-                              aria-label={`Drag to reorder ${category.name} category`}
-                            >
-                              <GripVertical className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
-                            </div>
-
-                            <div
-                              className={`mr-3 flex h-8 w-8 items-center justify-center rounded-md bg-${category.color}-600`}
-                            >
-                              {getIconByName(category.icon)}
-                            </div>
-
-                            <div className="flex-1">
-                              <h3 className="font-medium">{category.name}</h3>
-                              <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                <Key className="h-3 w-3" aria-hidden="true" />
-                                <span>{category.id}</span>
+                  <div
+                    className="categories-container"
+                    aria-live="polite"
+                    aria-atomic="false"
+                    aria-relevant="additions removals"
+                  >
+                    {categories.map((category, index) => (
+                      <Draggable key={category.id} draggableId={category.id} index={index}>
+                        {(provided, snapshot) => (
+                          <div
+                            ref={provided.innerRef}
+                            {...provided.draggableProps}
+                            className={`rounded-md border ${
+                              snapshot.isDragging ? "border-primary shadow-md" : "border-border"
+                            }`}
+                          >
+                            <div className="flex items-center p-4">
+                              <div
+                                {...provided.dragHandleProps}
+                                className="mr-2 cursor-grab active:cursor-grabbing"
+                                aria-label={`Drag to reorder ${category.name} category`}
+                              >
+                                <GripVertical className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
                               </div>
-                            </div>
 
-                            <Badge variant="outline" className="mr-4">
-                              {category.metrics.length} metrics
-                            </Badge>
+                              <div
+                                className={`mr-3 flex h-8 w-8 items-center justify-center rounded-md bg-${category.color}-600`}
+                              >
+                                {getIconByName(category.icon)}
+                              </div>
 
-                            <div className="flex gap-2">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => toggleAccordionItem(category.id)}
-                                aria-expanded={expandedItems.includes(category.id)}
-                                aria-controls={`category-metrics-${category.id}`}
-                              >
-                                {expandedItems.includes(category.id) ? "Collapse" : "Expand"}
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleEditCategory(category)}
-                                aria-label={`Edit ${category.name} category details`}
-                              >
-                                <Edit className="mr-2 h-4 w-4" aria-hidden="true" />
-                                Edit
-                              </Button>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="text-red-500 hover:text-red-700"
-                                onClick={() => setShowDeleteConfirm(category.id)}
-                                aria-label={`Delete ${category.name} category and all its metrics`}
-                              >
-                                <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
-                                Delete
-                              </Button>
-                            </div>
-                          </div>
+                              <div className="flex-1">
+                                <h3 className="font-medium">{category.name}</h3>
+                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                  <Key className="h-3 w-3" aria-hidden="true" />
+                                  <span>{category.id}</span>
+                                </div>
+                              </div>
 
-                          {/* Metrics section - only shown when expanded */}
-                          {expandedItems.includes(category.id) && (
-                            <div className="border-t p-4" id={`category-metrics-${category.id}`}>
-                              <div className="mb-3 flex items-center justify-between">
-                                <h4 className="font-medium">Metrics</h4>
+                              <Badge variant="outline" className="mr-4">
+                                {category.metrics.length} metrics
+                              </Badge>
+
+                              <div className="flex gap-2">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => toggleAccordionItem(category.id)}
+                                  aria-expanded={expandedItems.includes(category.id)}
+                                  aria-controls={`category-metrics-${category.id}`}
+                                >
+                                  {expandedItems.includes(category.id) ? "Collapse" : "Expand"}
+                                </Button>
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  onClick={() => handleAddMetric(category.id)}
-                                  aria-label={`Add new metric to ${category.name} category`}
+                                  onClick={() => handleEditCategory(category)}
+                                  aria-label={`Edit ${category.name} category details`}
                                 >
-                                  <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
-                                  Add Metric
+                                  <Edit className="mr-2 h-4 w-4" aria-hidden="true" />
+                                  Edit
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-red-500 hover:text-red-700"
+                                  onClick={() => setShowDeleteConfirm(category.id)}
+                                  aria-label={`Delete ${category.name} category and all its metrics`}
+                                >
+                                  <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
+                                  Delete
                                 </Button>
                               </div>
-
-                              <div className="space-y-3">
-                                {category.metrics.length > 0 ? (
-                                  category.metrics.map((metric) => (
-                                    <div
-                                      key={metric.id}
-                                      className="rounded-md border p-3 flex items-center justify-between"
-                                    >
-                                      <div>
-                                        <div className="font-medium">{metric.name}</div>
-                                        <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                          <Key className="h-3 w-3" aria-hidden="true" />
-                                          <span>{metric.id}</span>
-                                        </div>
-                                        <div className="text-sm text-muted-foreground mt-1">{metric.description}</div>
-                                        <div className="flex gap-2 mt-1">
-                                          <Badge variant="outline">{metric.unit}</Badge>
-                                          <Badge variant="outline">
-                                            Range: {metric.min} - {metric.max}
-                                          </Badge>
-                                          <Badge variant="outline">Default Goal: {metric.defaultGoal}</Badge>
-                                        </div>
-                                      </div>
-                                      <div className="flex gap-2">
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          onClick={() => handleEditMetric(category.id, metric)}
-                                          aria-label={`Edit ${metric.name} metric in ${category.name} category`}
-                                        >
-                                          <Edit className="h-4 w-4" aria-hidden="true" />
-                                          <span className="sr-only">Edit {metric.name}</span>
-                                        </Button>
-                                        <Button
-                                          variant="ghost"
-                                          size="icon"
-                                          className="text-red-500 hover:text-red-700"
-                                          onClick={() => handleDeleteMetric(category.id, metric.id)}
-                                          aria-label={`Delete ${metric.name} metric from ${category.name} category`}
-                                        >
-                                          <Trash2 className="h-4 w-4" aria-hidden="true" />
-                                          <span className="sr-only">Delete {metric.name}</span>
-                                        </Button>
-                                      </div>
-                                    </div>
-                                  ))
-                                ) : (
-                                  <div className="p-4 text-center text-muted-foreground" role="status">
-                                    No metrics defined for this category
-                                  </div>
-                                )}
-                              </div>
                             </div>
-                          )}
-                        </div>
-                      )}
-                    </Draggable>
-                  ))}
+
+                            {/* Metrics section - only shown when expanded */}
+                            {expandedItems.includes(category.id) && (
+                              <div className="border-t p-4" id={`category-metrics-${category.id}`}>
+                                <div className="mb-3 flex items-center justify-between">
+                                  <h4 className="font-medium">Metrics</h4>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => handleAddMetric(category.id)}
+                                    aria-label={`Add new metric to ${category.name} category`}
+                                  >
+                                    <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+                                    Add Metric
+                                  </Button>
+                                </div>
+
+                                <div className="space-y-3">
+                                  {category.metrics.length > 0 ? (
+                                    category.metrics.map((metric) => (
+                                      <div
+                                        key={metric.id}
+                                        className="rounded-md border p-3 flex items-center justify-between"
+                                      >
+                                        <div>
+                                          <div className="font-medium">{metric.name}</div>
+                                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                                            <Key className="h-3 w-3" aria-hidden="true" />
+                                            <span>{metric.id}</span>
+                                          </div>
+                                          <div className="text-sm text-muted-foreground mt-1">{metric.description}</div>
+                                          <div className="flex gap-2 mt-1">
+                                            <Badge variant="outline">{metric.unit}</Badge>
+                                            <Badge variant="outline">
+                                              Range: {metric.min} - {metric.max}
+                                            </Badge>
+                                            <Badge variant="outline">Default Goal: {metric.defaultGoal}</Badge>
+                                          </div>
+                                        </div>
+                                        <div className="flex gap-2">
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            onClick={() => handleEditMetric(category.id, metric)}
+                                            aria-label={`Edit ${metric.name} metric in ${category.name} category`}
+                                          >
+                                            <Edit className="h-4 w-4" aria-hidden="true" />
+                                            <span className="sr-only">Edit {metric.name}</span>
+                                          </Button>
+                                          <Button
+                                            variant="ghost"
+                                            size="icon"
+                                            className="text-red-500 hover:text-red-700"
+                                            onClick={() => handleDeleteMetric(category.id, metric.id)}
+                                            aria-label={`Delete ${metric.name} metric from ${category.name} category`}
+                                          >
+                                            <Trash2 className="h-4 w-4" aria-hidden="true" />
+                                            <span className="sr-only">Delete {metric.name}</span>
+                                          </Button>
+                                        </div>
+                                      </div>
+                                    ))
+                                  ) : (
+                                    <div className="p-4 text-center text-muted-foreground" role="status">
+                                      No metrics defined for this category
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </Draggable>
+                    ))}
+                  </div>
                   {provided.placeholder}
                 </div>
               )}

@@ -220,23 +220,14 @@ export function EntriesList({ onEdit }: EntriesListProps) {
           </div>
 
           <TabsContent value="recent" className="m-0" id="panel-recent">
-            <EntriesTable
-              entries={filteredEntries}
-              onEdit={onEdit}
-              onDelete={confirmDelete}
-              getCategoryScore={getCategoryScore}
-              getOverallScore={getOverallScore}
-              getScoreBadgeColor={getScoreBadgeColor}
-              getCategoryColorClass={getCategoryColorClass}
-              searchTerm={searchTerm}
-              categories={categories}
-            />
-          </TabsContent>
-
-          <TabsContent value="thisWeek" className="m-0" id="panel-thisWeek">
-            {filteredWeekEntries.length > 0 ? (
+            <div
+              className="entries-container"
+              aria-live="polite"
+              aria-atomic="false"
+              aria-relevant="additions removals"
+            >
               <EntriesTable
-                entries={filteredWeekEntries}
+                entries={filteredEntries}
                 onEdit={onEdit}
                 onDelete={confirmDelete}
                 getCategoryScore={getCategoryScore}
@@ -246,31 +237,54 @@ export function EntriesList({ onEdit }: EntriesListProps) {
                 searchTerm={searchTerm}
                 categories={categories}
               />
-            ) : (
-              <div className="flex flex-col items-center justify-center py-12" role="status" aria-live="polite">
-                <div className="rounded-full bg-muted p-3">
-                  <svg
-                    xmlns="http://www.w3.org/2000/svg"
-                    viewBox="0 0 20 20"
-                    fill="currentColor"
-                    className="h-6 w-6 text-muted-foreground"
-                    aria-hidden="true"
-                  >
-                    <path
-                      fillRule="evenodd"
-                      d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z"
-                      clipRule="evenodd"
-                    />
-                  </svg>
+            </div>
+          </TabsContent>
+
+          <TabsContent value="thisWeek" className="m-0" id="panel-thisWeek">
+            <div
+              className="entries-container"
+              aria-live="polite"
+              aria-atomic="false"
+              aria-relevant="additions removals"
+            >
+              {filteredWeekEntries.length > 0 ? (
+                <EntriesTable
+                  entries={filteredWeekEntries}
+                  onEdit={onEdit}
+                  onDelete={confirmDelete}
+                  getCategoryScore={getCategoryScore}
+                  getOverallScore={getOverallScore}
+                  getScoreBadgeColor={getScoreBadgeColor}
+                  getCategoryColorClass={getCategoryColorClass}
+                  searchTerm={searchTerm}
+                  categories={categories}
+                />
+              ) : (
+                <div className="flex flex-col items-center justify-center py-12" role="status" aria-live="polite">
+                  <div className="rounded-full bg-muted p-3">
+                    <svg
+                      xmlns="http://www.w3.org/2000/svg"
+                      viewBox="0 0 20 20"
+                      fill="currentColor"
+                      className="h-6 w-6 text-muted-foreground"
+                      aria-hidden="true"
+                    >
+                      <path
+                        fillRule="evenodd"
+                        d="M10 18a8 8 0 100-16 8 8 0 000 16zm.75-13a.75.75 0 00-1.5 0v5c0 .414.336.75.75.75h4a.75.75 0 000-1.5h-3.25V5z"
+                        clipRule="evenodd"
+                      />
+                    </svg>
+                  </div>
+                  <h3 className="mt-4 text-lg font-medium">No entries for this week</h3>
+                  <p className="mt-1 text-center text-sm text-muted-foreground">
+                    {searchTerm
+                      ? "Try adjusting your search term or add a new entry for this week."
+                      : "Add your first wellness entry for this week to start tracking your progress."}
+                  </p>
                 </div>
-                <h3 className="mt-4 text-lg font-medium">No entries for this week</h3>
-                <p className="mt-1 text-center text-sm text-muted-foreground">
-                  {searchTerm
-                    ? "Try adjusting your search term or add a new entry for this week."
-                    : "Add your first wellness entry for this week to start tracking your progress."}
-                </p>
-              </div>
-            )}
+              )}
+            </div>
           </TabsContent>
         </Tabs>
       </CardContent>
@@ -394,7 +408,7 @@ function EntriesTable({
                         variant="ghost"
                         size="icon"
                         onClick={() => onDelete(entryId)}
-                        className="h-8 w-8 rounded-full text-red-500 hover:bg-red-50 hover:text-red-600"
+                        className="h-8 w-8 rounded-full text-red-700 hover:bg-red-50 hover:text-red-600"
                         aria-label={`Delete entry from ${entryDate}`}
                         id={`delete-entry-${entryId}`}
                       >
