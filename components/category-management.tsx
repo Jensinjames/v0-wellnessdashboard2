@@ -518,7 +518,7 @@ export function CategoryManagement() {
             <CardTitle>Wellness Categories</CardTitle>
             <CardDescription>Manage your wellness tracking categories</CardDescription>
           </div>
-          <Button onClick={handleAddCategory} aria-label="Add new category">
+          <Button onClick={handleAddCategory} aria-label="Add new wellness category">
             <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
             Add Category
           </Button>
@@ -552,7 +552,7 @@ export function CategoryManagement() {
                             <div
                               {...provided.dragHandleProps}
                               className="mr-2 cursor-grab active:cursor-grabbing"
-                              aria-label={`Drag to reorder ${category.name}`}
+                              aria-label={`Drag to reorder ${category.name} category`}
                             >
                               <GripVertical className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
                             </div>
@@ -589,7 +589,7 @@ export function CategoryManagement() {
                                 variant="outline"
                                 size="sm"
                                 onClick={() => handleEditCategory(category)}
-                                aria-label={`Edit ${category.name} category`}
+                                aria-label={`Edit ${category.name} category details`}
                               >
                                 <Edit className="mr-2 h-4 w-4" aria-hidden="true" />
                                 Edit
@@ -599,7 +599,7 @@ export function CategoryManagement() {
                                 size="sm"
                                 className="text-red-500 hover:text-red-700"
                                 onClick={() => setShowDeleteConfirm(category.id)}
-                                aria-label={`Delete ${category.name} category`}
+                                aria-label={`Delete ${category.name} category and all its metrics`}
                               >
                                 <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
                                 Delete
@@ -616,7 +616,7 @@ export function CategoryManagement() {
                                   variant="outline"
                                   size="sm"
                                   onClick={() => handleAddMetric(category.id)}
-                                  aria-label={`Add metric to ${category.name} category`}
+                                  aria-label={`Add new metric to ${category.name} category`}
                                 >
                                   <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
                                   Add Metric
@@ -650,7 +650,7 @@ export function CategoryManagement() {
                                           variant="ghost"
                                           size="icon"
                                           onClick={() => handleEditMetric(category.id, metric)}
-                                          aria-label={`Edit ${metric.name} metric`}
+                                          aria-label={`Edit ${metric.name} metric in ${category.name} category`}
                                         >
                                           <Edit className="h-4 w-4" aria-hidden="true" />
                                           <span className="sr-only">Edit {metric.name}</span>
@@ -660,7 +660,7 @@ export function CategoryManagement() {
                                           size="icon"
                                           className="text-red-500 hover:text-red-700"
                                           onClick={() => handleDeleteMetric(category.id, metric.id)}
-                                          aria-label={`Delete ${metric.name} metric`}
+                                          aria-label={`Delete ${metric.name} metric from ${category.name} category`}
                                         >
                                           <Trash2 className="h-4 w-4" aria-hidden="true" />
                                           <span className="sr-only">Delete {metric.name}</span>
@@ -840,11 +840,16 @@ export function CategoryManagement() {
                   type="button"
                   variant="outline"
                   onClick={() => setOpen(false)}
-                  aria-label="Cancel category form"
+                  aria-label="Cancel category creation and close dialog"
                 >
                   Cancel
                 </Button>
-                <Button type="submit" aria-label={editingCategory ? "Update category" : "Create category"}>
+                <Button
+                  type="submit"
+                  aria-label={
+                    editingCategory ? `Update ${editingCategory.name} category` : "Create new wellness category"
+                  }
+                >
                   {editingCategory ? "Update" : "Create"} Category
                 </Button>
               </DialogFooter>

@@ -167,12 +167,24 @@ export function EntriesList({ onEdit }: EntriesListProps) {
                 />
               </svg>
             </div>
-            <Button variant="outline" size="sm" className="h-9 gap-1" id="filter-button">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1"
+              id="filter-button"
+              aria-label="Filter entries by criteria"
+            >
               <Filter className="h-4 w-4" aria-hidden="true" />
               <span className="hidden sm:inline">Filter</span>
               <span className="sr-only sm:hidden">Filter entries</span>
             </Button>
-            <Button variant="outline" size="sm" className="h-9 gap-1" id="sort-button">
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-9 gap-1"
+              id="sort-button"
+              aria-label="Sort entries by date or score"
+            >
               <ArrowUpDown className="h-4 w-4" aria-hidden="true" />
               <span className="hidden sm:inline">Sort</span>
               <span className="sr-only sm:hidden">Sort entries</span>
@@ -273,10 +285,20 @@ export function EntriesList({ onEdit }: EntriesListProps) {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)} id="cancel-delete-button">
+            <Button
+              variant="outline"
+              onClick={() => setDeleteDialogOpen(false)}
+              id="cancel-delete-button"
+              aria-label="Cancel deletion and close dialog"
+            >
               Cancel
             </Button>
-            <Button variant="destructive" onClick={handleDelete} id="confirm-delete-button">
+            <Button
+              variant="destructive"
+              onClick={handleDelete}
+              id="confirm-delete-button"
+              aria-label="Confirm deletion of this entry"
+            >
               Delete
             </Button>
           </DialogFooter>

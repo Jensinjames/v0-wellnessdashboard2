@@ -4,14 +4,15 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
-import { StatusAnnouncerProvider } from "@/components/accessibility/status-announcer"
+import { ScreenReaderAnnouncerProvider } from "@/components/accessibility/screen-reader-announcer"
+import { SkipLink } from "@/components/accessibility/skip-link"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "Wellness Dashboard",
-  description: "Track and manage your wellness activities",
-    generator: 'v0.dev'
+  description: "Track and manage your wellness goals and activities",
+  generator: "v0.dev",
 }
 
 export default function RootLayout({
@@ -21,21 +22,20 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
+      <head>
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <meta name="color-scheme" content="light dark" />
+      </head>
       <body className={inter.className}>
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
-          <StatusAnnouncerProvider>
+          <ScreenReaderAnnouncerProvider>
             {/* Skip link for keyboard users */}
-            <a
-              href="#main-content"
-              className="sr-only focus:not-sr-only focus:absolute focus:z-50 focus:p-4 focus:bg-white focus:text-black"
-            >
-              Skip to main content
-            </a>
+            <SkipLink href="#main-content">Skip to main content</SkipLink>
 
             <main id="main-content">{children}</main>
 
             <Toaster />
-          </StatusAnnouncerProvider>
+          </ScreenReaderAnnouncerProvider>
         </ThemeProvider>
       </body>
     </html>

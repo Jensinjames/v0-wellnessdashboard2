@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useId } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { useWellness } from "@/context/wellness-context"
 import { getCategoryColorClass } from "@/types/wellness"
@@ -32,6 +32,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { useScreenReaderAnnouncer, LiveRegion } from "@/components/accessibility/screen-reader-announcer"
 
 export function CategoryOverview({
   showGoals = false,
@@ -46,6 +47,16 @@ export function CategoryOverview({
   const [expandedCategory, setExpandedCategory] = useState<string | null>(null)
   const [comparisonMetric, setComparisonMetric] = useState<ComparisonMetric>("progress")
   const [showCategorySelector, setShowCategorySelector] = useState(false)
+  const { announce } = useScreenReaderAnnouncer()
+
+  // Generate unique IDs for components
+  const baseId = useId().replace(/:/g, "-")
+  const tabsId = `${baseId}-tabs`
+  const chartTabId = `${baseId}-chart-tab`
+  const tableTabId = `${baseId}-table-tab`
+  const goalsTabId = `${baseId}-goals-tab`
+  const metricDropdownId = `${baseId}-metric-dropdown`
+  const categorySelectorId = `${baseId}-category-selector`
 
   // Initialize with enabled categories, up to the max limit
   const [selectedCategories, setSelectedCategories] = useState<string[]>(
@@ -155,15 +166,31 @@ export function CategoryOverview({
   // Handle card click
   const handleCardClick = (categoryId: string) => {
     if (interactive) {
+      const isExpanding = expandedCategory !== categoryId
+      const category = categories.find((c) => c.id === categoryId)
+
       setExpandedCategory(expandedCategory === categoryId ? null : categoryId)
+
+      // Announce the expansion/collapse to screen readers
+      if (category) {
+        announce(`${category.name} category ${isExpanding ? "expanded" : "collapsed"}`, "polite")
+      }
     }
   }
 
   // Toggle category selection for comparison
   const toggleCategorySelection = (categoryId: string) => {
-    setSelectedCategories((prev) =>
-      prev.includes(categoryId) ? prev.filter((id) => id !== categoryId) : [...prev, categoryId],
-    )
+    setSelectedCategories((prev) => {
+      const newSelection = prev.includes(categoryId) ? prev.filter((id) => id !== categoryId) : [...prev, categoryId]
+
+      // Announce the selection change to screen readers
+      const category = categories.find((c) => c.id === categoryId)
+      if (category) {
+        announce(`${category.name} ${prev.includes(categoryId) ? "removed from" : "added to"} comparison`, "polite")
+      }
+
+      return newSelection
+    })
   }
 
   // Memoize filtered categories to avoid recalculation
@@ -248,6 +275,21 @@ export function CategoryOverview({
     })
   }, [filteredCategories])
 
+  // Handle metric selection change
+  const handleMetricChange = (value: ComparisonMetric) => {
+    setComparisonMetric(value)
+
+    // Announce the metric change to screen readers
+    const metricLabels = {
+      progress: "Progress",
+      time: "Time",
+      efficiency: "Efficiency",
+      goalAchievement: "Goal Achievement",
+    }
+
+    announce(`Comparison metric changed to ${metricLabels[value]}`, "polite")
+  }
+
   // Render standard category cards
   const renderCategoryCards = () => (
     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -270,7 +312,12 @@ export function CategoryOverview({
   const renderMobileMetricSelector = () => (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" className="w-full justify-between mb-2">
+        <Button
+          variant="outline"
+          className="w-full justify-between mb-2"
+          id={metricDropdownId}
+          aria-label="Select comparison metric"
+        >
           Compare by:{" "}
           {comparisonMetric === "progress"
             ? "Progress"
@@ -279,7 +326,7 @@ export function CategoryOverview({
               : comparisonMetric === "efficiency"
                 ? "Efficiency"
                 : "Goal Achievement"}
-          <ChevronDown className="h-4 w-4 opacity-50" />
+          <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent className="w-full">
@@ -287,7 +334,7 @@ export function CategoryOverview({
         <DropdownMenuSeparator />
         <DropdownMenuRadioGroup
           value={comparisonMetric}
-          onValueChange={(value) => setComparisonMetric(value as ComparisonMetric)}
+          onValueChange={(value) => handleMetricChange(value as ComparisonMetric)}
         >
           <DropdownMenuRadioItem value="progress">Progress</DropdownMenuRadioItem>
           <DropdownMenuRadioItem value="time">Time</DropdownMenuRadioItem>
@@ -305,30 +352,37 @@ export function CategoryOverview({
         variant="outline"
         className="w-full justify-between mb-2"
         onClick={() => setShowCategorySelector(!showCategorySelector)}
+        id={categorySelectorId}
+        aria-expanded={showCategorySelector}
+        aria-controls="mobile-category-list"
       >
         Categories ({selectedCategories.length} selected)
-        <ChevronDown className="h-4 w-4 opacity-50" />
+        <ChevronDown className="h-4 w-4 opacity-50" aria-hidden="true" />
       </Button>
 
       {showCategorySelector && (
         <Card className="mb-4">
           <CardContent className="p-3">
             <ScrollArea className="h-[200px] pr-3">
-              <div className="space-y-2 pt-2">
+              <div
+                className="space-y-2 pt-2"
+                id="mobile-category-list"
+                role="group"
+                aria-label="Select categories for comparison"
+              >
                 {categoryProgress.map((category) => {
                   const colorClass = getCategoryColorClass({ ...category, metrics: [] }, "bg") || "bg-gray-400"
+                  const checkboxId = `mobile-category-${category.id}`
                   return (
                     <div key={category.id} className="flex items-center space-x-2">
                       <Checkbox
-                        id={`mobile-category-${category.id}`}
+                        id={checkboxId}
                         checked={selectedCategories.includes(category.id)}
                         onCheckedChange={() => toggleCategorySelection(category.id)}
+                        aria-label={`${category.name} category ${selectedCategories.includes(category.id) ? "selected" : "unselected"}`}
                       />
-                      <Label
-                        htmlFor={`mobile-category-${category.id}`}
-                        className="flex items-center gap-1 text-sm cursor-pointer"
-                      >
-                        <div className={cn("w-3 h-3 rounded-sm", colorClass)}></div>
+                      <Label htmlFor={checkboxId} className="flex items-center gap-1 text-sm cursor-pointer">
+                        <div className={cn("w-3 h-3 rounded-sm", colorClass)} aria-hidden="true"></div>
                         {category.name}
                       </Label>
                     </div>
@@ -346,18 +400,18 @@ export function CategoryOverview({
   const renderComparisonView = () => (
     <Card className="w-full">
       <CardContent className={cn("p-4", isMobile && "p-3")}>
-        <Tabs defaultValue="chart" className="w-full">
+        <Tabs defaultValue="chart" className="w-full" id={tabsId}>
           {/* Mobile-optimized header */}
           {isMobile ? (
             <div className="space-y-2 mb-4">
               <TabsList className="w-full">
-                <TabsTrigger value="chart" className="flex-1">
+                <TabsTrigger value="chart" className="flex-1" id={`${chartTabId}-mobile`}>
                   Chart
                 </TabsTrigger>
-                <TabsTrigger value="table" className="flex-1">
+                <TabsTrigger value="table" className="flex-1" id={`${tableTabId}-mobile`}>
                   Table
                 </TabsTrigger>
-                <TabsTrigger value="goals" className="flex-1">
+                <TabsTrigger value="goals" className="flex-1" id={`${goalsTabId}-mobile`}>
                   Goals
                 </TabsTrigger>
               </TabsList>
@@ -369,9 +423,15 @@ export function CategoryOverview({
             /* Desktop header */
             <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4 gap-2">
               <TabsList>
-                <TabsTrigger value="chart">Chart View</TabsTrigger>
-                <TabsTrigger value="table">Table View</TabsTrigger>
-                <TabsTrigger value="goals">Goal Comparison</TabsTrigger>
+                <TabsTrigger value="chart" id={chartTabId}>
+                  Chart View
+                </TabsTrigger>
+                <TabsTrigger value="table" id={tableTabId}>
+                  Table View
+                </TabsTrigger>
+                <TabsTrigger value="goals" id={goalsTabId}>
+                  Goal Comparison
+                </TabsTrigger>
               </TabsList>
 
               <div className="flex flex-col sm:flex-row gap-2 sm:items-center">
@@ -380,32 +440,36 @@ export function CategoryOverview({
                   <Button
                     variant={comparisonMetric === "progress" ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setComparisonMetric("progress")}
+                    onClick={() => handleMetricChange("progress")}
                     className="h-8"
+                    aria-pressed={comparisonMetric === "progress"}
                   >
                     Progress
                   </Button>
                   <Button
                     variant={comparisonMetric === "time" ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setComparisonMetric("time")}
+                    onClick={() => handleMetricChange("time")}
                     className="h-8"
+                    aria-pressed={comparisonMetric === "time"}
                   >
                     Time
                   </Button>
                   <Button
                     variant={comparisonMetric === "efficiency" ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setComparisonMetric("efficiency")}
+                    onClick={() => handleMetricChange("efficiency")}
                     className="h-8"
+                    aria-pressed={comparisonMetric === "efficiency"}
                   >
                     Efficiency
                   </Button>
                   <Button
                     variant={comparisonMetric === "goalAchievement" ? "default" : "outline"}
                     size="sm"
-                    onClick={() => setComparisonMetric("goalAchievement")}
+                    onClick={() => handleMetricChange("goalAchievement")}
                     className="h-8"
+                    aria-pressed={comparisonMetric === "goalAchievement"}
                   >
                     Goal Achievement
                   </Button>
@@ -416,21 +480,20 @@ export function CategoryOverview({
 
           {/* Category selector for desktop */}
           {!isMobile && (
-            <div className="flex flex-wrap gap-2 mb-4">
+            <div className="flex flex-wrap gap-2 mb-4" role="group" aria-label="Select categories for comparison">
               {categoryProgress.map((category) => {
                 const colorClass = getCategoryColorClass({ ...category, metrics: [] }, "bg") || "bg-gray-400"
+                const checkboxId = `category-${category.id}`
                 return (
                   <div key={category.id} className="flex items-center space-x-2">
                     <Checkbox
-                      id={`category-${category.id}`}
+                      id={checkboxId}
                       checked={selectedCategories.includes(category.id)}
                       onCheckedChange={() => toggleCategorySelection(category.id)}
+                      aria-label={`${category.name} category ${selectedCategories.includes(category.id) ? "selected" : "unselected"}`}
                     />
-                    <Label
-                      htmlFor={`category-${category.id}`}
-                      className="flex items-center gap-1 text-sm cursor-pointer"
-                    >
-                      <div className={cn("w-3 h-3 rounded-sm", colorClass)}></div>
+                    <Label htmlFor={checkboxId} className="flex items-center gap-1 text-sm cursor-pointer">
+                      <div className={cn("w-3 h-3 rounded-sm", colorClass)} aria-hidden="true"></div>
                       {category.name}
                     </Label>
                   </div>
@@ -440,7 +503,9 @@ export function CategoryOverview({
           )}
 
           <TabsContent value="chart" className="mt-0">
-            <ComparisonChart data={getComparisonData} metric={comparisonMetric} />
+            <LiveRegion priority="polite">
+              <ComparisonChart data={getComparisonData} metric={comparisonMetric} />
+            </LiveRegion>
           </TabsContent>
 
           <TabsContent value="table" className="mt-0">

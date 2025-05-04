@@ -18,10 +18,21 @@ export function DashboardHeader({ onAddEntry }: DashboardHeaderProps) {
         </div>
         <div className="mt-3 flex flex-wrap gap-2 sm:mt-0">
           <DateRangePicker className="bg-white/10 text-white hover:bg-white/20" />
-          <Button asChild variant="outline" size="sm" className="bg-white/10 text-white hover:bg-white/20">
+          <Button
+            asChild
+            variant="outline"
+            size="sm"
+            className="bg-white/10 text-white hover:bg-white/20"
+            aria-label="Go to categories management page"
+          >
             <Link href="/categories">Manage Categories</Link>
           </Button>
-          <Button onClick={onAddEntry} size="sm" className="bg-white text-blue-600 hover:bg-blue-50">
+          <Button
+            onClick={onAddEntry}
+            size="sm"
+            className="bg-white text-blue-600 hover:bg-blue-50"
+            aria-label="Add new activity entry"
+          >
             Activity
           </Button>
         </div>

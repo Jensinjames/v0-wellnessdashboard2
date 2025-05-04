@@ -34,12 +34,27 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
+  id?: string
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, id, children, ...props }, ref) => {
     const Comp = asChild ? Slot : "button"
-    return <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
+
+    // Check if the button has only an icon as a child
+    const hasOnlyIconChild =
+      React.Children.count(children) === 1 && React.isValidElement(children) && typeof children.type !== "string"
+
+    // If aria-label is not provided and the button has only an icon, warn in development
+    if (process.env.NODE_ENV !== "production" && !props["aria-label"] && hasOnlyIconChild) {
+      console.warn("Button with only icon child should have an aria-label")
+    }
+
+    return (
+      <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} id={id} {...props}>
+        {children}
+      </Comp>
+    )
   },
 )
 Button.displayName = "Button"

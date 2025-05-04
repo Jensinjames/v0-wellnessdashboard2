@@ -187,6 +187,7 @@ export function CategoryCard({
               id={`toggle-details-${category.id}`}
               aria-controls={cardId}
               aria-expanded={isExpanded}
+              aria-label={isExpanded ? `Hide details for ${category.name}` : `Show details for ${category.name}`}
             >
               {isExpanded ? "Show Less" : "Show Details"}
             </Button>
