@@ -8,7 +8,6 @@ import { format } from "date-fns"
 import { CalendarIcon } from "lucide-react"
 import * as z from "zod"
 import { useEffect, useRef } from "react"
-import * as LucideIcons from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
@@ -34,7 +33,7 @@ import {
   getUnitLabel,
   getStressLevelLabel,
 } from "@/types/wellness"
-import { getCategoryColorKey, getHeaderBackgroundClasses, getHeaderTextClasses } from "@/utils/category-color-utils"
+import { getCategoryColorKey } from "@/utils/category-color-utils"
 
 interface AddEntryFormProps {
   open: boolean
@@ -169,12 +168,6 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
     onOpenChange(false)
   }
 
-  // Get icon component by name
-  const getIconByName = (name: string) => {
-    const Icon = (LucideIcons as Record<string, React.ComponentType<any>>)[name]
-    return Icon ? <Icon className="h-5 w-5 text-white" /> : null
-  }
-
   return (
     <>
       {/* Hidden status announcer for screen readers */}
@@ -243,14 +236,13 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
                 <TabsList className="grid grid-cols-4 w-full">
                   {enabledCategories.slice(0, 4).map((category) => {
                     const categoryColor = getCategoryColorKey(category.id)
-                    const activeClass = `data-[state=active]:${getHeaderBackgroundClasses(category.id)} data-[state=active]:${getHeaderTextClasses(category.id)}`
 
                     return (
                       <TabsTrigger
                         key={category.id}
                         value={category.id}
                         id={`tab-${category.id}`}
-                        className={activeClass}
+                        className={`data-[state=active]:bg-${categoryColor}-100 data-[state=active]:dark:bg-${categoryColor}-900 data-[state=active]:text-${categoryColor}-800 data-[state=active]:dark:text-${categoryColor}-200`}
                       >
                         {category.name}
                       </TabsTrigger>

@@ -2,11 +2,12 @@
 
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { EnhancedButton } from "@/components/ui/enhanced-button"
+import { Button } from "@/components/ui/button"
 import { CategoryIcon } from "@/components/ui/category-icon"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 import { cn } from "@/lib/utils"
+import { ChevronDown, ChevronUp } from "lucide-react"
 import type { CategoryProgressData } from "./types"
 import { formatTime, formatValue } from "./utils"
 import { useMobileDetection } from "@/hooks/use-mobile-detection"
@@ -48,20 +49,14 @@ export function CategoryCard({
   const cardId = `category-card-${category.id}`
   const progressId = `category-progress-${category.id}`
 
-  // Get header color classes
-  const getHeaderClasses = () => {
-    return `bg-${categoryColor}-100 dark:bg-${categoryColor}-900 border-b border-${categoryColor}-200 dark:border-${categoryColor}-800`
-  }
+  // Header background class
+  const headerBgClass = `bg-${categoryColor}-100 dark:bg-${categoryColor}-900 border-b border-${categoryColor}-200 dark:border-${categoryColor}-800`
 
-  // Get header text color classes
-  const getHeaderTextClasses = () => {
-    return `text-${categoryColor}-800 dark:text-${categoryColor}-200`
-  }
+  // Header text class
+  const headerTextClass = `text-${categoryColor}-800 dark:text-${categoryColor}-200`
 
-  // Get progress bar color classes
-  const getProgressClasses = () => {
-    return `bg-${categoryColor}-600 dark:bg-${categoryColor}-500`
-  }
+  // Progress bar class
+  const progressBarClass = `bg-${categoryColor}-600 dark:bg-${categoryColor}-500`
 
   return (
     <Card
@@ -80,7 +75,7 @@ export function CategoryCard({
       aria-labelledby={`category-title-${category.id}`}
     >
       {/* Color-coded header */}
-      <CardHeader className={cn("py-2 px-4 flex flex-row items-center justify-between", getHeaderClasses())}>
+      <CardHeader className={cn("py-2 px-4 flex flex-row items-center justify-between", headerBgClass)}>
         <div className="flex items-center gap-2">
           <CategoryIcon
             categoryId={category.id}
@@ -92,12 +87,12 @@ export function CategoryCard({
           />
           <h3
             id={`category-title-${category.id}`}
-            className={cn("font-medium truncate", getHeaderTextClasses(), isSmallMobile ? "text-sm" : "")}
+            className={cn("font-medium truncate", headerTextClass, isSmallMobile ? "text-sm" : "")}
           >
             {category.name}
           </h3>
         </div>
-        <div className={cn("text-sm font-medium", getHeaderTextClasses(), isSmallMobile ? "text-xs" : "")}>
+        <div className={cn("text-sm font-medium", headerTextClass, isSmallMobile ? "text-xs" : "")}>
           {Math.round(category.progress)}%
         </div>
       </CardHeader>
@@ -106,7 +101,7 @@ export function CategoryCard({
         <Progress
           value={category.progress}
           className="h-2 mb-3 bg-slate-100 dark:bg-slate-800"
-          indicatorClassName={getProgressClasses()}
+          indicatorClassName={progressBarClass}
           aria-label={`${category.name} progress: ${Math.round(category.progress)}%`}
           id={progressId}
         />
@@ -165,7 +160,7 @@ export function CategoryCard({
                   <Progress
                     value={subcategory.progress}
                     className={cn("h-1.5 bg-slate-100 dark:bg-slate-800", isSmallMobile ? "h-1" : "")}
-                    indicatorClassName={getProgressClasses()}
+                    indicatorClassName={progressBarClass}
                     aria-label={`${subcategory.name} progress: ${Math.round(subcategory.progress)}%`}
                     id={subcategoryProgressId}
                   />
@@ -177,7 +172,7 @@ export function CategoryCard({
 
         {interactive && (
           <div className={cn("mt-auto pt-3", isSmallMobile ? "pt-2" : "")}>
-            <EnhancedButton
+            <Button
               variant="outline"
               size={isSmallMobile ? "sm" : "sm"}
               className={cn("text-xs w-full rounded-full", isSmallMobile ? "py-1 px-2" : "")}
@@ -189,10 +184,19 @@ export function CategoryCard({
               aria-controls={cardId}
               aria-expanded={isExpanded}
               aria-label={isExpanded ? `Hide details for ${category.name}` : `Show details for ${category.name}`}
-              icon={isExpanded ? "ChevronUp" : "ChevronDown"}
             >
-              {isExpanded ? "Show Less" : "Show Details"}
-            </EnhancedButton>
+              {isExpanded ? (
+                <>
+                  <ChevronUp className="h-4 w-4" aria-hidden="true" />
+                  <span>Show Less</span>
+                </>
+              ) : (
+                <>
+                  <ChevronDown className="h-4 w-4" aria-hidden="true" />
+                  <span>Show Details</span>
+                </>
+              )}
+            </Button>
           </div>
         )}
       </CardContent>

@@ -1,9 +1,9 @@
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
+import * as LucideIcons from "lucide-react"
 import { Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { AccessibleIcon } from "@/components/ui/accessible-icon"
 import { buttonVariants as themeButtonVariants } from "@/lib/theme-config"
 
 const buttonVariants = cva(
@@ -39,7 +39,7 @@ export interface EnhancedButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
-  icon?: keyof typeof import("lucide-react")
+  icon?: keyof typeof LucideIcons
   iconPosition?: "left" | "right"
   loading?: boolean
   loadingText?: string
@@ -64,6 +64,16 @@ const EnhancedButton = React.forwardRef<HTMLButtonElement, EnhancedButtonProps>(
     const Comp = asChild ? Slot : "button"
     const content = loading ? loadingText || children : children
 
+    // Safely render icon
+    const renderIcon = () => {
+      if (!icon) return null
+
+      const IconComponent = LucideIcons[icon]
+      if (!IconComponent) return null
+
+      return <IconComponent className="h-4 w-4" aria-hidden="true" />
+    }
+
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
@@ -73,15 +83,11 @@ const EnhancedButton = React.forwardRef<HTMLButtonElement, EnhancedButtonProps>(
       >
         {loading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
 
-        {!loading && icon && iconPosition === "left" && (
-          <AccessibleIcon name={icon as any} size="sm" aria-hidden="true" />
-        )}
+        {!loading && icon && iconPosition === "left" && renderIcon()}
 
         {content}
 
-        {!loading && icon && iconPosition === "right" && (
-          <AccessibleIcon name={icon as any} size="sm" aria-hidden="true" />
-        )}
+        {!loading && icon && iconPosition === "right" && renderIcon()}
       </Comp>
     )
   },
