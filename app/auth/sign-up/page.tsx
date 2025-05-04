@@ -1,16 +1,21 @@
-import type { Metadata } from "next"
-import { AuthLayout } from "@/components/auth/auth-layout"
-import { SignUpForm } from "@/components/auth/sign-up-form"
+"use client"
 
-export const metadata: Metadata = {
-  title: "Sign Up",
-  description: "Create a new account",
-}
+import { Suspense } from "react"
+import SignUpForm from "@/components/auth/sign-up-form"
+import { AuthLayout } from "@/components/auth/auth-layout"
 
 export default function SignUpPage() {
   return (
-    <AuthLayout title="Sign Up" redirectPath="/dashboard">
-      <SignUpForm />
+    <AuthLayout
+      title="Create an account"
+      subtitle="Enter your information to get started"
+      footerText="Already have an account?"
+      footerLinkText="Sign in"
+      footerLinkHref="/auth/sign-in"
+    >
+      <Suspense fallback={<div className="flex items-center justify-center p-4">Loading sign-up form...</div>}>
+        <SignUpForm />
+      </Suspense>
     </AuthLayout>
   )
 }

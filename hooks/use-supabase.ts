@@ -1,17 +1,22 @@
 "use client"
 
-import { useState, useEffect } from "react"
 import { getSupabaseClient } from "@/lib/supabase"
+import { useEffect, useState } from "react"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 import type { RealtimeChannel } from "@supabase/supabase-js"
 
-/**
- * Hook to access the Supabase client
- * @returns Supabase client instance
- */
-export function useSupabase(): SupabaseClient<Database> {
-  return getSupabaseClient()
+let supabaseInstance: SupabaseClient<Database> | null = null
+
+export function useSupabase() {
+  const [client] = useState(() => {
+    if (!supabaseInstance) {
+      supabaseInstance = getSupabaseClient()
+    }
+    return supabaseInstance
+  })
+
+  return client
 }
 
 /**

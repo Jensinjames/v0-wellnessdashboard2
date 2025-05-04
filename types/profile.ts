@@ -65,7 +65,7 @@ export const profileSchema = z.object({
   username: z.string().optional(),
   bio: z.string().optional(),
   location: z.string().optional(),
-  website: z.string().optional(),
+  website: z.string().url().optional(),
   theme_preference: z.string().optional(),
   email_notifications: z.boolean().optional(),
   notification_preferences: z.any().optional(),

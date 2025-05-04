@@ -12,7 +12,7 @@ import { Input } from "@/components/ui/input"
 import { CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage, FormDescription } from "@/components/ui/form"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle, Eye, EyeOff } from "lucide-react"
+import { AlertCircle, Eye, EyeOff, Loader2 } from "lucide-react"
 import { Checkbox } from "@/components/ui/checkbox"
 
 const signUpSchema = z
@@ -41,6 +41,7 @@ export function SignUpForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isSubmitted, setIsSubmitted] = useState(false)
+  const [isCreatingProfile, setIsCreatingProfile] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
   const { signUp } = useAuth()
@@ -64,29 +65,49 @@ export function SignUpForm() {
     setError(null)
 
     try {
-      const { error } = await signUp({
+      console.log("Submitting sign-up form:", { email: values.email, fullName: values.fullName })
+
+      // First step: Create the user account
+      const { error: signUpError, data } = await signUp({
         email: values.email,
         password: values.password,
         full_name: values.fullName,
         persistSession: values.rememberMe,
       })
 
-      if (error) {
-        setError(error.message)
+      if (signUpError) {
+        console.error("Sign-up error:", signUpError)
+        setError(signUpError.message || "Failed to create account. Please try again.")
         setIsLoading(false)
         return
       }
 
-      // Store the redirect path in session storage to use after email verification
-      if (redirectTo) {
-        sessionStorage.setItem("redirectAfterAuth", redirectTo)
+      console.log("Sign-up successful, user created:", data?.user?.id)
+
+      // Second step: Ensure profile exists
+      if (data?.user) {
+        try {
+          setIsCreatingProfile(true)
+
+          // Store the redirect path in session storage to use after email verification
+          if (redirectTo) {
+            sessionStorage.setItem("redirectAfterAuth", redirectTo)
+          }
+
+          setIsSubmitted(true)
+        } catch (profileError: any) {
+          console.error("Error creating profile:", profileError)
+          // Don't show this error to the user since the account was created successfully
+          // We'll handle profile creation again on sign-in if needed
+        } finally {
+          setIsCreatingProfile(false)
+        }
       }
 
-      setIsSubmitted(true)
       setIsLoading(false)
-    } catch (err) {
-      setError("An unexpected error occurred. Please try again.")
-      console.error(err)
+    } catch (err: any) {
+      console.error("Unexpected error during sign-up:", err)
+      setError(err.message || "An unexpected error occurred. Please try again.")
       setIsLoading(false)
     }
   }
@@ -156,6 +177,7 @@ export function SignUpForm() {
                       placeholder="John Doe"
                       autoComplete="name"
                       aria-describedby="fullName-error"
+                      disabled={isLoading}
                       {...field}
                     />
                   </FormControl>
@@ -176,6 +198,7 @@ export function SignUpForm() {
                       placeholder="john.doe@example.com"
                       autoComplete="email"
                       aria-describedby="email-error"
+                      disabled={isLoading}
                       {...field}
                     />
                   </FormControl>
@@ -197,6 +220,7 @@ export function SignUpForm() {
                         placeholder="••••••••"
                         autoComplete="new-password"
                         aria-describedby="password-requirements password-error"
+                        disabled={isLoading}
                         {...field}
                       />
                       <Button
@@ -207,6 +231,7 @@ export function SignUpForm() {
                         onClick={() => setShowPassword(!showPassword)}
                         aria-label={showPassword ? "Hide password" : "Show password"}
                         aria-pressed={showPassword}
+                        disabled={isLoading}
                       >
                         {showPassword ? (
                           <EyeOff className="h-4 w-4" aria-hidden="true" />
@@ -237,6 +262,7 @@ export function SignUpForm() {
                         placeholder="••••••••"
                         autoComplete="new-password"
                         aria-describedby="confirmPassword-error"
+                        disabled={isLoading}
                         {...field}
                       />
                       <Button
@@ -247,6 +273,7 @@ export function SignUpForm() {
                         onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                         aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
                         aria-pressed={showConfirmPassword}
+                        disabled={isLoading}
                       >
                         {showConfirmPassword ? (
                           <EyeOff className="h-4 w-4" aria-hidden="true" />
@@ -271,6 +298,7 @@ export function SignUpForm() {
                       checked={field.value}
                       onCheckedChange={field.onChange}
                       aria-describedby="remember-me-description"
+                      disabled={isLoading}
                     />
                   </FormControl>
                   <div className="space-y-1 leading-none">
@@ -292,10 +320,11 @@ export function SignUpForm() {
               aria-busy={isLoading}
             >
               {isLoading ? (
-                <>
+                <span className="flex items-center justify-center">
+                  <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
                   <span className="sr-only">Creating account, please wait</span>
                   <span aria-hidden="true">Creating account...</span>
-                </>
+                </span>
               ) : (
                 "Create account"
               )}
@@ -318,3 +347,6 @@ export function SignUpForm() {
     </>
   )
 }
+
+// Add default export
+export default SignUpForm

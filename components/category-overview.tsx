@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useMemo, useId } from "react"
+import { useState, useMemo, useId, useEffect } from "react"
 import { Card, CardContent } from "@/components/ui/card"
 import { useWellness } from "@/context/wellness-context"
 import { getCategoryColorClass } from "@/types/wellness"
@@ -14,12 +14,7 @@ import { ComparisonChart } from "./category-overview/comparison-chart"
 import { ComparisonTable } from "./category-overview/comparison-table"
 import { GoalComparison } from "./category-overview/goal-comparison"
 import { calculateProgress, DEFAULT_MAX_CATEGORIES } from "./category-overview/utils"
-import type {
-  CategoryOverviewProps,
-  ComparisonMetric,
-  ComparisonData,
-  GoalComparisonData,
-} from "./category-overview/types"
+import type { ComparisonMetric, ComparisonData, GoalComparisonData } from "./category-overview/types"
 import { useMobileDetection } from "@/hooks/use-mobile-detection"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { ChevronDown } from "lucide-react"
@@ -33,6 +28,22 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { useScreenReaderAnnouncer, LiveRegion } from "@/components/accessibility/screen-reader-announcer"
+import { LightModeCard } from "@/components/ui/light-mode-card"
+import { categoryColors } from "@/lib/theme-config"
+
+interface CategoryOverviewProps {
+  showGoals?: boolean
+  showTimeAllocations?: boolean
+  showSubcategoryProgress?: boolean
+  interactive?: boolean
+  maxCategories?: number
+  comparisonMode?: boolean
+  category?: string
+  percentage?: number
+  hours?: number
+  goal?: number
+  onClick?: () => void
+}
 
 export function CategoryOverview({
   showGoals = false,
@@ -41,6 +52,11 @@ export function CategoryOverview({
   interactive = false,
   maxCategories = DEFAULT_MAX_CATEGORIES,
   comparisonMode = false,
+  category,
+  percentage,
+  hours,
+  goal,
+  onClick,
 }: CategoryOverviewProps) {
   const { categories, entries, goals } = useWellness()
   const { isMobile } = useMobileDetection()
@@ -48,6 +64,7 @@ export function CategoryOverview({
   const [comparisonMetric, setComparisonMetric] = useState<ComparisonMetric>("progress")
   const [showCategorySelector, setShowCategorySelector] = useState(false)
   const { announce } = useScreenReaderAnnouncer()
+  const [significantProgress, setSignificantProgress] = useState<string | null>(null)
 
   // Generate unique IDs for components
   const baseId = useId().replace(/:/g, "-")
@@ -520,6 +537,55 @@ export function CategoryOverview({
     </Card>
   )
 
+  const renderSingleCategoryOverview = () => {
+    const color = categoryColors[category as keyof typeof categoryColors]?.light || categoryColors.faith.light
+
+    return (
+      <LightModeCard
+        className="relative overflow-hidden cursor-pointer hover:shadow-md transition-shadow"
+        onClick={onClick}
+        role="button"
+        tabIndex={0}
+        aria-label={`${category} category: ${percentage}% complete, ${hours} hours of ${goal} hour goal`}
+      >
+        <div className={cn("absolute top-0 left-0 h-1 w-full", color.bg)} />
+        <h3 className="text-lg font-semibold text-slate-900 capitalize mb-2">{category}</h3>
+        <div className="flex items-center justify-between mb-2">
+          <span className="text-slate-600">Progress</span>
+          <span className={cn("font-semibold", color.text)}>{percentage}%</span>
+        </div>
+        <div className="w-full bg-slate-100 rounded-full h-2 mb-4">
+          <div
+            className={cn("h-2 rounded-full", color.bg)}
+            style={{ width: `${percentage}%` }}
+            role="progressbar"
+            aria-valuenow={percentage}
+            aria-valuemin={0}
+            aria-valuemax={100}
+          ></div>
+        </div>
+        <div className="flex items-center justify-between text-sm">
+          <span className="text-slate-500">{hours} hrs</span>
+          <span className="text-slate-500">Goal: {goal} hrs</span>
+        </div>
+      </LightModeCard>
+    )
+  }
+
+  // Announce progress when it changes significantly
+  useEffect(() => {
+    if (category && percentage !== undefined && (percentage % 25 === 0 || percentage === 100)) {
+      // Only announce if the category or percentage has changed
+      if (significantProgress !== `${category}-${percentage}`) {
+        announce(`${category} category is at ${percentage} percent of your goal.`)
+        setSignificantProgress(`${category}-${percentage}`)
+      }
+    }
+  }, [percentage, category, announce, significantProgress])
+
   // Return the appropriate view based on the comparisonMode prop
+  if (category && percentage !== undefined && hours && goal) {
+    return renderSingleCategoryOverview()
+  }
   return comparisonMode ? renderComparisonView() : renderCategoryCards()
 }

@@ -1,6 +1,5 @@
 "use client"
-
-import { useId } from "react"
+import { useRef } from "react"
 
 // A map to track used IDs and prevent duplicates
 const usedIds = new Map<string, number>()
@@ -30,16 +29,17 @@ export function generateUniqueId(baseId: string): string {
   return `${sanitizedId}-${count}`
 }
 
-/**
- * React hook that generates a unique ID
- *
- * @param prefix - Optional prefix for the ID
- * @returns A unique ID
- */
-export function useUniqueId(prefix?: string): string {
-  const id = useId()
-  const sanitizedId = id.replace(/:/g, "-")
-  return prefix ? `${prefix}-${sanitizedId}` : sanitizedId
+let globalId = 0
+
+export function useUniqueId(prefix = "id"): string {
+  const idRef = useRef<string | null>(null)
+
+  if (idRef.current === null) {
+    globalId++
+    idRef.current = `${prefix}-${globalId}`
+  }
+
+  return idRef.current
 }
 
 /**

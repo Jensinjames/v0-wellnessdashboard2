@@ -11,15 +11,6 @@ export interface Database {
           avatar_url: string | null
           created_at: string
           updated_at: string
-          username: string | null
-          bio: string | null
-          location: string | null
-          website: string | null
-          theme_preference: string | null
-          email_notifications: boolean
-          notification_preferences: Json | null
-          timezone: string
-          language: string
         }
         Insert: {
           id: string
@@ -28,15 +19,6 @@ export interface Database {
           avatar_url?: string | null
           created_at?: string
           updated_at?: string
-          username?: string | null
-          bio?: string | null
-          location?: string | null
-          website?: string | null
-          theme_preference?: string | null
-          email_notifications?: boolean
-          notification_preferences?: Json | null
-          timezone?: string
-          language?: string
         }
         Update: {
           id?: string
@@ -45,16 +27,89 @@ export interface Database {
           avatar_url?: string | null
           created_at?: string
           updated_at?: string
-          username?: string | null
-          bio?: string | null
-          location?: string | null
-          website?: string | null
-          theme_preference?: string | null
-          email_notifications?: boolean
-          notification_preferences?: Json | null
-          timezone?: string
-          language?: string
         }
+        Relationships: [
+          {
+            foreignKeyName: "profiles_id_fkey"
+            columns: ["id"]
+            referencedRelation: "users"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wellness_entries: {
+        Row: {
+          id: string
+          user_id: string
+          category: string
+          activity: string
+          duration: number
+          notes: string | null
+          timestamp: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          category: string
+          activity: string
+          duration: number
+          notes?: string | null
+          timestamp: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          category?: string
+          activity?: string
+          duration?: number
+          notes?: string | null
+          timestamp?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wellness_entries_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      wellness_goals: {
+        Row: {
+          id: string
+          user_id: string
+          category: string
+          goal_hours: number
+          created_at: string
+          updated_at: string
+        }
+        Insert: {
+          id?: string
+          user_id: string
+          category: string
+          goal_hours: number
+          created_at?: string
+          updated_at?: string
+        }
+        Update: {
+          id?: string
+          user_id?: string
+          category?: string
+          goal_hours?: number
+          created_at?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "wellness_goals_user_id_fkey"
+            columns: ["user_id"]
+            referencedRelation: "profiles"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

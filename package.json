@@ -60,10 +60,10 @@
     "zod": "latest",
     "@supabase/supabase-js": "latest",
     "turndown": "latest",
-    "@supabase/auth-helpers-nextjs": "latest",
     "@supabase/postgrest-js": "latest",
     "fs": "latest",
-    "path": "latest"
+    "path": "latest",
+    "@supabase/auth-helpers-nextjs": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",

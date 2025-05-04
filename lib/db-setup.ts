@@ -1,55 +1,64 @@
-import { getSupabaseClient } from "./supabase"
+import { createClient } from "@/lib/supabase-server"
+import { logDatabaseError } from "@/utils/db-error-handler"
 
-export async function setupDatabase() {
-  const supabase = getSupabaseClient()
+/**
+ * Ensure the database schema is properly set up
+ */
+export async function ensureDatabaseSchema(): Promise<{ success: boolean; error: string | null }> {
+  const supabase = createClient()
 
-  // Check if profiles table exists
-  const { error: checkError } = await supabase.from("profiles").select("id").limit(1)
+  try {
+    // Check if profiles table exists
+    const { error: checkError } = await supabase.from("profiles").select("id").limit(1)
 
-  // If there's an error, the table might not exist
-  if (checkError) {
-    console.log("Setting up profiles table...")
+    // If table exists, we're good
+    if (!checkError) {
+      console.log("Profiles table exists")
+      return { success: true, error: null }
+    }
+
+    // If error is not about missing table, report it
+    if (!checkError.message.includes('relation "profiles" does not exist')) {
+      logDatabaseError(checkError, "checking profiles table")
+      return { success: false, error: checkError.message }
+    }
 
     // Create profiles table
+    console.log("Creating profiles table...")
+
+    // Use RPC to create the table (safer than raw SQL)
     const { error: createError } = await supabase.rpc("create_profiles_table")
 
     if (createError) {
-      console.error("Error creating profiles table:", createError)
-    } else {
-      console.log("Profiles table created successfully")
+      logDatabaseError(createError, "creating profiles table")
+      return { success: false, error: createError.message }
+    }
+
+    console.log("Profiles table created successfully")
+    return { success: true, error: null }
+  } catch (error) {
+    logDatabaseError(error, "ensureDatabaseSchema")
+    return {
+      success: false,
+      error: `Failed to set up database schema: ${error instanceof Error ? error.message : "Unknown error"}`,
     }
   }
 }
 
-// SQL function to create profiles table if it doesn't exist
-// This would be executed via a migration or admin panel
-/*
-CREATE OR REPLACE FUNCTION create_profiles_table()
-RETURNS void AS $$
-BEGIN
-  CREATE TABLE IF NOT EXISTS profiles (
-    id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
-    email TEXT NOT NULL,
-    full_name TEXT,
-    avatar_url TEXT,
-    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-  );
-  
-  -- Create a trigger to update the updated_at column
-  CREATE OR REPLACE FUNCTION update_profiles_updated_at()
-  RETURNS TRIGGER AS $$
-  BEGIN
-    NEW.updated_at = NOW();
-    RETURN NEW;
-  END;
-  $$ LANGUAGE plpgsql;
-  
-  DROP TRIGGER IF EXISTS update_profiles_updated_at_trigger ON profiles;
-  CREATE TRIGGER update_profiles_updated_at_trigger
-  BEFORE UPDATE ON profiles
-  FOR EACH ROW
-  EXECUTE FUNCTION update_profiles_updated_at();
-END;
-$$ LANGUAGE plpgsql;
-*/
+/**
+ * Initialize the database with required tables and functions
+ * This should be called during app initialization
+ */
+export async function initializeDatabase(): Promise<void> {
+  console.log("Initializing database...")
+
+  const { success, error } = await ensureDatabaseSchema()
+
+  if (!success) {
+    console.error("Database initialization failed:", error)
+    // Don't throw - we want the app to continue even if DB setup fails
+    // The app can handle missing tables with proper error handling
+  } else {
+    console.log("Database initialized successfully")
+  }
+}

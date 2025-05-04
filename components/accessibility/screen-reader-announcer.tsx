@@ -1,90 +1,67 @@
 "use client"
 
-import type * as React from "react"
-import { useRef, createContext, useContext } from "react"
+import type React from "react"
+import { createContext, useContext, useState } from "react"
+import { useUniqueId } from "@/utils/unique-id"
 
-type AnnouncementPriority = "polite" | "assertive"
+type AnnouncementPolitenessSetting = "polite" | "assertive"
 
 interface ScreenReaderAnnouncerContextType {
-  announce: (message: string, priority?: AnnouncementPriority) => void
+  announce: (message: string, politeness?: AnnouncementPolitenessSetting) => void
 }
 
 const ScreenReaderAnnouncerContext = createContext<ScreenReaderAnnouncerContextType | undefined>(undefined)
 
+export function useScreenReaderAnnouncer() {
+  const context = useContext(ScreenReaderAnnouncerContext)
+  if (context === undefined) {
+    throw new Error("useScreenReaderAnnouncer must be used within a ScreenReaderAnnouncerProvider")
+  }
+  return context
+}
+
+interface LiveRegionProps {
+  children: React.ReactNode
+  priority?: AnnouncementPolitenessSetting
+  className?: string
+}
+
+export function LiveRegion({ children, priority = "polite", className = "" }: LiveRegionProps) {
+  const id = useUniqueId(`live-region-${priority}`)
+
+  return (
+    <div id={id} aria-live={priority} aria-atomic="true" className={className}>
+      {children}
+    </div>
+  )
+}
+
 export function ScreenReaderAnnouncerProvider({ children }: { children: React.ReactNode }) {
-  const politeAnnouncerRef = useRef<HTMLDivElement>(null)
-  const assertiveAnnouncerRef = useRef<HTMLDivElement>(null)
+  const [politeAnnouncement, setPoliteAnnouncement] = useState("")
+  const [assertiveAnnouncement, setAssertiveAnnouncement] = useState("")
 
-  const announce = (message: string, priority: AnnouncementPriority = "polite") => {
-    const announcerRef = priority === "assertive" ? assertiveAnnouncerRef : politeAnnouncerRef
+  const politeAnnouncerId = useUniqueId("polite-announcer")
+  const assertiveAnnouncerId = useUniqueId("assertive-announcer")
 
-    if (announcerRef.current) {
-      // Clear the announcer first
-      announcerRef.current.textContent = ""
-
-      // Use requestAnimationFrame to ensure the DOM has time to update
-      window.requestAnimationFrame(() => {
-        if (announcerRef.current) {
-          announcerRef.current.textContent = message
-        }
-      })
+  const announce = (message: string, politeness: AnnouncementPolitenessSetting = "polite") => {
+    if (politeness === "assertive") {
+      setAssertiveAnnouncement("")
+      setTimeout(() => setAssertiveAnnouncement(message), 50)
+    } else {
+      setPoliteAnnouncement("")
+      setTimeout(() => setPoliteAnnouncement(message), 50)
     }
   }
 
   return (
     <ScreenReaderAnnouncerContext.Provider value={{ announce }}>
-      {/* Polite announcer for non-urgent updates */}
-      <div
-        ref={politeAnnouncerRef}
-        className="sr-only"
-        aria-live="polite"
-        aria-atomic="true"
-        data-testid="polite-announcer"
-      />
-
-      {/* Assertive announcer for urgent updates */}
-      <div
-        ref={assertiveAnnouncerRef}
-        className="sr-only"
-        aria-live="assertive"
-        aria-atomic="true"
-        data-testid="assertive-announcer"
-      />
-
       {children}
+      <div id={politeAnnouncerId} aria-live="polite" className="sr-only" aria-atomic="true">
+        {politeAnnouncement}
+      </div>
+      <div id={assertiveAnnouncerId} aria-live="assertive" className="sr-only" aria-atomic="true">
+        {assertiveAnnouncement}
+      </div>
     </ScreenReaderAnnouncerContext.Provider>
-  )
-}
-
-export function useScreenReaderAnnouncer() {
-  const context = useContext(ScreenReaderAnnouncerContext)
-
-  if (context === undefined) {
-    throw new Error("useScreenReaderAnnouncer must be used within a ScreenReaderAnnouncerProvider")
-  }
-
-  return context
-}
-
-// Component for regions that need to announce their content changes
-export function LiveRegion({
-  children,
-  priority = "polite",
-  atomic = true,
-  relevant = "additions text",
-  id,
-  className,
-}: {
-  children: React.ReactNode
-  priority?: AnnouncementPriority
-  atomic?: boolean
-  relevant?: "additions" | "removals" | "text" | "all" | "additions text"
-  id?: string
-  className?: string
-}) {
-  return (
-    <div aria-live={priority} aria-atomic={atomic} aria-relevant={relevant} id={id} className={className}>
-      {children}
-    </div>
   )
 }

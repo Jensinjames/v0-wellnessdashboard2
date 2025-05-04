@@ -1,36 +1,58 @@
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 
-// Singleton instance for client components
-let clientInstance: ReturnType<typeof createClientComponentClient<Database>> | null = null
+let supabaseClient: ReturnType<typeof createClient<Database>> | null = null
 
 /**
- * Returns a singleton instance of the Supabase client for client components
- * @returns Supabase client instance
- */
-export function getSupabaseClient() {
-  if (!clientInstance) {
-    clientInstance = createClientComponentClient<Database>()
-  }
-  return clientInstance
-}
-
-/**
- * @deprecated Use getSupabaseClient() instead
- * Alias for getSupabaseClient for backward compatibility
- */
-export const createClient = getSupabaseClient
-
-/**
- * Check if Supabase is properly configured
- * @returns boolean indicating if Supabase environment variables are set
+ * Check if Supabase is configured with required environment variables
  */
 export function isSupabaseConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY)
 }
 
 /**
- * @deprecated Use getSupabaseClient() instead
- * Direct access to the Supabase client (legacy support)
+ * Get a Supabase client instance (singleton pattern)
  */
-export const supabase = getSupabaseClient()
+export function getSupabaseClient(): ReturnType<typeof createClient<Database>> {
+  if (!isSupabaseConfigured()) {
+    throw new Error(
+      "Supabase is not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables.",
+    )
+  }
+
+  if (!supabaseClient) {
+    supabaseClient = createClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+        },
+      },
+    )
+  }
+
+  return supabaseClient
+}
+
+/**
+ * Create a new Supabase client (non-singleton)
+ * Useful for server-side operations or when you need a fresh client
+ */
+export function createSupabaseClient(): ReturnType<typeof createClient<Database>> {
+  if (!isSupabaseConfigured()) {
+    throw new Error(
+      "Supabase is not configured. Please set NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY environment variables.",
+    )
+  }
+
+  return createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+    },
+  })
+}

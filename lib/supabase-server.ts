@@ -26,3 +26,9 @@ export function getRouteHandlerSupabaseClient(cookiesInstance: any) {
   const { createRouteHandlerClient } = require("@supabase/auth-helpers-nextjs")
   return createRouteHandlerClient<Database>({ cookies: cookiesInstance })
 }
+
+/**
+ * Alias for createServerClient for backward compatibility
+ * @deprecated Use getServerSupabaseClient() instead
+ */
+export const createClient = getServerSupabaseClient
