@@ -16,6 +16,7 @@ interface NavItem {
   title: string
   href: string
   icon: React.ReactNode
+  section?: string
 }
 
 export function DashboardSidebar() {
@@ -28,41 +29,72 @@ export function DashboardSidebar() {
       title: "Dashboard",
       href: "/",
       icon: <Home className="h-5 w-5" />,
+      section: "main",
     },
     {
       title: "Activity",
       href: "/activity",
       icon: <Activity className="h-5 w-5" />,
+      section: "main",
     },
     {
       title: "Categories",
       href: "/categories",
       icon: <PieChart className="h-5 w-5" />,
+      section: "main",
     },
     {
       title: "Activity Patterns",
       href: "/activity-patterns",
       icon: <BarChart3 className="h-5 w-5" />,
+      section: "main",
     },
     {
       title: "Calendar",
       href: "/calendar",
       icon: <Calendar className="h-5 w-5" />,
+      section: "main",
     },
     {
       title: "Profile",
       href: "/profile",
       icon: <User className="h-5 w-5" />,
+      section: "account",
     },
     {
       title: "Settings",
       href: "/settings",
       icon: <Settings className="h-5 w-5" />,
+      section: "account",
     },
   ]
 
   const toggleCollapse = () => {
     setIsCollapsed(!isCollapsed)
+  }
+
+  const renderNavItems = (items: NavItem[], section?: string) => {
+    const filteredItems = section
+      ? items.filter((item) => item.section === section)
+      : items.filter((item) => !item.section || item.section === "main")
+
+    return filteredItems.map((item) => (
+      <Link
+        key={item.href}
+        href={item.href}
+        className={cn(
+          "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all hover:bg-accent",
+          pathname === item.href || pathname?.startsWith(item.href + "/")
+            ? "bg-accent text-accent-foreground"
+            : "text-muted-foreground",
+          isCollapsed && "flex h-10 w-10 justify-center p-0",
+        )}
+        title={isCollapsed ? item.title : undefined}
+      >
+        {item.icon}
+        {!isCollapsed && <span>{item.title}</span>}
+      </Link>
+    ))
   }
 
   if (isMobile) {
@@ -79,19 +111,12 @@ export function DashboardSidebar() {
             <h2 className="px-4 text-lg font-semibold tracking-tight mb-4">Navigation</h2>
             <ScrollArea className="h-[calc(100vh-8rem)]">
               <div className="space-y-1 p-2">
-                {navItems.map((item) => (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all hover:bg-accent",
-                      pathname === item.href ? "bg-accent text-accent-foreground" : "text-muted-foreground",
-                    )}
-                  >
-                    {item.icon}
-                    {item.title}
-                  </Link>
-                ))}
+                {renderNavItems(navItems)}
+
+                <div className="mt-6 pt-6 border-t">
+                  <h3 className="px-3 text-sm font-medium text-muted-foreground mb-2">Account</h3>
+                  {renderNavItems(navItems, "account")}
+                </div>
               </div>
             </ScrollArea>
           </div>
@@ -121,21 +146,15 @@ export function DashboardSidebar() {
       </div>
       <ScrollArea className="flex-1">
         <div className={cn("space-y-1 p-2", isCollapsed && "flex flex-col items-center p-1")}>
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 rounded-lg px-3 py-2 text-sm transition-all hover:bg-accent",
-                pathname === item.href ? "bg-accent text-accent-foreground" : "text-muted-foreground",
-                isCollapsed && "flex h-10 w-10 justify-center p-0",
-              )}
-              title={isCollapsed ? item.title : undefined}
-            >
-              {item.icon}
-              {!isCollapsed && <span>{item.title}</span>}
-            </Link>
-          ))}
+          {renderNavItems(navItems)}
+
+          {!isCollapsed && (
+            <div className="mt-6 pt-6 border-t">
+              <h3 className="px-3 text-sm font-medium text-muted-foreground mb-2">Account</h3>
+            </div>
+          )}
+
+          {renderNavItems(navItems, "account")}
         </div>
       </ScrollArea>
     </div>

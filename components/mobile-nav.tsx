@@ -1,16 +1,19 @@
 "use client"
 
+import type React from "react"
+
 import { useState } from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
-import { Menu, X } from "lucide-react"
+import { Menu, X, Home, Activity, PieChart, User, Settings } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
 
 interface NavItem {
   title: string
   href: string
+  icon: React.ReactNode
 }
 
 export function MobileNav() {
@@ -21,18 +24,27 @@ export function MobileNav() {
     {
       title: "Dashboard",
       href: "/",
+      icon: <Home className="h-5 w-5" />,
     },
     {
       title: "Activity",
       href: "/activity",
+      icon: <Activity className="h-5 w-5" />,
     },
     {
       title: "Categories",
       href: "/categories",
+      icon: <PieChart className="h-5 w-5" />,
     },
     {
       title: "Profile",
       href: "/profile",
+      icon: <User className="h-5 w-5" />,
+    },
+    {
+      title: "Settings",
+      href: "/settings",
+      icon: <Settings className="h-5 w-5" />,
     },
   ]
 
@@ -63,13 +75,14 @@ export function MobileNav() {
                   href={item.href}
                   className={cn(
                     "flex items-center rounded-md px-3 py-2 text-sm font-medium",
-                    pathname === item.href
+                    pathname === item.href || pathname?.startsWith(item.href + "/")
                       ? "bg-accent text-accent-foreground"
                       : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
                   )}
                   onClick={() => setOpen(false)}
                 >
-                  {item.title}
+                  {item.icon}
+                  <span className="ml-3">{item.title}</span>
                 </Link>
               ))}
             </div>

@@ -10,8 +10,15 @@
 | Error Component | Default Export | `export default function Error() {}` |
 | Not Found Component | Default Export | `export default function NotFound() {}` |
 | Route Handler | Named Export | `export async function GET() {}` |
-| Metadata | Named Export | `export const metadata = {}` |
-| generateMetadata | Named Export | `export async function generateMetadata() {}` |
+
+### Metadata (Choose ONE of these approaches per file)
+
+| Metadata Type | Export Pattern | Example |
+|---------------|----------------|---------|
+| Static Metadata | Named Export | `export const metadata = {}` |
+| Dynamic Metadata | Named Export | `export async function generateMetadata() {}` |
+
+> **Important**: You cannot export both `metadata` and `generateMetadata` from the same file. Choose either static metadata with `metadata` OR dynamic metadata with `generateMetadata`.
 
 ## React Components
 
@@ -72,4 +79,5 @@ export const buttonVariants = {
 // For default exports
 export { default as ProfileSettings } from './profile-settings'
 
-// For named exports from './button'
+// For named exports
+export { Button, buttonVariants } from './button'
