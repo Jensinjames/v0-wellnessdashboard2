@@ -1,6 +1,6 @@
 "use client"
 
-import { Card, CardContent } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import { EnhancedButton } from "@/components/ui/enhanced-button"
 import { CategoryIcon } from "@/components/ui/category-icon"
@@ -12,6 +12,7 @@ import type { CategoryProgressData } from "./types"
 import { formatTime, formatValue } from "./utils"
 import { useMobileDetection } from "@/hooks/use-mobile-detection"
 import { useIconContext } from "@/context/icon-context"
+import { getCategoryColorKey, getCategoryColorClasses } from "@/utils/category-color-utils"
 
 interface CategoryCardProps {
   category: CategoryProgressData
@@ -38,10 +39,11 @@ export function CategoryCard({
   // Get icon preferences if available
   const iconPref = iconPreferences[category.id]
 
-  // Safely handle color classes
-  const safeColorClass = `text-${category.color}-600 dark:text-${category.color}-500`
-  const safeBgColorClass = `bg-${category.color}-600 dark:bg-${category.color}-500`
-  const lightBgColorClass = `bg-${category.color}-100 dark:bg-${category.color}-800`
+  // Get the color for this category (from preferences or default)
+  const categoryColor = iconPref?.color || category.color || getCategoryColorKey(category.id)
+
+  // Get category color classes
+  const colorClasses = getCategoryColorClasses(category.id, categoryColor)
 
   // Determine if subcategories should be shown based on screen size and expanded state
   const shouldShowSubcategories =
@@ -72,10 +74,6 @@ export function CategoryCard({
         interactive && "cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all",
         isExpanded ? "sm:col-span-2 lg:col-span-2" : "",
         "border rounded-xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800",
-        category.name.toLowerCase().includes("health") && "card-shadow-green",
-        category.name.toLowerCase().includes("mind") && "card-shadow-purple",
-        category.name.toLowerCase().includes("life") && "card-shadow-orange",
-        category.name.toLowerCase().includes("faith") && "card-shadow-blue",
       )}
       onClick={interactive ? () => onCardClick(category.id) : undefined}
       id={cardId}
@@ -84,33 +82,34 @@ export function CategoryCard({
       aria-expanded={interactive ? isExpanded : undefined}
       aria-labelledby={`category-title-${category.id}`}
     >
-      <CardContent className={cn("p-4", isSmallMobile ? "p-3" : "", "h-full flex flex-col")}>
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <CategoryIcon
-              categoryId={category.id}
-              icon={(iconPref?.name || category.icon) as any}
-              size={iconPref?.size || "sm"}
-              label={category.name}
-              color={iconPref?.color || category.color}
-              background={iconPref?.background}
-            />
-            <h3
-              id={`category-title-${category.id}`}
-              className={cn("font-medium truncate text-slate-900 dark:text-slate-100", isSmallMobile ? "text-sm" : "")}
-            >
-              {category.name}
-            </h3>
-          </div>
-          <div className={cn("text-sm font-medium text-slate-900 dark:text-slate-100", isSmallMobile ? "text-xs" : "")}>
-            {Math.round(category.progress)}%
-          </div>
+      {/* Color-coded header */}
+      <CardHeader className={cn("py-2 px-4 flex flex-row items-center justify-between", colorClasses.header)}>
+        <div className="flex items-center gap-2">
+          <CategoryIcon
+            categoryId={category.id}
+            icon={(iconPref?.name || category.icon) as any}
+            size={iconPref?.size || "sm"}
+            label={category.name}
+            color={categoryColor}
+            background={iconPref?.background}
+          />
+          <h3
+            id={`category-title-${category.id}`}
+            className={cn("font-medium truncate", colorClasses.headerText, isSmallMobile ? "text-sm" : "")}
+          >
+            {category.name}
+          </h3>
         </div>
+        <div className={cn("text-sm font-medium", colorClasses.headerText, isSmallMobile ? "text-xs" : "")}>
+          {Math.round(category.progress)}%
+        </div>
+      </CardHeader>
 
+      <CardContent className={cn("p-4", isSmallMobile ? "p-3" : "", "h-full flex flex-col")}>
         <Progress
           value={category.progress}
           className="h-2 mb-3 bg-slate-100 dark:bg-slate-800"
-          indicatorClassName={safeBgColorClass}
+          indicatorClassName={colorClasses.progress}
           aria-label={`${category.name} progress: ${Math.round(category.progress)}%`}
           id={progressId}
         />
@@ -169,7 +168,7 @@ export function CategoryCard({
                   <Progress
                     value={subcategory.progress}
                     className={cn("h-1.5 bg-slate-100 dark:bg-slate-800", isSmallMobile ? "h-1" : "")}
-                    indicatorClassName={safeBgColorClass}
+                    indicatorClassName={colorClasses.progress}
                     aria-label={`${subcategory.name} progress: ${Math.round(subcategory.progress)}%`}
                     id={subcategoryProgressId}
                   />
