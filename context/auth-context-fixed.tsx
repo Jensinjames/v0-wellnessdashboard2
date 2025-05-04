@@ -1,4 +1,4 @@
-"\"use client"
+"use client"
 
 import type React from "react"
 import { createContext, useContext, useEffect, useState, useRef } from "react"
@@ -12,6 +12,7 @@ export interface SignUpCredentials {
   email: string
   password: string
   full_name?: string
+  persistSession?: boolean
 }
 
 export interface SignInCredentials {
@@ -31,6 +32,10 @@ export interface UserProfile {
   avatar_url?: string | null
   created_at?: string
   updated_at?: string
+  completion_status?: {
+    is_complete: boolean
+    percent_complete: number
+  }
 }
 
 // Define the auth context type
@@ -333,12 +338,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * Updates the user's password after verifying the current password.
    * Displays appropriate toast notifications for success or failure.
    */
-  const updatePassword = async (currentPassword: string, newPassword: string) => {
+  const updatePassword = async (data: PasswordUpdateData) => {
     try {
       // First verify the current password
       const { error: verifyError } = await supabase.auth.signInWithPassword({
         email: user?.email || "",
-        password: currentPassword,
+        password: data.current_password,
       })
 
       if (verifyError) {
@@ -352,7 +357,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Then update to the new password
       const { error } = await supabase.auth.updateUser({
-        password: newPassword,
+        password: data.new_password,
       })
 
       if (error) {
@@ -427,7 +432,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshProfile,
   }
 
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={value} data-auth-provider="true">
+      {children}
+    </AuthContext.Provider>
+  )
 }
 
 /**

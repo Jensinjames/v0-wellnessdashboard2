@@ -2,7 +2,6 @@
 
 import type React from "react"
 import { createContext, useContext, useState, useEffect, useCallback } from "react"
-import { useAuth } from "@/context/auth-context"
 import { getSupabaseClient } from "@/lib/supabase"
 import { toast } from "@/components/ui/use-toast"
 import type { FullProfile, ProfileUpdateData, PreferencesUpdateData, ProfileCompletionStatus } from "@/types/profile"
@@ -26,12 +25,38 @@ interface ProfileContextType {
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined)
 
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth()
+  // Initialize state
   const [profile, setProfile] = useState<FullProfile | null>(null)
   const [isLoading, setIsLoading] = useState<boolean>(true)
   const [error, setError] = useState<string | null>(null)
   const [completionStatus, setCompletionStatus] = useState<ProfileCompletionStatus | null>(null)
+  const [authAvailable, setAuthAvailable] = useState<boolean>(false)
+  const [user, setUser] = useState<any>(null)
+
   const supabase = getSupabaseClient()
+
+  // Check if auth context is available
+  useEffect(() => {
+    try {
+      // Try to get the auth user from Supabase directly
+      const getUser = async () => {
+        const { data } = await supabase.auth.getUser()
+        if (data?.user) {
+          setUser(data.user)
+          setAuthAvailable(true)
+        } else {
+          setAuthAvailable(false)
+        }
+        setIsLoading(false)
+      }
+
+      getUser()
+    } catch (error) {
+      console.error("Error checking auth:", error)
+      setAuthAvailable(false)
+      setIsLoading(false)
+    }
+  }, [supabase])
 
   // Fetch profile from database with validation and caching
   const fetchProfile = useCallback(async (): Promise<FullProfile | null> => {
@@ -306,8 +331,18 @@ export function ProfileProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize profile on auth change
   useEffect(() => {
-    fetchProfile()
-  }, [user, fetchProfile])
+    if (authAvailable && user) {
+      fetchProfile()
+    } else {
+      setIsLoading(false)
+    }
+  }, [authAvailable, user, fetchProfile])
+
+  // If auth is not available, render children without the context
+  if (!authAvailable) {
+    console.warn("Auth not available, ProfileProvider will not provide profile functionality")
+    return <>{children}</>
+  }
 
   const value = {
     profile,

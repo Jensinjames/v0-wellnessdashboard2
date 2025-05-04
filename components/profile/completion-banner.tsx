@@ -1,26 +1,48 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { useAuth } from "@/context/auth-context-fixed"
 import { Progress } from "@/components/ui/progress"
 import { Button } from "@/components/ui/button"
 import { AlertCircle, X } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { getSupabaseClient } from "@/lib/supabase"
 
 export function ProfileCompletionBanner() {
-  const { user, profile } = useAuth()
   const [completionPercentage, setCompletionPercentage] = useState(0)
-  const [isVisible, setIsVisible] = useState(true)
+  const [isVisible, setIsVisible] = useState(false)
+  const [user, setUser] = useState<any>(null)
+  const [profile, setProfile] = useState<any>(null)
   const router = useRouter()
+  const supabase = getSupabaseClient()
 
+  // Get user and profile directly from Supabase
   useEffect(() => {
-    if (profile?.completion_status) {
-      setCompletionPercentage(profile.completion_status.percent_complete || 0)
+    const getAuthData = async () => {
+      try {
+        const { data: userData } = await supabase.auth.getUser()
+        if (userData?.user) {
+          setUser(userData.user)
 
-      // Only show banner if profile is incomplete
-      setIsVisible(!profile.completion_status.is_complete)
+          // Get profile data
+          const { data: profileData } = await supabase.from("profiles").select("*").eq("id", userData.user.id).single()
+
+          if (profileData) {
+            setProfile(profileData)
+
+            // Set completion percentage if available
+            if (profileData.completion_status) {
+              setCompletionPercentage(profileData.completion_status.percent_complete || 0)
+              setIsVisible(!profileData.completion_status.is_complete)
+            }
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching auth data:", error)
+      }
     }
-  }, [profile])
+
+    getAuthData()
+  }, [supabase])
 
   // Don't render if no user, profile is complete, or banner is dismissed
   if (!user || !isVisible) {

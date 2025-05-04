@@ -1,41 +1,28 @@
-"use client"
-
-import { useAuth } from "@/context/auth-context"
-import { useEffect } from "react"
-import { redirect } from "next/navigation"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { Loader2 } from "lucide-react"
 
-export default function HomePage() {
-  const { user, isLoading } = useAuth()
-
-  useEffect(() => {
-    // If authentication is complete and user is logged in, redirect to dashboard
-    if (!isLoading && user) {
-      redirect("/dashboard")
-    }
-
-    // If authentication is complete and user is not logged in, redirect to sign-in
-    if (!isLoading && !user) {
-      redirect("/auth/sign-in?redirect=/dashboard")
-    }
-  }, [user, isLoading])
-
-  // Show loading state while checking authentication
+export default function Home() {
   return (
-    <div className="flex flex-col items-center justify-center min-h-screen p-4">
-      <div className="text-center space-y-6 max-w-md">
-        <h1 className="text-3xl font-bold">Welcome to Wellness Dashboard</h1>
-        <p className="text-muted-foreground">
-          Track and visualize your wellness journey with our comprehensive dashboard.
-        </p>
-        <div className="flex justify-center">
-          <Button disabled className="mx-auto">
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            <span>Preparing your dashboard</span>
-          </Button>
+    <div className="flex flex-col min-h-screen">
+      <main className="flex-1 flex flex-col items-center justify-center p-6">
+        <div className="max-w-3xl w-full text-center space-y-8">
+          <h1 className="text-4xl font-bold tracking-tight sm:text-5xl">Welcome to Wellness Dashboard</h1>
+          <p className="text-xl text-muted-foreground">
+            Track and visualize your wellness journey with our comprehensive dashboard.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center">
+            <Button asChild size="lg">
+              <Link href="/dashboard">Go to Dashboard</Link>
+            </Button>
+            <Button asChild variant="outline" size="lg">
+              <Link href="/auth/sign-in">Sign In</Link>
+            </Button>
+          </div>
         </div>
-      </div>
+      </main>
+      <footer className="border-t py-6 text-center text-sm text-muted-foreground">
+        <p>© {new Date().getFullYear()} Wellness Dashboard. All rights reserved.</p>
+      </footer>
     </div>
   )
 }

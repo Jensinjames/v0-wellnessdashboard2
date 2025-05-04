@@ -3,7 +3,7 @@ import "@/styles/globals.css"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import { ThemeProvider } from "@/components/theme-provider"
-import { AuthProvider } from "@/context/auth-context"
+import { AuthProvider } from "@/context/auth-context-fixed" // Make sure we're using the fixed version
 import { ProfileProvider } from "@/context/profile-context"
 import { ScreenReaderAnnouncerProvider } from "@/components/accessibility/screen-reader-announcer"
 import { Toaster } from "@/components/ui/toaster"
