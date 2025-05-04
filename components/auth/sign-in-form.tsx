@@ -3,39 +3,39 @@
 import { useState } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
-import { zodResolver } from "@hookform/resolvers/zod"
+import { z } from "zod"
 import { useForm } from "react-hook-form"
-import * as z from "zod"
-
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useAuth } from "@/context/auth-context"
+import { Input } from "@/components/ui/input"
+import { CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AlertCircle, Eye, EyeOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
-import { useToast } from "@/components/ui/use-toast"
-import { useAuth } from "@/context/auth-context"
 
-// Define form schema with validation
-const formSchema = z.object({
-  email: z.string().email({ message: "Please enter a valid email address" }),
-  password: z.string().min(6, { message: "Password must be at least 6 characters" }),
+const signInSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(1, "Password is required"),
   rememberMe: z.boolean().default(false),
 })
 
-type FormValues = z.infer<typeof formSchema>
+type SignInFormValues = z.infer<typeof signInSchema>
 
 export function SignInForm() {
-  const { signIn } = useAuth()
-  const { toast } = useToast()
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [showPassword, setShowPassword] = useState(false)
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [isLoading, setIsLoading] = useState(false)
+  const { signIn } = useAuth()
 
-  // Get redirect URL from query parameters
-  const redirectTo = searchParams?.get("redirectTo") || "/dashboard"
+  // Get the redirect path from URL params or default to dashboard
+  const redirectTo = searchParams.get("redirect") || "/dashboard"
 
-  // Initialize form with default values
-  const form = useForm<FormValues>({
-    resolver: zodResolver(formSchema),
+  const form = useForm<SignInFormValues>({
+    resolver: zodResolver(signInSchema),
     defaultValues: {
       email: "",
       password: "",
@@ -43,9 +43,9 @@ export function SignInForm() {
     },
   })
 
-  // Handle form submission
-  const onSubmit = async (values: FormValues) => {
+  const onSubmit = async (values: SignInFormValues) => {
     setIsLoading(true)
+    setError(null)
 
     try {
       const { error } = await signIn({
@@ -55,91 +55,177 @@ export function SignInForm() {
       })
 
       if (error) {
-        toast({
-          title: "Sign in failed",
-          description: error.message,
-          variant: "destructive",
-        })
+        setError(error.message)
+        setIsLoading(false)
         return
       }
 
-      // Redirect to the dashboard or specified redirect URL
+      // Ensure profile exists by calling the API endpoint
+      try {
+        await fetch("/api/auth/ensure-profile", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+        })
+      } catch (profileError) {
+        console.error("Error ensuring profile exists:", profileError)
+        // Continue anyway, as this is not critical for sign-in
+      }
+
+      // Redirect to the specified path
       router.push(redirectTo)
+
+      // Force a refresh to ensure all server components update
       router.refresh()
-    } catch (error: any) {
-      toast({
-        title: "Sign in failed",
-        description: error.message || "An unexpected error occurred",
-        variant: "destructive",
-      })
-    } finally {
+    } catch (err) {
+      setError("An unexpected error occurred. Please try again.")
+      console.error(err)
       setIsLoading(false)
     }
   }
 
   return (
-    <Form {...form}>
-      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-        <FormField
-          control={form.control}
-          name="email"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Email</FormLabel>
-              <FormControl>
-                <Input placeholder="you@example.com" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-        <FormField
-          control={form.control}
-          name="password"
-          render={({ field }) => (
-            <FormItem>
-              <FormLabel>Password</FormLabel>
-              <FormControl>
-                <Input type="password" placeholder="••••••••" {...field} />
-              </FormControl>
-              <FormMessage />
-            </FormItem>
-          )}
-        />
-
-        <div className="flex items-center justify-between">
-          <FormField
-            control={form.control}
-            name="rememberMe"
-            render={({ field }) => (
-              <FormItem className="flex flex-row items-center space-x-2 space-y-0">
-                <FormControl>
-                  <Checkbox checked={field.value} onCheckedChange={field.onChange} />
-                </FormControl>
-                <FormLabel className="text-sm font-medium leading-none cursor-pointer">Remember me</FormLabel>
-              </FormItem>
-            )}
-          />
-
-          <Link href="/auth/forgot-password" className="text-sm font-medium text-primary hover:underline">
-            Forgot password?
+    <>
+      <CardHeader>
+        <CardTitle id="sign-in-title">Sign in</CardTitle>
+        <CardDescription id="sign-in-description">Enter your credentials to access your account</CardDescription>
+      </CardHeader>
+      <CardContent>
+        {error && (
+          <Alert variant="destructive" className="mb-4" aria-live="assertive">
+            <AlertCircle className="h-4 w-4" aria-hidden="true" />
+            <AlertDescription>{error}</AlertDescription>
+          </Alert>
+        )}
+        <Form {...form}>
+          <form
+            onSubmit={form.handleSubmit(onSubmit)}
+            className="space-y-4"
+            aria-labelledby="sign-in-title"
+            aria-describedby="sign-in-description"
+          >
+            <FormField
+              control={form.control}
+              name="email"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel htmlFor="email">Email</FormLabel>
+                  <FormControl>
+                    <Input
+                      id="email"
+                      type="email"
+                      placeholder="john.doe@example.com"
+                      autoComplete="email"
+                      aria-describedby="email-error"
+                      {...field}
+                    />
+                  </FormControl>
+                  <FormMessage id="email-error" aria-live="polite" />
+                </FormItem>
+              )}
+            />
+            <FormField
+              control={form.control}
+              name="password"
+              render={({ field }) => (
+                <FormItem>
+                  <FormLabel htmlFor="password">Password</FormLabel>
+                  <FormControl>
+                    <div className="relative">
+                      <Input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        placeholder="••••••••"
+                        autoComplete="current-password"
+                        aria-describedby="password-error"
+                        {...field}
+                      />
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon"
+                        className="absolute right-0 top-0 h-full px-3"
+                        onClick={() => setShowPassword(!showPassword)}
+                        aria-label={showPassword ? "Hide password" : "Show password"}
+                        aria-pressed={showPassword}
+                      >
+                        {showPassword ? (
+                          <EyeOff className="h-4 w-4" aria-hidden="true" />
+                        ) : (
+                          <Eye className="h-4 w-4" aria-hidden="true" />
+                        )}
+                      </Button>
+                    </div>
+                  </FormControl>
+                  <FormMessage id="password-error" aria-live="polite" />
+                </FormItem>
+              )}
+            />
+            <div className="flex items-center justify-between">
+              <FormField
+                control={form.control}
+                name="rememberMe"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-center space-x-2 space-y-0">
+                    <FormControl>
+                      <Checkbox
+                        id="remember-me"
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                        aria-describedby="remember-me-description"
+                      />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel htmlFor="remember-me" className="text-sm font-medium cursor-pointer">
+                        Remember me
+                      </FormLabel>
+                      <p id="remember-me-description" className="sr-only">
+                        Keep me signed in on this device
+                      </p>
+                    </div>
+                  </FormItem>
+                )}
+              />
+              <Link
+                href="/auth/forgot-password"
+                className="text-sm text-primary hover:underline"
+                aria-label="Forgot password? Reset it here"
+              >
+                Forgot password?
+              </Link>
+            </div>
+            <Button
+              type="submit"
+              className="w-full"
+              disabled={isLoading}
+              aria-disabled={isLoading}
+              aria-busy={isLoading}
+            >
+              {isLoading ? (
+                <>
+                  <span className="sr-only">Signing in, please wait</span>
+                  <span aria-hidden="true">Signing in...</span>
+                </>
+              ) : (
+                "Sign in"
+              )}
+            </Button>
+          </form>
+        </Form>
+      </CardContent>
+      <CardFooter className="flex justify-center">
+        <p className="text-sm text-muted-foreground">
+          Don't have an account?{" "}
+          <Link
+            href={`/auth/sign-up${redirectTo !== "/dashboard" ? `?redirect=${redirectTo}` : ""}`}
+            className="text-primary hover:underline"
+            aria-label="Create a new account"
+          >
+            Create account
           </Link>
-        </div>
-
-        <Button type="submit" className="w-full" disabled={isLoading}>
-          {isLoading ? "Signing in..." : "Sign in"}
-        </Button>
-      </form>
-
-      <div className="mt-4 text-center text-sm">
-        Don't have an account?{" "}
-        <Link
-          href={`/auth/sign-up${redirectTo !== "/dashboard" ? `?redirectTo=${redirectTo}` : ""}`}
-          className="font-medium text-primary hover:underline"
-        >
-          Sign up
-        </Link>
-      </div>
-    </Form>
+        </p>
+      </CardFooter>
+    </>
   )
 }

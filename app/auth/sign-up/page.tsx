@@ -1,14 +1,16 @@
-import { Suspense } from "react"
-import { SignUpForm } from "@/components/auth/sign-up-form"
+import type { Metadata } from "next"
 import { AuthLayout } from "@/components/auth/auth-layout"
-import { AuthFormLoading } from "@/components/auth/auth-layout"
+import { SignUpForm } from "@/components/auth/sign-up-form"
+
+export const metadata: Metadata = {
+  title: "Sign Up",
+  description: "Create a new account",
+}
 
 export default function SignUpPage() {
   return (
-    <AuthLayout>
-      <Suspense fallback={<AuthFormLoading />}>
-        <SignUpForm />
-      </Suspense>
+    <AuthLayout title="Sign Up" redirectPath="/dashboard">
+      <SignUpForm />
     </AuthLayout>
   )
 }

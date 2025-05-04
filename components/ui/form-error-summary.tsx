@@ -1,30 +1,18 @@
+import { AlertCircle } from "lucide-react"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+
 interface FormErrorSummaryProps {
-  errors: string[]
   title?: string
+  description: string
   className?: string
 }
 
-export function FormErrorSummary({
-  errors,
-  title = "Please correct the following errors:",
-  className = "",
-}: FormErrorSummaryProps) {
-  if (errors.length === 0) return null
-
+export function FormErrorSummary({ title = "Error", description, className = "" }: FormErrorSummaryProps) {
   return (
-    <div
-      className={`bg-red-50 border border-red-200 text-red-800 rounded-md p-4 mb-4 ${className}`}
-      role="alert"
-      aria-labelledby="validation-summary-heading"
-    >
-      <h4 id="validation-summary-heading" className="font-medium mb-2">
-        {title}
-      </h4>
-      <ul className="list-disc pl-5 space-y-1">
-        {errors.map((error, index) => (
-          <li key={index}>{error}</li>
-        ))}
-      </ul>
-    </div>
+    <Alert variant="destructive" className={`mb-4 ${className}`} role="alert" aria-live="assertive">
+      <AlertCircle className="h-4 w-4" aria-hidden="true" />
+      <AlertTitle className="sr-only">{title}</AlertTitle>
+      <AlertDescription>{description}</AlertDescription>
+    </Alert>
   )
 }

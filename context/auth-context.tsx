@@ -233,8 +233,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             full_name: full_name || "",
           },
           emailRedirectTo: `${window.location.origin}/auth/verify-email`,
-          // Set persistence based on the persistSession flag
-          persistSession,
         },
       })
 
@@ -271,10 +269,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await supabase.auth.signInWithPassword({
         email,
         password,
-        options: {
-          // Set persistence based on the persistSession flag
-          persistSession,
-        },
       })
 
       if (error) {
