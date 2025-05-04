@@ -7,6 +7,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 import { cn } from "@/lib/utils"
 import * as Icons from "lucide-react"
+import { ArrowDownIcon, ArrowUpIcon, MinusIcon } from "lucide-react"
 import type { LucideIcon } from "lucide-react"
 import { getCategoryColorClass } from "@/types/wellness"
 import type { CategoryProgressData } from "./types"
@@ -52,6 +53,20 @@ export function CategoryCard({
   const shouldShowSubcategories =
     (isExpanded || showSubcategoryProgress) && category.subcategories.length > 0 && (!isSmallMobile || isExpanded)
 
+  // Helper function to safely render trend icons
+  const renderTrendIcon = (type: string, className: string) => {
+    switch (type) {
+      case "up":
+        return <ArrowUpIcon className={className} />
+      case "down":
+        return <ArrowDownIcon className={className} />
+      case "minus":
+        return <MinusIcon className={className} />
+      default:
+        return null
+    }
+  }
+
   return (
     <Card
       key={category.id}
@@ -95,12 +110,12 @@ export function CategoryCard({
         >
           {showGoals && (
             <div>
-              Goal: <span className="font-medium">{category.totalGoal}</span>
+              Goal: <span className="font-medium">{category.totalGoal || 0}</span>
             </div>
           )}
           {showTimeAllocations && (
             <div>
-              Time: <span className="font-medium">{formatTime(category.totalTime)}</span>
+              Time: <span className="font-medium">{formatTime(category.totalTime || 0)}</span>
             </div>
           )}
           {!showGoals && !showTimeAllocations && (

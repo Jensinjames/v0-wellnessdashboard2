@@ -1,5 +1,3 @@
-import type { ReactNode } from "react"
-
 // Main component props
 export interface CategoryOverviewProps {
   showGoals?: boolean
@@ -38,7 +36,10 @@ export interface CategoryProgressData {
 
 // Trend indicator return type
 export interface TrendIndicator {
-  icon: ReactNode
+  icon: {
+    type: "up" | "down" | "minus"
+    className: string
+  }
   color: string
 }
 
