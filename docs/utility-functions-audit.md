@@ -41,3 +41,5 @@ Updating these utility files will:
 2. Enable better tree-shaking
 3. Make imports more explicit
 4. Improve type safety
+
+Let me create a script to find the issue:

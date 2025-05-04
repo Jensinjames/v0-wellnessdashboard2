@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { createContext, useContext, useEffect, useState } from "react"
+import { createContext, useContext, useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import type { User, Session } from "@supabase/supabase-js"
 import { getSupabaseClient } from "@/lib/supabase"
@@ -50,6 +49,10 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+/**
+ * AuthProvider component that manages authentication state and provides
+ * authentication-related functionality to its children.
+ */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
@@ -58,14 +61,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const supabase = getSupabaseClient()
 
-  // Replace the fetchProfile function with this improved version that handles missing profiles
+  // Use refs to prevent infinite loops and track fetch attempts
+  const fetchingProfile = useRef<Record<string, boolean>>({})
+  const profileFetchAttempts = useRef<Record<string, number>>({})
+  const MAX_FETCH_ATTEMPTS = 3
+
+  /**
+   * Fetches a user's profile from the database or creates one if it doesn't exist.
+   * Includes safeguards against infinite loops and concurrent fetches.
+   */
   const fetchProfile = async (userId: string) => {
+    // Prevent concurrent fetches for the same user
+    if (fetchingProfile.current[userId]) {
+      return null
+    }
+
+    // Check if we've exceeded max attempts
+    if ((profileFetchAttempts.current[userId] || 0) >= MAX_FETCH_ATTEMPTS) {
+      console.error(`Maximum profile fetch attempts reached for user ${userId}`)
+      return null
+    }
+
     try {
+      // Set fetching flag
+      fetchingProfile.current[userId] = true
+
+      // Increment attempt counter
+      profileFetchAttempts.current[userId] = (profileFetchAttempts.current[userId] || 0) + 1
+
       // First check if the profile exists
       const { data, error, count } = await supabase.from("profiles").select("*", { count: "exact" }).eq("id", userId)
 
       // If no profile exists, create one
-      if (count === 0) {
+      if (count === 0 || error) {
         const { data: userData } = await supabase.auth.getUser()
         const user = userData?.user
 
@@ -87,11 +115,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           if (createError) {
             console.error("Error creating profile:", createError)
+            fetchingProfile.current[userId] = false
             return null
           }
 
+          // Reset attempt counter on success
+          profileFetchAttempts.current[userId] = 0
+          fetchingProfile.current[userId] = false
+
           return createdProfile as UserProfile
         }
+
+        fetchingProfile.current[userId] = false
         return null
       }
 
@@ -100,20 +135,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         console.warn(`Multiple profiles found for user ${userId}. Using the first one.`)
       }
 
-      // Return the first profile if it exists
-      if (error) {
-        console.error("Error fetching profile:", error)
-        return null
-      }
+      // Reset attempt counter on success
+      profileFetchAttempts.current[userId] = 0
+      fetchingProfile.current[userId] = false
 
       return data[0] as UserProfile
     } catch (error) {
       console.error("Error in fetchProfile:", error)
+      fetchingProfile.current[userId] = false
       return null
     }
   }
 
-  // Refresh the user profile
+  /**
+   * Refreshes the user's profile data.
+   * Used when profile information might have changed.
+   */
   const refreshProfile = async () => {
     if (!user) return
 
@@ -130,7 +167,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Get initial session
         const {
           data: { session },
+          error,
         } = await supabase.auth.getSession()
+
+        if (error) {
+          console.error("Error getting session:", error)
+          setIsLoading(false)
+          return
+        }
+
         setSession(session)
 
         if (session?.user) {
@@ -159,9 +204,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile(null)
       }
 
-      if (event === "SIGNED_IN") {
-        router.refresh()
-      } else if (event === "SIGNED_OUT") {
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
         router.refresh()
       }
     })
@@ -172,9 +215,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       subscription.unsubscribe()
     }
-  }, [router, supabase])
+  }, [router])
 
-  // Sign up function
+  /**
+   * Signs up a new user with email, password, and optional full name.
+   * Displays appropriate toast notifications for success or failure.
+   */
   const signUp = async (credentials: SignUpCredentials) => {
     try {
       const { data, error } = await supabase.auth.signUp({
@@ -187,21 +233,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         },
       })
 
-      if (!error && data.user) {
+      if (error) {
         toast({
-          title: "Account created",
-          description: "Please check your email to verify your account.",
+          title: "Sign up failed",
+          description: error.message,
+          variant: "destructive",
         })
+        return { error, data: null }
       }
 
-      return { data, error }
-    } catch (error) {
-      console.error("Error in signUp:", error)
-      return { data: null, error }
+      toast({
+        title: "Sign up successful",
+        description: "Please check your email to verify your account.",
+      })
+      return { error: null, data }
+    } catch (error: any) {
+      toast({
+        title: "Sign up failed",
+        description: error.message || "An unexpected error occurred",
+        variant: "destructive",
+      })
+      return { error, data: null }
     }
   }
 
-  // Sign in function
+  /**
+   * Signs in a user with email and password.
+   * Ensures a profile exists for the user and displays appropriate toast notifications.
+   */
   const signIn = async (credentials: SignInCredentials) => {
     try {
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -209,44 +268,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password: credentials.password,
       })
 
-      if (!error && data.user) {
+      if (error) {
+        toast({
+          title: "Sign in failed",
+          description: error.message,
+          variant: "destructive",
+        })
+        return { error, data: null }
+      }
+
+      if (data.user) {
         // Ensure profile exists
         const profile = await fetchProfile(data.user.id)
         setProfile(profile)
-
-        toast({
-          title: "Welcome back!",
-          description: `You've successfully signed in.`,
-        })
       }
 
-      return { data, error }
-    } catch (error) {
-      console.error("Error in signIn:", error)
-      return { data: null, error }
+      toast({
+        title: "Sign in successful",
+        description: "Welcome back!",
+      })
+      return { error: null, data }
+    } catch (error: any) {
+      toast({
+        title: "Sign in failed",
+        description: error.message || "An unexpected error occurred",
+        variant: "destructive",
+      })
+      return { error, data: null }
     }
   }
 
-  // Sign out function
+  /**
+   * Signs out the current user and redirects to the sign-in page.
+   * Displays appropriate toast notifications for success or failure.
+   */
   const signOut = async () => {
     try {
-      await supabase.auth.signOut()
+      const { error } = await supabase.auth.signOut()
+
+      if (error) {
+        toast({
+          title: "Sign out failed",
+          description: error.message,
+          variant: "destructive",
+        })
+        return
+      }
+
       router.push("/auth/sign-in")
       toast({
-        title: "Signed out",
+        title: "Sign out successful",
         description: "You have been successfully signed out.",
       })
-    } catch (error) {
-      console.error("Error signing out:", error)
+    } catch (error: any) {
       toast({
-        title: "Error",
-        description: "There was a problem signing you out.",
+        title: "Sign out failed",
+        description: error.message || "An unexpected error occurred",
         variant: "destructive",
       })
     }
   }
 
-  // Update password function
+  /**
+   * Updates the user's password after verifying the current password.
+   * Displays appropriate toast notifications for success or failure.
+   */
   const updatePassword = async (data: PasswordUpdateData) => {
     try {
       // First verify the current password
@@ -256,6 +342,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       })
 
       if (verifyError) {
+        toast({
+          title: "Password update failed",
+          description: "Current password is incorrect",
+          variant: "destructive",
+        })
         return { error: { message: "Current password is incorrect" } }
       }
 
@@ -264,37 +355,60 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password: data.new_password,
       })
 
-      if (!error) {
+      if (error) {
         toast({
-          title: "Password updated",
-          description: "Your password has been successfully updated.",
+          title: "Password update failed",
+          description: error.message,
+          variant: "destructive",
         })
+        return { error }
       }
 
-      return { error }
-    } catch (error) {
-      console.error("Error updating password:", error)
+      toast({
+        title: "Password updated",
+        description: "Your password has been successfully updated.",
+      })
+      return { error: null }
+    } catch (error: any) {
+      toast({
+        title: "Password update failed",
+        description: error.message || "An unexpected error occurred",
+        variant: "destructive",
+      })
       return { error }
     }
   }
 
-  // Reset password function
+  /**
+   * Sends a password reset email to the specified email address.
+   * Displays appropriate toast notifications for success or failure.
+   */
   const resetPassword = async (email: string) => {
     try {
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/reset-password`,
       })
 
-      if (!error) {
+      if (error) {
         toast({
-          title: "Password reset email sent",
-          description: "Check your email for a link to reset your password.",
+          title: "Password reset failed",
+          description: error.message,
+          variant: "destructive",
         })
+        return { error }
       }
 
-      return { error }
-    } catch (error) {
-      console.error("Error resetting password:", error)
+      toast({
+        title: "Password reset email sent",
+        description: "Check your email for a link to reset your password.",
+      })
+      return { error: null }
+    } catch (error: any) {
+      toast({
+        title: "Password reset failed",
+        description: error.message || "An unexpected error occurred",
+        variant: "destructive",
+      })
       return { error }
     }
   }
@@ -316,7 +430,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-// Hook to use auth context
+/**
+ * Hook to use the auth context.
+ * Must be used within an AuthProvider component.
+ */
 export function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {

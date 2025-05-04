@@ -6,31 +6,14 @@ type EnvVar = {
   required: boolean
 }
 
-export function validateEnvVars(vars: EnvVar[]): boolean {
-  let isValid = true
+export function checkRequiredEnvVars(vars: EnvVar[]): string[] {
+  const missing: string[] = []
 
   vars.forEach(({ name, value, required }) => {
     if (required && !value) {
-      console.error(`Missing required environment variable: ${name}`)
-      isValid = false
+      missing.push(name)
     }
   })
 
-  return isValid
-}
-
-// Validate Supabase environment variables
-export function validateSupabaseEnv(): boolean {
-  return validateEnvVars([
-    {
-      name: "NEXT_PUBLIC_SUPABASE_URL",
-      value: process.env.NEXT_PUBLIC_SUPABASE_URL,
-      required: true,
-    },
-    {
-      name: "NEXT_PUBLIC_SUPABASE_ANON_KEY",
-      value: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-      required: true,
-    },
-  ])
+  return missing
 }

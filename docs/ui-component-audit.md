@@ -34,6 +34,3 @@ Updating these components will:
 1. Improve consistency across the codebase
 2. Enable better tree-shaking
 3. Make imports more explicit
-\`\`\`
-
-Now, let's update some of the components that need changes:

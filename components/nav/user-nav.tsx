@@ -12,7 +12,7 @@ import {
   DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
-import { useAuth } from "@/context/auth-context-fixed"
+import { useAuth } from "@/context/auth-context"
 import Link from "next/link"
 
 export function UserNav() {

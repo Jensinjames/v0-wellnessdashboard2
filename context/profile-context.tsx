@@ -2,7 +2,7 @@
 
 import type React from "react"
 import { createContext, useContext, useState, useEffect, useCallback } from "react"
-import { useAuth } from "@/context/auth-context-fixed"
+import { useAuth } from "@/context/auth-context"
 import { getSupabaseClient } from "@/lib/supabase"
 import { toast } from "@/components/ui/use-toast"
 import type { FullProfile, ProfileUpdateData, PreferencesUpdateData, ProfileCompletionStatus } from "@/types/profile"

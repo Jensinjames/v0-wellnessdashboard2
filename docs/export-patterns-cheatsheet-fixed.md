@@ -15,10 +15,10 @@
 
 | Metadata Type | Export Pattern | Example |
 |---------------|----------------|---------|
-| Static Metadata | Named Export | `const metadata = {}` |
-| Dynamic Metadata | Named Export | `async function generateMetadata() {}` |
+| Static Metadata | Named Export | `const metadata = { ... }` |
+| OR Dynamic Metadata | Named Export | `async function generateMetadata() { ... }` |
 
-> **Important**: You cannot export both `metadata` and `generateMetadata` from the same file. Choose either static metadata with `metadata` OR dynamic metadata with `generateMetadata`.
+> **Important**: You cannot have both `metadata` and `generateMetadata` in the same file. Choose either static metadata with `metadata` OR dynamic metadata with `generateMetadata`.
 
 ## React Components
 
@@ -51,7 +51,7 @@
 
 ### Default + Type Export
 
-\`\`\`tsx
+\`\`\`
 export interface ComponentProps {
   // Props
 }
@@ -63,7 +63,7 @@ export default function Component(props: ComponentProps) {
 
 ### Named Component + Variants
 
-\`\`\`tsx
+\`\`\`
 export function Button({ variant, ...props }) {
   // Implementation
 }
@@ -75,7 +75,7 @@ export const buttonVariants = {
 
 ### Re-exporting from Index
 
-\`\`\`tsx
+\`\`\`
 // For default exports
 export { default as ProfileSettings } from './profile-settings'
 

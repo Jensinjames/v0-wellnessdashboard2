@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useAuth } from "@/context/auth-context-fixed"
+import { useAuth } from "@/context/auth-context"
 import { Loader2 } from "lucide-react"
 
 interface AuthCheckProps {

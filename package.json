@@ -61,7 +61,9 @@
     "@supabase/supabase-js": "latest",
     "turndown": "latest",
     "@supabase/auth-helpers-nextjs": "latest",
-    "@supabase/postgrest-js": "latest"
+    "@supabase/postgrest-js": "latest",
+    "fs": "latest",
+    "path": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",
