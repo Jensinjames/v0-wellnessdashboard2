@@ -1,68 +1,65 @@
-import type React from "react"
-import * as LucideIcons from "lucide-react"
 import { cn } from "@/lib/utils"
-import { iconSizes, iconColors, iconBackgroundColors } from "@/lib/theme-config"
-import { useIconContext } from "@/context/icon-context"
+import { VisuallyHidden } from "@/components/ui/visually-hidden"
+import { Heart, Activity, Brain, Coffee, Briefcase, BookOpen, Users } from "lucide-react"
 
-export interface CategoryIconProps extends React.HTMLAttributes<HTMLDivElement> {
+interface CategoryIconProps {
   categoryId: string
-  icon: keyof typeof LucideIcons
-  label?: string
-  size?: string
+  icon: string
+  size?: "xs" | "sm" | "md" | "lg"
+  label: string
   color?: string
   background?: string
-  className?: string
 }
 
-export function CategoryIcon({
-  categoryId,
-  icon,
-  label,
-  size = "md",
-  color,
-  background,
-  className,
-  ...props
-}: CategoryIconProps) {
-  const { iconPreferences } = useIconContext()
+export function CategoryIcon({ categoryId, icon, size = "md", label, color = "blue", background }: CategoryIconProps) {
+  // Size classes
+  const sizeClasses = {
+    xs: "h-3 w-3",
+    sm: "h-4 w-4",
+    md: "h-5 w-5",
+    lg: "h-6 w-6",
+  }
 
-  // Get icon preferences if available
-  const iconPref = iconPreferences[categoryId]
+  // Container size classes
+  const containerSizeClasses = {
+    xs: "h-5 w-5",
+    sm: "h-6 w-6",
+    md: "h-8 w-8",
+    lg: "h-10 w-10",
+  }
 
-  // Use preferences if available, otherwise use props
-  const finalIcon = (iconPref?.name || icon) as keyof typeof LucideIcons
-  const finalSize = iconPref?.size || size
-  const finalColor = iconPref?.color || color || "blue"
-  const finalBackground = iconPref?.background || background
-
-  // Get the icon component - FIXED: Create the element properly
-  const IconComponent = LucideIcons[finalIcon] || LucideIcons.Activity
-
-  // Determine size class
-  const sizeClass = finalSize in iconSizes ? iconSizes[finalSize as keyof typeof iconSizes] : iconSizes.md
-
-  // Determine color class
-  const colorClass = finalColor in iconColors ? iconColors[finalColor as keyof typeof iconColors] : iconColors.blue
-
-  // Determine background class
-  const backgroundClass =
-    finalBackground && finalBackground in iconBackgroundColors
-      ? iconBackgroundColors[finalBackground as keyof typeof iconBackgroundColors]
-      : ""
+  // Render the appropriate icon based on the icon name
+  const renderIcon = () => {
+    switch (icon) {
+      case "Heart":
+        return <Heart className={cn(sizeClasses[size])} aria-hidden="true" />
+      case "Activity":
+        return <Activity className={cn(sizeClasses[size])} aria-hidden="true" />
+      case "Brain":
+        return <Brain className={cn(sizeClasses[size])} aria-hidden="true" />
+      case "Coffee":
+        return <Coffee className={cn(sizeClasses[size])} aria-hidden="true" />
+      case "Briefcase":
+        return <Briefcase className={cn(sizeClasses[size])} aria-hidden="true" />
+      case "BookOpen":
+        return <BookOpen className={cn(sizeClasses[size])} aria-hidden="true" />
+      case "Users":
+        return <Users className={cn(sizeClasses[size])} aria-hidden="true" />
+      default:
+        return <Activity className={cn(sizeClasses[size])} aria-hidden="true" />
+    }
+  }
 
   return (
     <div
       className={cn(
-        "flex items-center justify-center rounded-md p-1.5",
-        backgroundClass || `bg-${finalColor}-600 dark:bg-${finalColor}-500`,
-        className,
+        "flex items-center justify-center rounded-md",
+        containerSizeClasses[size],
+        background ? background : `bg-${color}-600 dark:bg-${color}-500`,
       )}
-      aria-label={label}
-      {...props}
     >
-      {/* FIXED: Render the icon component as a JSX element */}
-      <IconComponent className={cn(sizeClass, backgroundClass ? colorClass : "text-white")} aria-hidden="true" />
-      {label && <span className="sr-only">{label}</span>}
+      <div className="text-white">{renderIcon()}</div>
+      <VisuallyHidden>{label}</VisuallyHidden>
     </div>
   )
 }

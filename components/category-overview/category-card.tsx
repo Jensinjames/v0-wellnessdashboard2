@@ -49,15 +49,6 @@ export function CategoryCard({
   const cardId = `category-card-${category.id}`
   const progressId = `category-progress-${category.id}`
 
-  // Header background class
-  const headerBgClass = `bg-${categoryColor}-100 dark:bg-${categoryColor}-900 border-b border-${categoryColor}-200 dark:border-${categoryColor}-800`
-
-  // Header text class
-  const headerTextClass = `text-${categoryColor}-800 dark:text-${categoryColor}-200`
-
-  // Progress bar class
-  const progressBarClass = `bg-${categoryColor}-600 dark:bg-${categoryColor}-500`
-
   return (
     <Card
       key={category.id}
@@ -74,8 +65,13 @@ export function CategoryCard({
       aria-expanded={interactive ? isExpanded : undefined}
       aria-labelledby={`category-title-${category.id}`}
     >
-      {/* Color-coded header */}
-      <CardHeader className={cn("py-2 px-4 flex flex-row items-center justify-between", headerBgClass)}>
+      {/* Color-coded header - using string literals for classes */}
+      <CardHeader
+        className={cn(
+          "py-2 px-4 flex flex-row items-center justify-between",
+          `bg-${categoryColor}-100 dark:bg-${categoryColor}-900 border-b border-${categoryColor}-200 dark:border-${categoryColor}-800`,
+        )}
+      >
         <div className="flex items-center gap-2">
           <CategoryIcon
             categoryId={category.id}
@@ -87,12 +83,22 @@ export function CategoryCard({
           />
           <h3
             id={`category-title-${category.id}`}
-            className={cn("font-medium truncate", headerTextClass, isSmallMobile ? "text-sm" : "")}
+            className={cn(
+              "font-medium truncate",
+              `text-${categoryColor}-800 dark:text-${categoryColor}-200`,
+              isSmallMobile ? "text-sm" : "",
+            )}
           >
             {category.name}
           </h3>
         </div>
-        <div className={cn("text-sm font-medium", headerTextClass, isSmallMobile ? "text-xs" : "")}>
+        <div
+          className={cn(
+            "text-sm font-medium",
+            `text-${categoryColor}-800 dark:text-${categoryColor}-200`,
+            isSmallMobile ? "text-xs" : "",
+          )}
+        >
           {Math.round(category.progress)}%
         </div>
       </CardHeader>
@@ -101,7 +107,7 @@ export function CategoryCard({
         <Progress
           value={category.progress}
           className="h-2 mb-3 bg-slate-100 dark:bg-slate-800"
-          indicatorClassName={progressBarClass}
+          indicatorClassName={`bg-${categoryColor}-600 dark:bg-${categoryColor}-500`}
           aria-label={`${category.name} progress: ${Math.round(category.progress)}%`}
           id={progressId}
         />
@@ -160,7 +166,7 @@ export function CategoryCard({
                   <Progress
                     value={subcategory.progress}
                     className={cn("h-1.5 bg-slate-100 dark:bg-slate-800", isSmallMobile ? "h-1" : "")}
-                    indicatorClassName={progressBarClass}
+                    indicatorClassName={`bg-${categoryColor}-600 dark:bg-${categoryColor}-500`}
                     aria-label={`${subcategory.name} progress: ${Math.round(subcategory.progress)}%`}
                     id={subcategoryProgressId}
                   />

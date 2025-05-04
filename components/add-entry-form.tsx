@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form"
 import { format } from "date-fns"
 import { CalendarIcon } from "lucide-react"
 import * as z from "zod"
-import { useEffect, useRef } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
@@ -46,6 +46,7 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
   const enabledCategories = categories.filter((cat) => cat.enabled)
   const statusRef = useRef<HTMLDivElement>(null)
   const valueChangesRef = useRef<HTMLDivElement>(null)
+  const [activeTab, setActiveTab] = useState<string>(enabledCategories[0]?.id || "")
 
   // Create a dynamic form schema based on categories
   const createFormSchema = () => {
@@ -232,48 +233,60 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
               />
 
               {/* Category Tabs */}
-              <Tabs defaultValue={enabledCategories[0]?.id} className="w-full">
+              <Tabs
+                defaultValue={enabledCategories[0]?.id}
+                className="w-full"
+                onValueChange={(value) => setActiveTab(value)}
+              >
                 <TabsList className="grid grid-cols-4 w-full">
-                  {enabledCategories.slice(0, 4).map((category) => {
-                    const categoryColor = getCategoryColorKey(category.id)
-
-                    return (
-                      <TabsTrigger
-                        key={category.id}
-                        value={category.id}
-                        id={`tab-${category.id}`}
-                        className={`data-[state=active]:bg-${categoryColor}-100 data-[state=active]:dark:bg-${categoryColor}-900 data-[state=active]:text-${categoryColor}-800 data-[state=active]:dark:text-${categoryColor}-200`}
-                      >
-                        {category.name}
-                      </TabsTrigger>
-                    )
-                  })}
+                  {enabledCategories.slice(0, 4).map((category) => (
+                    <TabsTrigger
+                      key={category.id}
+                      value={category.id}
+                      id={`tab-${category.id}`}
+                      className={cn(activeTab === category.id ? "font-medium" : "")}
+                    >
+                      {category.name}
+                    </TabsTrigger>
+                  ))}
                 </TabsList>
 
                 {/* Generate tab content for each category */}
-                {enabledCategories.map((category) => (
-                  <TabsContent
-                    key={category.id}
-                    value={category.id}
-                    className="space-y-4 pt-4"
-                    id={`tabpanel-${category.id}`}
-                  >
-                    <div className="p-4 rounded-md space-y-4 border border-slate-200 dark:border-slate-800">
-                      <h3 className="font-medium">{category.name} Activities</h3>
+                {enabledCategories.map((category) => {
+                  const categoryColor = getCategoryColorKey(category.id)
 
-                      {/* Generate form fields for each metric in the category */}
-                      {category.metrics.map((metric) => (
-                        <MetricEntryField
-                          key={`${category.id}_${metric.id}`}
-                          category={category}
-                          metric={metric}
-                          form={form}
-                          valueChangesRef={valueChangesRef}
-                        />
-                      ))}
-                    </div>
-                  </TabsContent>
-                ))}
+                  return (
+                    <TabsContent
+                      key={category.id}
+                      value={category.id}
+                      className="space-y-4 pt-4"
+                      id={`tabpanel-${category.id}`}
+                    >
+                      <div
+                        className={cn(
+                          "p-4 rounded-md space-y-4 border",
+                          `bg-${categoryColor}-50 dark:bg-${categoryColor}-950/20`,
+                          "border-slate-200 dark:border-slate-800",
+                        )}
+                      >
+                        <h3 className={cn("font-medium", `text-${categoryColor}-800 dark:text-${categoryColor}-300`)}>
+                          {category.name} Activities
+                        </h3>
+
+                        {/* Generate form fields for each metric in the category */}
+                        {category.metrics.map((metric) => (
+                          <MetricEntryField
+                            key={`${category.id}_${metric.id}`}
+                            category={category}
+                            metric={metric}
+                            form={form}
+                            valueChangesRef={valueChangesRef}
+                          />
+                        ))}
+                      </div>
+                    </TabsContent>
+                  )
+                })}
               </Tabs>
 
               {/* Additional categories section */}
@@ -281,25 +294,35 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
                 <div className="space-y-4">
                   <h3 className="text-lg font-medium">Additional Categories</h3>
 
-                  {enabledCategories.slice(4).map((category) => (
-                    <div
-                      key={category.id}
-                      className="p-4 rounded-md space-y-4 mb-4 border border-slate-200 dark:border-slate-800"
-                    >
-                      <h3 className="font-medium">{category.name} Activities</h3>
+                  {enabledCategories.slice(4).map((category) => {
+                    const categoryColor = getCategoryColorKey(category.id)
 
-                      {/* Generate form fields for each metric in the category */}
-                      {category.metrics.map((metric) => (
-                        <MetricEntryField
-                          key={`${category.id}_${metric.id}`}
-                          category={category}
-                          metric={metric}
-                          form={form}
-                          valueChangesRef={valueChangesRef}
-                        />
-                      ))}
-                    </div>
-                  ))}
+                    return (
+                      <div
+                        key={category.id}
+                        className={cn(
+                          "p-4 rounded-md space-y-4 mb-4 border",
+                          `bg-${categoryColor}-50 dark:bg-${categoryColor}-950/20`,
+                          "border-slate-200 dark:border-slate-800",
+                        )}
+                      >
+                        <h3 className={cn("font-medium", `text-${categoryColor}-800 dark:text-${categoryColor}-300`)}>
+                          {category.name} Activities
+                        </h3>
+
+                        {/* Generate form fields for each metric in the category */}
+                        {category.metrics.map((metric) => (
+                          <MetricEntryField
+                            key={`${category.id}_${metric.id}`}
+                            category={category}
+                            metric={metric}
+                            form={form}
+                            valueChangesRef={valueChangesRef}
+                          />
+                        ))}
+                      </div>
+                    )
+                  })}
                 </div>
               )}
 
