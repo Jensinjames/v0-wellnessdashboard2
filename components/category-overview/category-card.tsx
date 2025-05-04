@@ -2,17 +2,16 @@
 
 import { Card, CardContent } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
-import { Button } from "@/components/ui/button"
+import { EnhancedButton } from "@/components/ui/enhanced-button"
+import { CategoryIcon } from "@/components/ui/category-icon"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
 import { cn } from "@/lib/utils"
-import * as Icons from "lucide-react"
 import { ArrowDownIcon, ArrowUpIcon, MinusIcon } from "lucide-react"
-import type { LucideIcon } from "lucide-react"
-import { getCategoryColorClass } from "@/types/wellness"
 import type { CategoryProgressData } from "./types"
 import { formatTime, formatValue } from "./utils"
 import { useMobileDetection } from "@/hooks/use-mobile-detection"
+import { useIconContext } from "@/context/icon-context"
 
 interface CategoryCardProps {
   category: CategoryProgressData
@@ -34,20 +33,15 @@ export function CategoryCard({
   onCardClick,
 }: CategoryCardProps) {
   const { isMobile, isSmallMobile } = useMobileDetection()
+  const { iconPreferences } = useIconContext()
 
-  // Get icon component by name
-  const getIconByName = (name: string): LucideIcon => {
-    return (Icons[name as keyof typeof Icons] as LucideIcon) || Icons.Activity
-  }
-
-  const Icon = getIconByName(category.icon)
-  const colorClass = getCategoryColorClass({ ...category, metrics: [] }, "text")
-  const bgColorClass = getCategoryColorClass({ ...category, metrics: [] }, "bg")
+  // Get icon preferences if available
+  const iconPref = iconPreferences[category.id]
 
   // Safely handle color classes
-  const safeColorClass = colorClass || "text-gray-700 dark:text-gray-300"
-  const safeBgColorClass = bgColorClass || "bg-gray-100 dark:bg-gray-800"
-  const lightBgColorClass = safeBgColorClass.replace(/600|500/g, "100").replace(/800/g, "700")
+  const safeColorClass = `text-${category.color}-600 dark:text-${category.color}-500`
+  const safeBgColorClass = `bg-${category.color}-600 dark:bg-${category.color}-500`
+  const lightBgColorClass = `bg-${category.color}-100 dark:bg-${category.color}-800`
 
   // Determine if subcategories should be shown based on screen size and expanded state
   const shouldShowSubcategories =
@@ -77,7 +71,7 @@ export function CategoryCard({
         "overflow-hidden transition-all duration-300 h-full",
         interactive && "cursor-pointer hover:shadow-md hover:scale-[1.01] transition-all",
         isExpanded ? "sm:col-span-2 lg:col-span-2" : "",
-        "border rounded-xl",
+        "border rounded-xl bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800",
         category.name.toLowerCase().includes("health") && "card-shadow-green",
         category.name.toLowerCase().includes("mind") && "card-shadow-purple",
         category.name.toLowerCase().includes("life") && "card-shadow-orange",
@@ -93,24 +87,29 @@ export function CategoryCard({
       <CardContent className={cn("p-4", isSmallMobile ? "p-3" : "", "h-full flex flex-col")}>
         <div className="flex items-center justify-between mb-3">
           <div className="flex items-center gap-2">
-            <div className={cn("p-1.5 rounded-md", safeBgColorClass)}>
-              <Icon className={cn("h-4 w-4", "text-white")} aria-hidden="true" />
-            </div>
+            <CategoryIcon
+              categoryId={category.id}
+              icon={(iconPref?.name || category.icon) as any}
+              size={iconPref?.size || "sm"}
+              label={category.name}
+              color={iconPref?.color || category.color}
+              background={iconPref?.background}
+            />
             <h3
               id={`category-title-${category.id}`}
-              className={cn("font-medium truncate", isSmallMobile ? "text-sm" : "")}
+              className={cn("font-medium truncate text-slate-900 dark:text-slate-100", isSmallMobile ? "text-sm" : "")}
             >
               {category.name}
             </h3>
           </div>
-          <div className={cn("text-sm font-medium", isSmallMobile ? "text-xs" : "")}>
+          <div className={cn("text-sm font-medium text-slate-900 dark:text-slate-100", isSmallMobile ? "text-xs" : "")}>
             {Math.round(category.progress)}%
           </div>
         </div>
 
         <Progress
           value={category.progress}
-          className="h-2 mb-3 bg-gray-100"
+          className="h-2 mb-3 bg-slate-100 dark:bg-slate-800"
           indicatorClassName={safeBgColorClass}
           aria-label={`${category.name} progress: ${Math.round(category.progress)}%`}
           id={progressId}
@@ -118,7 +117,7 @@ export function CategoryCard({
 
         <div
           className={cn(
-            "flex items-center justify-between text-muted-foreground",
+            "flex items-center justify-between text-slate-500 dark:text-slate-400",
             isSmallMobile ? "text-xs" : "text-xs",
           )}
         >
@@ -150,11 +149,11 @@ export function CategoryCard({
               return (
                 <div key={subcategoryId} className="space-y-1" id={subcategoryId}>
                   <div className={cn("flex items-center justify-between", isSmallMobile ? "text-xs" : "text-xs")}>
-                    <div className="truncate max-w-[60%]">{subcategory.name}</div>
+                    <div className="truncate max-w-[60%] text-slate-700 dark:text-slate-300">{subcategory.name}</div>
                     <TooltipProvider>
                       <Tooltip>
                         <TooltipTrigger asChild>
-                          <div className="font-medium">
+                          <div className="font-medium text-slate-900 dark:text-slate-100">
                             {formatValue(subcategory.current, subcategory.unit)} /{" "}
                             {formatValue(subcategory.goal, subcategory.unit)}
                           </div>
@@ -169,7 +168,7 @@ export function CategoryCard({
                   </div>
                   <Progress
                     value={subcategory.progress}
-                    className={cn("h-1.5 bg-gray-100", isSmallMobile ? "h-1" : "")}
+                    className={cn("h-1.5 bg-slate-100 dark:bg-slate-800", isSmallMobile ? "h-1" : "")}
                     indicatorClassName={safeBgColorClass}
                     aria-label={`${subcategory.name} progress: ${Math.round(subcategory.progress)}%`}
                     id={subcategoryProgressId}
@@ -182,7 +181,7 @@ export function CategoryCard({
 
         {interactive && (
           <div className={cn("mt-auto pt-3", isSmallMobile ? "pt-2" : "")}>
-            <Button
+            <EnhancedButton
               variant="outline"
               size={isSmallMobile ? "sm" : "sm"}
               className={cn("text-xs w-full rounded-full", isSmallMobile ? "py-1 px-2" : "")}
@@ -194,9 +193,10 @@ export function CategoryCard({
               aria-controls={cardId}
               aria-expanded={isExpanded}
               aria-label={isExpanded ? `Hide details for ${category.name}` : `Show details for ${category.name}`}
+              icon={isExpanded ? "ChevronUp" : "ChevronDown"}
             >
               {isExpanded ? "Show Less" : "Show Details"}
-            </Button>
+            </EnhancedButton>
           </div>
         )}
       </CardContent>

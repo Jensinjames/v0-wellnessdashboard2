@@ -1,17 +1,15 @@
 "use client"
 
-import type React from "react"
-
 import { useState, useEffect, useRef } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { Plus, Edit, Trash2, Settings, GripVertical, Key } from "lucide-react"
-import * as LucideIcons from "lucide-react"
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd"
 
 import { Button } from "@/components/ui/button"
-import { HighContrastButton } from "@/components/ui/high-contrast-button"
+import { EnhancedButton } from "@/components/ui/enhanced-button"
+import { CategoryIcon } from "@/components/ui/category-icon"
+import { IconPicker } from "@/components/ui/icon-picker"
 import {
   Dialog,
   DialogContent,
@@ -28,9 +26,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge"
 import { toast } from "@/components/ui/use-toast"
 import { useWellness } from "@/context/wellness-context"
+import { useIconContext } from "@/context/icon-context"
 import type { WellnessCategory, WellnessMetric } from "@/types/wellness"
 import { generateUniqueId } from "@/utils/id-generator"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { AccessibleIcon } from "@/components/ui/accessible-icon"
 
 // Schema for category form
 const categoryFormSchema = z.object({
@@ -91,6 +91,7 @@ const availableUnits = [
 
 export function CategoryManagement() {
   const { categories, addCategory, updateCategory, removeCategory, reorderCategories } = useWellness()
+  const { iconPreferences, setIconPreference } = useIconContext()
   const [open, setOpen] = useState(false)
   const [editingCategory, setEditingCategory] = useState<WellnessCategory | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
@@ -99,15 +100,14 @@ export function CategoryManagement() {
   const [expandedItems, setExpandedItems] = useState<string[]>([])
   const statusRef = useRef<HTMLDivElement>(null)
   const dragAnnouncerRef = useRef<HTMLDivElement>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [iconColor, setIconColor] = useState("blue")
+  const [iconSize, setIconSize] = useState("md")
+  const [iconBackground, setIconBackground] = useState<string | undefined>(undefined)
 
   // New state for generated IDs
   const [generatedCategoryId, setGeneratedCategoryId] = useState<string>("")
   const [generatedMetricId, setGeneratedMetricId] = useState<string>("")
-
-  // Get all available Lucide icons
-  const availableIcons = Object.keys(LucideIcons)
-    .filter((key) => typeof LucideIcons[key as keyof typeof LucideIcons] === "function" && key !== "createLucideIcon")
-    .sort()
 
   // Form for adding/editing categories
   const categoryForm = useForm<z.infer<typeof categoryFormSchema>>({
@@ -171,6 +171,9 @@ export function CategoryManagement() {
       icon: "Activity",
       color: "blue",
     })
+    setIconColor("blue")
+    setIconSize("md")
+    setIconBackground(undefined)
     setGeneratedCategoryId("")
     setOpen(true)
 
@@ -189,6 +192,19 @@ export function CategoryManagement() {
       icon: category.icon,
       color: category.color,
     })
+
+    // Set icon customization options
+    const iconPref = iconPreferences[category.id]
+    if (iconPref) {
+      setIconColor(iconPref.color)
+      setIconSize(iconPref.size)
+      setIconBackground(iconPref.background)
+    } else {
+      setIconColor(category.color)
+      setIconSize("md")
+      setIconBackground(undefined)
+    }
+
     setGeneratedCategoryId(category.id)
     setOpen(true)
 
@@ -199,82 +215,96 @@ export function CategoryManagement() {
   }
 
   // Handle category form submission
-  const onCategorySubmit = (data: z.infer<typeof categoryFormSchema>) => {
-    // For new categories, use the generated ID
-    const categoryId = editingCategory ? editingCategory.id : generatedCategoryId
+  const onCategorySubmit = async (data: z.infer<typeof categoryFormSchema>) => {
+    setIsSubmitting(true)
 
-    // If no ID was generated (should not happen with our implementation), generate one now
-    const finalId =
-      categoryId ||
-      generateUniqueId(
-        data.name,
-        categories.map((c) => c.id),
-      )
+    try {
+      // For new categories, use the generated ID
+      const categoryId = editingCategory ? editingCategory.id : generatedCategoryId
 
-    const categoryData: WellnessCategory = {
-      id: finalId,
-      name: data.name,
-      description: data.description,
-      icon: data.icon,
-      color: data.color,
-      enabled: true,
-      metrics: editingCategory?.metrics || [],
-    }
+      // If no ID was generated (should not happen with our implementation), generate one now
+      const finalId =
+        categoryId ||
+        generateUniqueId(
+          data.name,
+          categories.map((c) => c.id),
+        )
 
-    if (editingCategory) {
-      // Update existing category
-      const result = updateCategory(editingCategory.id, categoryData)
-      if (result.success) {
-        toast({
-          title: "Category updated",
-          description: `The category "${data.name}" has been updated.`,
-        })
+      const categoryData: WellnessCategory = {
+        id: finalId,
+        name: data.name,
+        description: data.description,
+        icon: data.icon,
+        color: data.color,
+        enabled: true,
+        metrics: editingCategory?.metrics || [],
+      }
 
-        // Announce to screen readers
-        if (statusRef.current) {
-          statusRef.current.textContent = `Category ${data.name} has been updated successfully`
+      // Save icon preferences
+      setIconPreference(finalId, {
+        name: data.icon,
+        color: iconColor,
+        size: iconSize,
+        background: iconBackground,
+      })
+
+      if (editingCategory) {
+        // Update existing category
+        const result = updateCategory(editingCategory.id, categoryData)
+        if (result.success) {
+          toast({
+            title: "Category updated",
+            description: `The category "${data.name}" has been updated.`,
+          })
+
+          // Announce to screen readers
+          if (statusRef.current) {
+            statusRef.current.textContent = `Category ${data.name} has been updated successfully`
+          }
+
+          setOpen(false)
+        } else {
+          toast({
+            title: "Update failed",
+            description: result.message,
+            variant: "destructive",
+          })
+
+          // Announce error to screen readers
+          if (statusRef.current) {
+            statusRef.current.textContent = `Failed to update category: ${result.message}`
+          }
         }
-
-        setOpen(false)
       } else {
-        toast({
-          title: "Update failed",
-          description: result.message,
-          variant: "destructive",
-        })
+        // Add new category
+        const result = addCategory(categoryData)
+        if (result.success) {
+          toast({
+            title: "Category added",
+            description: `The category "\${data.name}" has been added with ID "\${finalId}".`,
+          })
 
-        // Announce error to screen readers
-        if (statusRef.current) {
-          statusRef.current.textContent = `Failed to update category: ${result.message}`
+          // Announce to screen readers
+          if (statusRef.current) {
+            statusRef.current.textContent = `New category \${data.name} has been added successfully`
+          }
+
+          setOpen(false)
+        } else {
+          toast({
+            title: "Addition failed",
+            description: result.message,
+            variant: "destructive",
+          })
+
+          // Announce error to screen readers
+          if (statusRef.current) {
+            statusRef.current.textContent = `Failed to add category: \${result.message}`
+          }
         }
       }
-    } else {
-      // Add new category
-      const result = addCategory(categoryData)
-      if (result.success) {
-        toast({
-          title: "Category added",
-          description: `The category "${data.name}" has been added with ID "${finalId}".`,
-        })
-
-        // Announce to screen readers
-        if (statusRef.current) {
-          statusRef.current.textContent = `New category ${data.name} has been added successfully`
-        }
-
-        setOpen(false)
-      } else {
-        toast({
-          title: "Addition failed",
-          description: result.message,
-          variant: "destructive",
-        })
-
-        // Announce error to screen readers
-        if (statusRef.current) {
-          statusRef.current.textContent = `Failed to add category: ${result.message}`
-        }
-      }
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -325,79 +355,85 @@ export function CategoryManagement() {
   }
 
   // Handle metric form submission
-  const onMetricSubmit = (data: z.infer<typeof metricFormSchema>) => {
-    const categoryId = showAddMetric
-    if (!categoryId) return
+  const onMetricSubmit = async (data: z.infer<typeof metricFormSchema>) => {
+    setIsSubmitting(true)
 
-    const category = categories.find((c) => c.id === categoryId)
-    if (!category) return
+    try {
+      const categoryId = showAddMetric
+      if (!categoryId) return
 
-    // For new metrics, use the generated ID
-    const metricId = editingMetric ? editingMetric.metric.id : generatedMetricId
+      const category = categories.find((c) => c.id === categoryId)
+      if (!category) return
 
-    // If no ID was generated (should not happen with our implementation), generate one now
-    const existingIds = category.metrics.map((m) => m.id)
-    const finalId = metricId || generateUniqueId(data.name, existingIds)
+      // For new metrics, use the generated ID
+      const metricId = editingMetric ? editingMetric.metric.id : generatedMetricId
 
-    const metricData: WellnessMetric = {
-      id: finalId,
-      name: data.name,
-      description: data.description,
-      unit: data.unit,
-      min: data.min,
-      max: data.max,
-      step: data.step,
-      defaultValue: data.defaultValue,
-      defaultGoal: data.defaultGoal,
-    }
+      // If no ID was generated (should not happen with our implementation), generate one now
+      const existingIds = category.metrics.map((m) => m.id)
+      const finalId = metricId || generateUniqueId(data.name, existingIds)
 
-    let updatedMetrics: WellnessMetric[]
+      const metricData: WellnessMetric = {
+        id: finalId,
+        name: data.name,
+        description: data.description,
+        unit: data.unit,
+        min: data.min,
+        max: data.max,
+        step: data.step,
+        defaultValue: data.defaultValue,
+        defaultGoal: data.defaultGoal,
+      }
 
-    if (editingMetric) {
-      // Update existing metric
-      updatedMetrics = category.metrics.map((m) => (m.id === editingMetric.metric.id ? metricData : m))
-    } else {
-      // Add new metric
-      updatedMetrics = [...category.metrics, metricData]
-    }
+      let updatedMetrics: WellnessMetric[]
 
-    const result = updateCategory(categoryId, { metrics: updatedMetrics })
-
-    if (result.success) {
       if (editingMetric) {
-        toast({
-          title: "Metric updated",
-          description: `The metric "${data.name}" has been updated.`,
-        })
+        // Update existing metric
+        updatedMetrics = category.metrics.map((m) => (m.id === editingMetric.metric.id ? metricData : m))
+      } else {
+        // Add new metric
+        updatedMetrics = [...category.metrics, metricData]
+      }
 
-        // Announce to screen readers
-        if (statusRef.current) {
-          statusRef.current.textContent = `Metric ${data.name} has been updated successfully`
+      const result = updateCategory(categoryId, { metrics: updatedMetrics })
+
+      if (result.success) {
+        if (editingMetric) {
+          toast({
+            title: "Metric updated",
+            description: `The metric "${data.name}" has been updated.`,
+          })
+
+          // Announce to screen readers
+          if (statusRef.current) {
+            statusRef.current.textContent = `Metric ${data.name} has been updated successfully`
+          }
+        } else {
+          toast({
+            title: "Metric added",
+            description: `The metric "${data.name}" has been added to the "${category.name}" category with ID "${finalId}".`,
+          })
+
+          // Announce to screen readers
+          if (statusRef.current) {
+            statusRef.current.textContent = `New metric ${data.name} has been added to ${category.name} category`
+          }
         }
+        setShowAddMetric("")
+        setEditingMetric(null)
       } else {
         toast({
-          title: "Metric added",
-          description: `The metric "${data.name}" has been added to the "${category.name}" category with ID "${finalId}".`,
+          title: "Operation failed",
+          description: result.message,
+          variant: "destructive",
         })
 
-        // Announce to screen readers
+        // Announce error to screen readers
         if (statusRef.current) {
-          statusRef.current.textContent = `New metric ${data.name} has been added to ${category.name} category`
+          statusRef.current.textContent = `Failed to ${editingMetric ? "update" : "add"} metric: ${result.message}`
         }
       }
-      setShowAddMetric("")
-      setEditingMetric(null)
-    } else {
-      toast({
-        title: "Operation failed",
-        description: result.message,
-        variant: "destructive",
-      })
-
-      // Announce error to screen readers
-      if (statusRef.current) {
-        statusRef.current.textContent = `Failed to ${editingMetric ? "update" : "add"} metric: ${result.message}`
-      }
+    } finally {
+      setIsSubmitting(false)
     }
   }
 
@@ -500,12 +536,6 @@ export function CategoryManagement() {
     }
   }
 
-  // Get icon component by name
-  const getIconByName = (name: string) => {
-    const Icon = (LucideIcons as Record<string, React.ComponentType<any>>)[name] || Settings
-    return <Icon className="h-5 w-5" />
-  }
-
   return (
     <>
       {/* Hidden status announcer for screen readers */}
@@ -514,20 +544,19 @@ export function CategoryManagement() {
       {/* Hidden drag announcer for screen readers */}
       <div className="sr-only" aria-live="assertive" aria-atomic="true" ref={dragAnnouncerRef}></div>
 
-      <Card>
+      <Card className="bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800">
         <CardHeader className="flex flex-row items-center justify-between pb-2">
           <div>
             <CardTitle>Wellness Categories</CardTitle>
             <CardDescription>Manage your wellness tracking categories</CardDescription>
           </div>
-          <Button onClick={handleAddCategory} aria-label="Add new wellness category">
-            <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+          <EnhancedButton onClick={handleAddCategory} aria-label="Add new wellness category" icon="Plus">
             Add Category
-          </Button>
+          </EnhancedButton>
         </CardHeader>
         <CardContent>
           {categories.length > 0 ? (
-            <div className="mb-2 text-sm text-muted-foreground">
+            <div className="mb-2 text-sm text-slate-500 dark:text-slate-400">
               <p>Drag and drop categories to reorder them. Your most important categories should be at the top.</p>
             </div>
           ) : null}
@@ -538,7 +567,7 @@ export function CategoryManagement() {
                 <div
                   {...provided.droppableProps}
                   ref={provided.innerRef}
-                  className={`space-y-2 ${snapshot.isDraggingOver ? "bg-muted/50 rounded-md p-2" : ""}`}
+                  className={`space-y-2 ${snapshot.isDraggingOver ? "bg-slate-50 dark:bg-slate-800/50 rounded-md p-2" : ""}`}
                 >
                   <div
                     className="categories-container"
@@ -553,8 +582,11 @@ export function CategoryManagement() {
                             ref={provided.innerRef}
                             {...provided.draggableProps}
                             className={`rounded-md border ${
-                              snapshot.isDragging ? "border-primary shadow-md" : "border-border"
-                            }`}
+                              snapshot.isDragging
+                                ? "border-sky-500 shadow-md"
+                                : "border-slate-200 dark:border-slate-700"
+                            } bg-white dark:bg-slate-900`}
+                            data-rbd-draggable-id={category.id}
                           >
                             <div className="flex items-center p-4">
                               <div
@@ -562,19 +594,24 @@ export function CategoryManagement() {
                                 className="mr-2 cursor-grab active:cursor-grabbing"
                                 aria-label={`Drag to reorder ${category.name} category`}
                               >
-                                <GripVertical className="h-5 w-5 text-muted-foreground" aria-hidden="true" />
+                                <AccessibleIcon
+                                  name="GripVertical"
+                                  label={`Drag ${category.name}`}
+                                  className="text-slate-400 dark:text-slate-500"
+                                />
                               </div>
 
-                              <div
-                                className={`mr-3 flex h-8 w-8 items-center justify-center rounded-md bg-${category.color}-600`}
-                              >
-                                {getIconByName(category.icon)}
-                              </div>
+                              <CategoryIcon
+                                categoryId={category.id}
+                                icon={category.icon as any}
+                                label={category.name}
+                                className="mr-3"
+                              />
 
                               <div className="flex-1">
-                                <h3 className="font-medium">{category.name}</h3>
-                                <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                  <Key className="h-3 w-3" aria-hidden="true" />
+                                <h3 className="font-medium text-slate-900 dark:text-slate-100">{category.name}</h3>
+                                <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                                  <AccessibleIcon name="Key" size="xs" aria-hidden="true" />
                                   <span>{category.id}</span>
                                 </div>
                               </div>
@@ -584,51 +621,56 @@ export function CategoryManagement() {
                               </Badge>
 
                               <div className="flex gap-2">
-                                <Button
+                                <EnhancedButton
                                   variant="ghost"
                                   size="sm"
                                   onClick={() => toggleAccordionItem(category.id)}
                                   aria-expanded={expandedItems.includes(category.id)}
                                   aria-controls={`category-metrics-${category.id}`}
+                                  icon={expandedItems.includes(category.id) ? "ChevronUp" : "ChevronDown"}
+                                  iconPosition="right"
                                 >
                                   {expandedItems.includes(category.id) ? "Collapse" : "Expand"}
-                                </Button>
-                                <Button
+                                </EnhancedButton>
+                                <EnhancedButton
                                   variant="outline"
                                   size="sm"
                                   onClick={() => handleEditCategory(category)}
                                   aria-label={`Edit ${category.name} category details`}
+                                  icon="Edit"
                                 >
-                                  <Edit className="mr-2 h-4 w-4" aria-hidden="true" />
                                   Edit
-                                </Button>
-                                <Button
+                                </EnhancedButton>
+                                <EnhancedButton
                                   variant="outline"
                                   size="sm"
-                                  className="text-red-700 hover:text-red-800" // Improved contrast
+                                  className="text-red-700 hover:text-red-800 dark:text-red-500 dark:hover:text-red-400"
                                   onClick={() => setShowDeleteConfirm(category.id)}
                                   aria-label={`Delete ${category.name} category and all its metrics`}
+                                  icon="Trash2"
                                 >
-                                  <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
                                   Delete
-                                </Button>
+                                </EnhancedButton>
                               </div>
                             </div>
 
                             {/* Metrics section - only shown when expanded */}
                             {expandedItems.includes(category.id) && (
-                              <div className="border-t p-4" id={`category-metrics-${category.id}`}>
+                              <div
+                                className="border-t border-slate-200 dark:border-slate-700 p-4"
+                                id={`category-metrics-${category.id}`}
+                              >
                                 <div className="mb-3 flex items-center justify-between">
-                                  <h4 className="font-medium">Metrics</h4>
-                                  <Button
+                                  <h4 className="font-medium text-slate-900 dark:text-slate-100">Metrics</h4>
+                                  <EnhancedButton
                                     variant="outline"
                                     size="sm"
                                     onClick={() => handleAddMetric(category.id)}
                                     aria-label={`Add new metric to ${category.name} category`}
+                                    icon="Plus"
                                   >
-                                    <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
                                     Add Metric
-                                  </Button>
+                                  </EnhancedButton>
                                 </div>
 
                                 <div className="space-y-3">
@@ -636,15 +678,19 @@ export function CategoryManagement() {
                                     category.metrics.map((metric) => (
                                       <div
                                         key={metric.id}
-                                        className="rounded-md border p-3 flex items-center justify-between"
+                                        className="rounded-md border border-slate-200 dark:border-slate-700 p-3 flex items-center justify-between bg-white dark:bg-slate-900"
                                       >
                                         <div>
-                                          <div className="font-medium">{metric.name}</div>
-                                          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-                                            <Key className="h-3 w-3" aria-hidden="true" />
+                                          <div className="font-medium text-slate-900 dark:text-slate-100">
+                                            {metric.name}
+                                          </div>
+                                          <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
+                                            <AccessibleIcon name="Key" size="xs" aria-hidden="true" />
                                             <span>{metric.id}</span>
                                           </div>
-                                          <div className="text-sm text-muted-foreground mt-1">{metric.description}</div>
+                                          <div className="text-sm text-slate-500 dark:text-slate-400 mt-1">
+                                            {metric.description}
+                                          </div>
                                           <div className="flex gap-2 mt-1">
                                             <Badge variant="outline">{metric.unit}</Badge>
                                             <Badge variant="outline">
@@ -654,30 +700,30 @@ export function CategoryManagement() {
                                           </div>
                                         </div>
                                         <div className="flex gap-2">
-                                          <Button
+                                          <EnhancedButton
                                             variant="ghost"
                                             size="icon"
                                             onClick={() => handleEditMetric(category.id, metric)}
                                             aria-label={`Edit ${metric.name} metric in ${category.name} category`}
+                                            icon="Edit"
                                           >
-                                            <Edit className="h-4 w-4" aria-hidden="true" />
                                             <span className="sr-only">Edit {metric.name}</span>
-                                          </Button>
-                                          <Button
+                                          </EnhancedButton>
+                                          <EnhancedButton
                                             variant="ghost"
                                             size="icon"
-                                            className="text-red-700 hover:text-red-800" // Improved contrast
+                                            className="text-red-700 hover:text-red-800 dark:text-red-500 dark:hover:text-red-400"
                                             onClick={() => handleDeleteMetric(category.id, metric.id)}
                                             aria-label={`Delete ${metric.name} metric from ${category.name} category`}
+                                            icon="Trash2"
                                           >
-                                            <Trash2 className="h-4 w-4" aria-hidden="true" />
                                             <span className="sr-only">Delete {metric.name}</span>
-                                          </Button>
+                                          </EnhancedButton>
                                         </div>
                                       </div>
                                     ))
                                   ) : (
-                                    <div className="p-4 text-center text-muted-foreground" role="status">
+                                    <div className="p-4 text-center text-slate-500 dark:text-slate-400" role="status">
                                       No metrics defined for this category
                                     </div>
                                   )}
@@ -697,15 +743,21 @@ export function CategoryManagement() {
 
           {categories.length === 0 && (
             <div className="text-center py-12" role="status">
-              <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-muted">
-                <Settings className="h-6 w-6 text-muted-foreground" aria-hidden="true" />
+              <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 dark:bg-slate-800">
+                <AccessibleIcon
+                  name="Settings"
+                  size="lg"
+                  className="text-slate-500 dark:text-slate-400"
+                  aria-hidden="true"
+                />
               </div>
-              <h3 className="mt-4 text-lg font-semibold">No categories</h3>
-              <p className="mt-2 text-sm text-muted-foreground">You haven't created any wellness categories yet.</p>
-              <Button className="mt-4" onClick={handleAddCategory}>
-                <Plus className="mr-2 h-4 w-4" aria-hidden="true" />
+              <h3 className="mt-4 text-lg font-semibold text-slate-900 dark:text-slate-100">No categories</h3>
+              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+                You haven't created any wellness categories yet.
+              </p>
+              <EnhancedButton className="mt-4" onClick={handleAddCategory} icon="Plus">
                 Add Your First Category
-              </Button>
+              </EnhancedButton>
             </div>
           )}
         </CardContent>
@@ -713,7 +765,7 @@ export function CategoryManagement() {
 
       {/* Category Form Dialog */}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[600px] bg-white dark:bg-slate-900">
           <DialogHeader>
             <DialogTitle>{editingCategory ? "Edit Category" : "Add New Category"}</DialogTitle>
             <DialogDescription>
@@ -747,8 +799,8 @@ export function CategoryManagement() {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div className="flex items-center text-xs text-muted-foreground cursor-help">
-                          <Key className="h-3 w-3 mr-1" aria-hidden="true" />
+                        <div className="flex items-center text-xs text-slate-500 dark:text-slate-400 cursor-help">
+                          <AccessibleIcon name="Key" size="xs" className="mr-1" aria-hidden="true" />
                           <span>Auto-generated</span>
                         </div>
                       </TooltipTrigger>
@@ -759,13 +811,13 @@ export function CategoryManagement() {
                   </TooltipProvider>
                 </div>
                 <div
-                  className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm"
+                  className="flex h-10 w-full rounded-md border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                   aria-label="Category ID"
                   role="status"
                 >
                   {editingCategory ? editingCategory.id : generatedCategoryId}
                 </div>
-                <div className="text-xs text-muted-foreground">Unique identifier used in the system</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">Unique identifier used in the system</div>
               </div>
 
               <FormField
@@ -793,23 +845,19 @@ export function CategoryManagement() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel htmlFor="category-icon">Icon</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger id="category-icon">
-                            <SelectValue placeholder="Select an icon" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent className="max-h-[300px]">
-                          {availableIcons.map((icon) => (
-                            <SelectItem key={icon} value={icon}>
-                              <div className="flex items-center gap-2">
-                                {getIconByName(icon)}
-                                <span>{icon}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <IconPicker
+                          id="category-icon"
+                          value={field.value}
+                          onChange={field.onChange}
+                          color={iconColor}
+                          onColorChange={setIconColor}
+                          size={iconSize}
+                          onSizeChange={setIconSize}
+                          background={iconBackground}
+                          onBackgroundChange={setIconBackground}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -827,11 +875,13 @@ export function CategoryManagement() {
                             <SelectValue placeholder="Select a color" />
                           </SelectTrigger>
                         </FormControl>
-                        <SelectContent className="max-h-[300px]">
+                        <SelectContent>
                           {availableColors.map((color) => (
                             <SelectItem key={color.value} value={color.value}>
                               <div className="flex items-center gap-2">
-                                <div className={`w-4 h-4 rounded-full bg-${color.value}-600`}></div>
+                                <div
+                                  className={`w-4 h-4 rounded-full bg-${color.value}-600 dark:bg-${color.value}-500`}
+                                ></div>
                                 <span>{color.name}</span>
                               </div>
                             </SelectItem>
@@ -853,14 +903,17 @@ export function CategoryManagement() {
                 >
                   Cancel
                 </Button>
-                <HighContrastButton
+                <EnhancedButton
                   type="submit"
                   aria-label={
                     editingCategory ? `Update ${editingCategory.name} category` : "Create new wellness category"
                   }
+                  loading={isSubmitting}
+                  loadingText={editingCategory ? "Updating..." : "Creating..."}
+                  icon={editingCategory ? "Save" : "Plus"}
                 >
                   {editingCategory ? "Update" : "Create"} Category
-                </HighContrastButton>
+                </EnhancedButton>
               </DialogFooter>
             </form>
           </Form>
@@ -869,7 +922,7 @@ export function CategoryManagement() {
 
       {/* Metric Form Dialog */}
       <Dialog open={!!showAddMetric} onOpenChange={(open) => !open && setShowAddMetric("")}>
-        <DialogContent className="sm:max-w-[600px]">
+        <DialogContent className="sm:max-w-[600px] bg-white dark:bg-slate-900">
           <DialogHeader>
             <DialogTitle>{editingMetric ? "Edit Metric" : "Add New Metric"}</DialogTitle>
             <DialogDescription>
@@ -902,8 +955,8 @@ export function CategoryManagement() {
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
-                        <div className="flex items-center text-xs text-muted-foreground cursor-help">
-                          <Key className="h-3 w-3 mr-1" aria-hidden="true" />
+                        <div className="flex items-center text-xs text-slate-500 dark:text-slate-400 cursor-help">
+                          <AccessibleIcon name="Key" size="xs" className="mr-1" aria-hidden="true" />
                           <span>Auto-generated</span>
                         </div>
                       </TooltipTrigger>
@@ -914,13 +967,13 @@ export function CategoryManagement() {
                   </TooltipProvider>
                 </div>
                 <div
-                  className="flex h-10 w-full rounded-md border border-input bg-muted px-3 py-2 text-sm"
+                  className="flex h-10 w-full rounded-md border border-slate-200 dark:border-slate-700 bg-slate-100 dark:bg-slate-800 px-3 py-2 text-sm text-slate-900 dark:text-slate-100"
                   aria-label="Metric ID"
                   role="status"
                 >
                   {editingMetric ? editingMetric.metric.id : generatedMetricId}
                 </div>
-                <div className="text-xs text-muted-foreground">Unique identifier used in the system</div>
+                <div className="text-xs text-slate-500 dark:text-slate-400">Unique identifier used in the system</div>
               </div>
 
               <FormField
@@ -1077,9 +1130,15 @@ export function CategoryManagement() {
                 >
                   Cancel
                 </Button>
-                <HighContrastButton type="submit" aria-label={editingMetric ? "Update metric" : "Add metric"}>
+                <EnhancedButton
+                  type="submit"
+                  aria-label={editingMetric ? "Update metric" : "Add metric"}
+                  loading={isSubmitting}
+                  loadingText={editingMetric ? "Updating..." : "Adding..."}
+                  icon={editingMetric ? "Save" : "Plus"}
+                >
                   {editingMetric ? "Update" : "Add"} Metric
-                </HighContrastButton>
+                </EnhancedButton>
               </DialogFooter>
             </form>
           </Form>
@@ -1088,7 +1147,7 @@ export function CategoryManagement() {
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={!!showDeleteConfirm} onOpenChange={(open) => !open && setShowDeleteConfirm(null)}>
-        <DialogContent>
+        <DialogContent className="bg-white dark:bg-slate-900">
           <DialogHeader>
             <DialogTitle>Confirm Deletion</DialogTitle>
             <DialogDescription>
@@ -1100,13 +1159,14 @@ export function CategoryManagement() {
             <Button variant="outline" onClick={() => setShowDeleteConfirm(null)} aria-label="Cancel deletion">
               Cancel
             </Button>
-            <HighContrastButton
+            <EnhancedButton
               variant="destructive"
               onClick={() => showDeleteConfirm && handleDeleteCategory(showDeleteConfirm)}
               aria-label="Confirm category deletion"
+              icon="Trash2"
             >
               Delete
-            </HighContrastButton>
+            </EnhancedButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
