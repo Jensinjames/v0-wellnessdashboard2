@@ -13,6 +13,13 @@ import { formatTime, formatValue } from "./utils"
 import { useMobileDetection } from "@/hooks/use-mobile-detection"
 import { useIconContext } from "@/context/icon-context"
 import { getCategoryColorKey } from "@/utils/category-color-utils"
+import {
+  getBaseColor,
+  getColorShade,
+  getHeaderBackgroundClasses,
+  getHeaderTextClasses,
+  getProgressClasses,
+} from "@/utils/category-color-utils"
 
 interface CategoryCardProps {
   category: CategoryProgressData
@@ -41,6 +48,8 @@ export function CategoryCard({
 
   // Get the color for this category (from preferences or default)
   const categoryColor = iconPref?.color || category.color || getCategoryColorKey(category.id)
+  const baseColor = getBaseColor(categoryColor)
+  const shade = getColorShade(categoryColor)
 
   // Determine if subcategories should be shown based on screen size and expanded state
   const shouldShowSubcategories =
@@ -48,6 +57,11 @@ export function CategoryCard({
 
   const cardId = `category-card-${category.id}`
   const progressId = `category-progress-${category.id}`
+
+  // Get color classes using our utility functions
+  const headerBgClass = getHeaderBackgroundClasses(category.id, categoryColor)
+  const headerTextClass = getHeaderTextClasses(category.id, categoryColor)
+  const progressBarClass = getProgressClasses(category.id, categoryColor)
 
   return (
     <Card
@@ -65,40 +79,26 @@ export function CategoryCard({
       aria-expanded={interactive ? isExpanded : undefined}
       aria-labelledby={`category-title-${category.id}`}
     >
-      {/* Color-coded header - using string literals for classes */}
-      <CardHeader
-        className={cn(
-          "py-2 px-4 flex flex-row items-center justify-between",
-          `bg-${categoryColor}-100 dark:bg-${categoryColor}-900 border-b border-${categoryColor}-200 dark:border-${categoryColor}-800`,
-        )}
-      >
+      {/* Color-coded header - using utility functions for classes */}
+      <CardHeader className={cn("py-2 px-4 flex flex-row items-center justify-between", headerBgClass)}>
         <div className="flex items-center gap-2">
           <CategoryIcon
             categoryId={category.id}
             icon={(iconPref?.name || category.icon) as any}
             size={iconPref?.size || "sm"}
             label={category.name}
-            color={categoryColor}
+            color={baseColor}
+            shade={shade}
             background={iconPref?.background}
           />
           <h3
             id={`category-title-${category.id}`}
-            className={cn(
-              "font-medium truncate",
-              `text-${categoryColor}-800 dark:text-${categoryColor}-200`,
-              isSmallMobile ? "text-sm" : "",
-            )}
+            className={cn("font-medium truncate", headerTextClass, isSmallMobile ? "text-sm" : "")}
           >
             {category.name}
           </h3>
         </div>
-        <div
-          className={cn(
-            "text-sm font-medium",
-            `text-${categoryColor}-800 dark:text-${categoryColor}-200`,
-            isSmallMobile ? "text-xs" : "",
-          )}
-        >
+        <div className={cn("text-sm font-medium", headerTextClass, isSmallMobile ? "text-xs" : "")}>
           {Math.round(category.progress)}%
         </div>
       </CardHeader>
@@ -107,7 +107,7 @@ export function CategoryCard({
         <Progress
           value={category.progress}
           className="h-2 mb-3 bg-slate-100 dark:bg-slate-800"
-          indicatorClassName={`bg-${categoryColor}-600 dark:bg-${categoryColor}-500`}
+          indicatorClassName={progressBarClass}
           aria-label={`${category.name} progress: ${Math.round(category.progress)}%`}
           id={progressId}
         />
@@ -166,7 +166,7 @@ export function CategoryCard({
                   <Progress
                     value={subcategory.progress}
                     className={cn("h-1.5 bg-slate-100 dark:bg-slate-800", isSmallMobile ? "h-1" : "")}
-                    indicatorClassName={`bg-${categoryColor}-600 dark:bg-${categoryColor}-500`}
+                    indicatorClassName={progressBarClass}
                     aria-label={`${subcategory.name} progress: ${Math.round(subcategory.progress)}%`}
                     id={subcategoryProgressId}
                   />

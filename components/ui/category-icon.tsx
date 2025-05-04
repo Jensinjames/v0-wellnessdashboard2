@@ -1,17 +1,26 @@
 import { cn } from "@/lib/utils"
 import { VisuallyHidden } from "@/components/ui/visually-hidden"
-import { Heart, Activity, Brain, Coffee, Briefcase, BookOpen, Users } from "lucide-react"
+import { Heart, Activity, Brain, Coffee, Briefcase, BookOpen, Users, Sun, Leaf } from "lucide-react"
 
-interface CategoryIconProps {
+export interface CategoryIconProps {
   categoryId: string
   icon: string
   size?: "xs" | "sm" | "md" | "lg"
   label: string
   color?: string
+  shade?: string
   background?: string
 }
 
-export function CategoryIcon({ categoryId, icon, size = "md", label, color = "blue", background }: CategoryIconProps) {
+export function CategoryIcon({
+  categoryId,
+  icon,
+  size = "md",
+  label,
+  color = "blue",
+  shade = "500",
+  background,
+}: CategoryIconProps) {
   // Size classes
   const sizeClasses = {
     xs: "h-3 w-3",
@@ -26,6 +35,13 @@ export function CategoryIcon({ categoryId, icon, size = "md", label, color = "bl
     sm: "h-6 w-6",
     md: "h-8 w-8",
     lg: "h-10 w-10",
+  }
+
+  // Process color if it contains a shade
+  if (color.includes("-")) {
+    const parts = color.split("-")
+    color = parts[0]
+    shade = parts[1]
   }
 
   // Render the appropriate icon based on the icon name
@@ -45,6 +61,10 @@ export function CategoryIcon({ categoryId, icon, size = "md", label, color = "bl
         return <BookOpen className={cn(sizeClasses[size])} aria-hidden="true" />
       case "Users":
         return <Users className={cn(sizeClasses[size])} aria-hidden="true" />
+      case "Sun":
+        return <Sun className={cn(sizeClasses[size])} aria-hidden="true" />
+      case "Leaf":
+        return <Leaf className={cn(sizeClasses[size])} aria-hidden="true" />
       default:
         return <Activity className={cn(sizeClasses[size])} aria-hidden="true" />
     }
@@ -55,10 +75,14 @@ export function CategoryIcon({ categoryId, icon, size = "md", label, color = "bl
       className={cn(
         "flex items-center justify-center rounded-md",
         containerSizeClasses[size],
-        background ? background : `bg-${color}-600 dark:bg-${color}-500`,
+        background
+          ? background
+          : `bg-${color}-${shade} dark:bg-${color}-${Number.parseInt(shade) > 500 ? Number.parseInt(shade) - 100 : Number.parseInt(shade) + 100}`,
       )}
     >
-      <div className="text-white">{renderIcon()}</div>
+      <div className={cn("text-white", Number.parseInt(shade) < 500 ? "text-gray-800" : "text-white")}>
+        {renderIcon()}
+      </div>
       <VisuallyHidden>{label}</VisuallyHidden>
     </div>
   )

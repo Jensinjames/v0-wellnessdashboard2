@@ -31,6 +31,8 @@ import type { WellnessCategory, WellnessMetric } from "@/types/wellness"
 import { generateUniqueId } from "@/utils/id-generator"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 import { AccessibleIcon } from "@/components/ui/accessible-icon"
+import { CategoryColorPicker } from "@/components/ui/category-color-picker"
+import { ColorPreview } from "@/components/ui/color-preview"
 
 // Schema for category form
 const categoryFormSchema = z.object({
@@ -609,7 +611,10 @@ export function CategoryManagement() {
                               />
 
                               <div className="flex-1">
-                                <h3 className="font-medium text-slate-900 dark:text-slate-100">{category.name}</h3>
+                                <div className="flex items-center gap-2">
+                                  <h3 className="font-medium text-slate-900 dark:text-slate-100">{category.name}</h3>
+                                  <ColorPreview color={category.color} size="xs" />
+                                </div>
                                 <div className="flex items-center gap-1 text-xs text-slate-500 dark:text-slate-400">
                                   <AccessibleIcon name="Key" size="xs" aria-hidden="true" />
                                   <span>{category.id}</span>
@@ -869,25 +874,18 @@ export function CategoryManagement() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel htmlFor="category-color">Color</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
-                        <FormControl>
-                          <SelectTrigger id="category-color">
-                            <SelectValue placeholder="Select a color" />
-                          </SelectTrigger>
-                        </FormControl>
-                        <SelectContent>
-                          {availableColors.map((color) => (
-                            <SelectItem key={color.value} value={color.value}>
-                              <div className="flex items-center gap-2">
-                                <div
-                                  className={`w-4 h-4 rounded-full bg-${color.value}-600 dark:bg-${color.value}-500`}
-                                ></div>
-                                <span>{color.name}</span>
-                              </div>
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                      <FormControl>
+                        <CategoryColorPicker
+                          id="category-color"
+                          value={field.value.includes("-") ? field.value : `${field.value}-500`}
+                          onChange={field.onChange}
+                          className="pt-2"
+                        />
+                      </FormControl>
+                      <FormDescription>
+                        Choose a color for this category. This will be used for visual identification throughout the
+                        app.
+                      </FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
