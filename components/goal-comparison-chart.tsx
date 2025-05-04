@@ -71,7 +71,10 @@ export function GoalComparisonChart({ entry, categories, getCategoryScore }: Goa
               />
               <Bar dataKey="current" name="Current Score">
                 {goalData.map((entry, index) => (
-                  <Cell key={`cell-${index}`} fill={entry.fill} />
+                  <Cell
+                    key={`cell-${index}`}
+                    fill={`#${entry.name.toLowerCase() === "faith" ? "22c55e" : entry.name.toLowerCase() === "life" ? "eab308" : entry.name.toLowerCase() === "work" ? "ef4444" : entry.name.toLowerCase() === "health" ? "ec4899" : entry.name.toLowerCase() === "mindfulness" ? "22c55e" : entry.name.toLowerCase() === "learning" ? "3b82f6" : entry.name.toLowerCase() === "relationships" ? "8b5cf6" : "64748b"}`}
+                  />
                 ))}
                 <LabelList dataKey="current" position="top" />
               </Bar>
@@ -96,7 +99,7 @@ export function GoalComparisonChart({ entry, categories, getCategoryScore }: Goa
               <Progress
                 value={(item.current / item.goal) * 100}
                 className="h-2"
-                indicatorClassName={item.fill.replace("var(--", "bg-").replace(")", "")}
+                indicatorClassName={`bg-${item.name.toLowerCase() === "faith" ? "green" : item.name.toLowerCase() === "life" ? "yellow" : item.name.toLowerCase() === "work" ? "red" : item.name.toLowerCase() === "health" ? "pink" : item.name.toLowerCase() === "mindfulness" ? "green" : item.name.toLowerCase() === "learning" ? "blue" : item.name.toLowerCase() === "relationships" ? "purple" : "slate"}-500`}
               />
               <div className="text-xs text-center">
                 {item.current < item.goal ? (

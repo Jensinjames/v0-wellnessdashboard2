@@ -102,12 +102,26 @@ export function EnhancedEntriesTable({
       const categoryScore = getCategoryScore(entry, category.id)
       const goalScore = 80 // Default goal score, could be customized per category
 
+      // Map category colors to hex values for the chart
+      const colorMap: Record<string, string> = {
+        green: "#22c55e",
+        yellow: "#eab308",
+        red: "#ef4444",
+        pink: "#ec4899",
+        blue: "#3b82f6",
+        purple: "#8b5cf6",
+        slate: "#64748b",
+      }
+
+      const colorHex = colorMap[category.color] || "#64748b"
+
       return {
         name: category.name,
         current: categoryScore,
         goal: goalScore,
-        fill: `var(--${category.color})`,
+        fill: colorHex,
         gap: Math.max(0, goalScore - categoryScore),
+        colorName: category.color,
       }
     })
   }
@@ -207,7 +221,7 @@ export function EnhancedEntriesTable({
                                   <Progress
                                     value={categoryScore}
                                     className="h-2 w-16"
-                                    indicatorClassName={`bg-${category.color}`}
+                                    indicatorClassName={`bg-${category.color}-500`}
                                   />
                                 </div>
                               </TableCell>
@@ -294,7 +308,7 @@ export function EnhancedEntriesTable({
                                                       <TooltipTrigger asChild>
                                                         <div className="w-16 h-1.5 bg-muted rounded-full overflow-hidden">
                                                           <div
-                                                            className={`h-full ${progressColor}`}
+                                                            className={progressColor}
                                                             style={{ width: `${progress}%` }}
                                                           ></div>
                                                         </div>
@@ -336,7 +350,7 @@ export function EnhancedEntriesTable({
                           >
                             <path
                               fillRule="evenodd"
-                              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
+                              d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 0 009.253 9H9z"
                               clipRule="evenodd"
                             />
                           </svg>
@@ -411,7 +425,7 @@ export function EnhancedEntriesTable({
                             <Progress
                               value={(item.current / item.goal) * 100}
                               className="h-2"
-                              indicatorClassName={item.fill}
+                              indicatorClassName={`bg-${item.colorName}-500`}
                             />
                             <div className="text-xs text-center">
                               {item.current < item.goal ? (
