@@ -1,148 +1,200 @@
-"use client"
-
-// This is a demonstration file showing the current data flow and potential duplication points
-// in the wellness dashboard category management system
-
-/**
- * Current Data Flow:
- *
- * 1. Activities are generated randomly
- * 2. Activity data is used in charts
- */
-
-// Define the structure for an activity
+// Define the Activity type
 export interface Activity {
   id: string
+  date: string
   categoryId: string
   categoryName: string
-  subcategoryId: string
-  subcategoryName: string
-  date: Date
+  name: string
   duration: number
   value: number
 }
 
-// Mock data generation for activity charts
-
-// Get activity time data
+// Function to get activity time data
 export function getActivityTimeData(
-  timeFrame: "week" | "month" | "year",
-  category: string,
-  viewMode: "frequency" | "duration" | "value",
-) {
-  const data = []
-  const days = timeFrame === "week" ? 7 : timeFrame === "month" ? 30 : 365
-  const startDate = new Date()
-  startDate.setDate(startDate.getDate() - days)
+  activities: Activity[],
+  timeFrame: "daily" | "weekly" | "monthly",
+): { date: string; count: number; totalDuration: number; avgValue: number }[] {
+  // This is a simplified implementation for demonstration
+  // In a real app, you would process the activities based on the timeFrame
 
-  for (let i = 0; i < days; i++) {
-    const date = new Date(startDate)
-    date.setDate(date.getDate() + i)
-    const dateStr = date.toLocaleDateString("en-US", { month: "short", day: "numeric" })
+  // Group activities by date
+  const groupedByDate = activities.reduce(
+    (acc, activity) => {
+      const date = activity.date.split("T")[0] // Extract date part
+      if (!acc[date]) {
+        acc[date] = {
+          count: 0,
+          totalDuration: 0,
+          totalValue: 0,
+        }
+      }
+      acc[date].count += 1
+      acc[date].totalDuration += activity.duration
+      acc[date].totalValue += activity.value
+      return acc
+    },
+    {} as Record<string, { count: number; totalDuration: number; totalValue: number }>,
+  )
 
-    // Generate random value based on view mode
-    let value
-    if (viewMode === "frequency") {
-      value = Math.floor(Math.random() * 5) + 1
-    } else if (viewMode === "duration") {
-      value = Math.floor(Math.random() * 120) + 15 // 15-135 minutes
-    } else {
-      value = Math.random() * 10 // 0-10 value
-    }
-
-    data.push({
-      date: dateStr,
-      value,
-    })
-  }
-
-  return data
+  // Convert to array format
+  return Object.entries(groupedByDate).map(([date, data]) => ({
+    date,
+    count: data.count,
+    totalDuration: data.totalDuration,
+    avgValue: data.count > 0 ? data.totalValue / data.count : 0,
+  }))
 }
 
-// Get category distribution data
-export function getCategoryDistribution(
-  timeFrame: "week" | "month" | "year",
-  viewMode: "frequency" | "duration" | "value",
-) {
-  const categories = [
-    { name: "Exercise", color: "#FF6384" },
-    { name: "Meditation", color: "#36A2EB" },
-    { name: "Reading", color: "#FFCE56" },
-    { name: "Sleep", color: "#4BC0C0" },
-    { name: "Nutrition", color: "#9966FF" },
+// Function to get category distribution
+export function getCategoryDistribution(activities: Activity[]): { name: string; count: number }[] {
+  // Group activities by category
+  const groupedByCategory = activities.reduce(
+    (acc, activity) => {
+      if (!acc[activity.categoryName]) {
+        acc[activity.categoryName] = 0
+      }
+      acc[activity.categoryName] += 1
+      return acc
+    },
+    {} as Record<string, number>,
+  )
+
+  // Convert to array format
+  return Object.entries(groupedByCategory).map(([name, count]) => ({
+    name,
+    count,
+  }))
+}
+
+// Function to get time of day distribution
+export function getTimeOfDayDistribution(activities: Activity[]): { name: string; count: number }[] {
+  // Define time periods
+  const timePeriods = [
+    { name: "Morning", start: 5, end: 12 },
+    { name: "Afternoon", start: 12, end: 17 },
+    { name: "Evening", start: 17, end: 21 },
+    { name: "Night", start: 21, end: 5 },
   ]
 
-  return categories.map((category) => {
-    let value
-    if (viewMode === "frequency") {
-      value = Math.floor(Math.random() * 50) + 10
-    } else if (viewMode === "duration") {
-      value = Math.floor(Math.random() * 1000) + 100
-    } else {
-      value = Math.random() * 100
-    }
+  // Initialize counts
+  const counts = timePeriods.reduce(
+    (acc, period) => {
+      acc[period.name] = 0
+      return acc
+    },
+    {} as Record<string, number>,
+  )
 
-    return {
-      ...category,
-      value,
+  // Count activities by time period
+  activities.forEach((activity) => {
+    const date = new Date(activity.date)
+    const hour = date.getHours()
+
+    const period = timePeriods.find(
+      (p) =>
+        (p.start < p.end && hour >= p.start && hour < p.end) || (p.start > p.end && (hour >= p.start || hour < p.end)),
+    )
+
+    if (period) {
+      counts[period.name] += 1
     }
   })
+
+  // Convert to array format
+  return Object.entries(counts).map(([name, count]) => ({
+    name,
+    count,
+  }))
 }
 
-// Get time of day distribution
-export function getTimeOfDayDistribution(timeFrame: "week" | "month" | "year", category: string) {
-  const timeSlots = [
-    { name: "Morning", value: Math.floor(Math.random() * 30) + 5 },
-    { name: "Afternoon", value: Math.floor(Math.random() * 30) + 5 },
-    { name: "Evening", value: Math.floor(Math.random() * 30) + 5 },
-    { name: "Night", value: Math.floor(Math.random() * 30) + 5 },
-  ]
+// Function to get streak data
+export function getStreakData(activities: Activity[]): {
+  currentStreak: number
+  longestStreak: number
+  totalDays: number
+  lastTenDays: boolean[]
+} {
+  // Sort activities by date
+  const sortedActivities = [...activities].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
 
-  return timeSlots
-}
+  // Get unique dates
+  const uniqueDates = new Set(sortedActivities.map((a) => a.date.split("T")[0]))
+  const uniqueDatesList = Array.from(uniqueDates)
 
-// Get streak data
-export function getStreakData(category: string) {
-  const currentStreak = Math.floor(Math.random() * 14) + 1
-  const longestStreak = Math.max(currentStreak, Math.floor(Math.random() * 30) + 7)
-  const totalDays = Math.floor(Math.random() * 100) + 30
+  // Calculate streaks
+  let currentStreak = 0
+  let longestStreak = 0
+  const currentStreakCount = 0
 
-  // Generate last 10 days activity (true/false)
+  // This is a simplified implementation
+  // In a real app, you would check for consecutive days
+
+  // For demonstration, we'll just use the count of unique dates
+  currentStreak = Math.min(uniqueDatesList.length, 7)
+  longestStreak = Math.min(uniqueDatesList.length, 14)
+
+  // Generate last ten days data
   const lastTenDays = Array(10)
-    .fill(null)
-    .map(() => Math.random() > 0.3)
+    .fill(false)
+    .map((_, i) => Math.random() > 0.3)
 
   return {
     currentStreak,
     longestStreak,
-    totalDays,
+    totalDays: uniqueDatesList.length,
     lastTenDays,
   }
 }
 
-// Get heatmap data
-export function getHeatmapData(timeFrame: "week" | "month" | "year", category: string) {
-  const days = 28 // 4 weeks
-  const data = []
-
-  for (let i = 0; i < days; i++) {
-    data.push({
-      date: `Day ${i + 1}`,
-      value: Math.floor(Math.random() * 4), // 0-3 intensity
-    })
-  }
-
-  return data
+// Function to get correlation data
+export function getCorrelationData(activities: Activity[]): {
+  date: string
+  duration: number
+  value: number
+  category: string
+}[] {
+  // Return activities in the format needed for the scatter plot
+  return activities.map((activity) => ({
+    date: activity.date,
+    duration: activity.duration,
+    value: activity.value,
+    category: activity.categoryName,
+  }))
 }
 
-// Get activity correlation data
-export function getActivityCorrelationData(category: string) {
-  const activities = ["Sleep", "Exercise", "Meditation", "Reading", "Nutrition", "Hydration", "Social", "Work"]
+// Function to get activity correlation data
+export function getActivityCorrelationData(categoryFilter: string): {
+  activity: string
+  correlation: number
+}[] {
+  // This is a simplified implementation for demonstration
+  // In a real app, you would calculate actual correlations
 
-  return activities
-    .filter((a) => a.toLowerCase() !== category.toLowerCase())
-    .map((activity) => ({
-      activity,
-      correlation: Math.random(), // 0-1 correlation
+  const activities = ["Sleep", "Exercise", "Meditation", "Reading", "Work", "Social"]
+
+  // Generate random correlation data
+  return activities.map((activity) => ({
+    activity,
+    correlation: Math.random(), // 0-1 correlation
+  }))
+}
+
+// Function to get heatmap data
+export function getHeatmapData(
+  timeFrame: string,
+  categoryFilter: string,
+): {
+  date: string
+  value: number
+}[] {
+  // This is a simplified implementation for demonstration
+  // In a real app, you would generate data based on actual activities
+
+  // Generate 28 days of data (4 weeks)
+  return Array(28)
+    .fill(0)
+    .map((_, i) => ({
+      date: `2023-05-${(i + 1).toString().padStart(2, "0")}`,
+      value: Math.floor(Math.random() * 4), // 0-3 intensity
     }))
 }
