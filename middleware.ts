@@ -3,9 +3,13 @@ import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
 export async function middleware(req: NextRequest) {
+  // Create a response object that we can modify and then return
   const res = NextResponse.next()
+
+  // Create a Supabase client for the middleware
   const supabase = createMiddlewareClient({ req, res })
 
+  // Get the session (server-side only)
   const {
     data: { session },
   } = await supabase.auth.getSession()
@@ -50,7 +54,7 @@ export async function middleware(req: NextRequest) {
     return NextResponse.redirect(new URL(redirectPath, req.url))
   }
 
-  // Handle profile completion redirects
+  // Handle profile completion redirects (only for authenticated users)
   if (session && !isProfileCompletionRoute && !isAuthRoute) {
     try {
       // Check if profile exists and is complete
@@ -81,6 +85,7 @@ export async function middleware(req: NextRequest) {
     }
   }
 
+  // Continue to the requested page
   return res
 }
 

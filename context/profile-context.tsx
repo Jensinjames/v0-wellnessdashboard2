@@ -1,365 +1,170 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useState, useEffect, useCallback } from "react"
+import { createContext, useContext, useState, useEffect } from "react"
+import { useAuth } from "./auth-context-fixed"
 import { getSupabaseClient } from "@/lib/supabase"
 import { toast } from "@/components/ui/use-toast"
-import type { FullProfile, ProfileUpdateData, PreferencesUpdateData, ProfileCompletionStatus } from "@/types/profile"
-import { profileSchema, preferencesSchema, calculateProfileCompletion } from "@/types/profile"
-import { getCachedProfile, setCachedProfile, clearCachedProfile } from "@/services/profile-cache"
-import { migrateProfile } from "@/utils/profile-migration"
 
-interface ProfileContextType {
-  profile: FullProfile | null
-  isLoading: boolean
-  error: string | null
-  completionStatus: ProfileCompletionStatus | null
-  updateProfile: (data: ProfileUpdateData) => Promise<{ success: boolean; error?: string }>
-  updatePreferences: (data: PreferencesUpdateData) => Promise<{ success: boolean; error?: string }>
-  uploadAvatar: (file: File) => Promise<{ success: boolean; url?: string; error?: string }>
-  deleteAvatar: () => Promise<{ success: boolean; error?: string }>
-  fetchProfile: () => Promise<FullProfile | null>
-  refreshProfile: () => Promise<void>
+// Define types for profile data
+export interface ProfileSettings {
+  theme_preference?: string
+  notification_preferences?: {
+    email?: boolean
+    push?: boolean
+    in_app?: boolean
+  }
+  accessibility_settings?: {
+    high_contrast?: boolean
+    reduced_motion?: boolean
+    large_text?: boolean
+  }
 }
 
+// Profile context type definition
+interface ProfileContextType {
+  settings: ProfileSettings | null
+  isLoading: boolean
+  error: string | null
+  updateSettings: (newSettings: Partial<ProfileSettings>) => Promise<void>
+  refreshSettings: () => Promise<void>
+}
+
+// Create context with default values
 const ProfileContext = createContext<ProfileContextType | undefined>(undefined)
 
+// Provider component
 export function ProfileProvider({ children }: { children: React.ReactNode }) {
-  // Initialize state
-  const [profile, setProfile] = useState<FullProfile | null>(null)
-  const [isLoading, setIsLoading] = useState<boolean>(true)
+  const { user, profile } = useAuth()
+  const [settings, setSettings] = useState<ProfileSettings | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [completionStatus, setCompletionStatus] = useState<ProfileCompletionStatus | null>(null)
-  const [authAvailable, setAuthAvailable] = useState<boolean>(false)
-  const [user, setUser] = useState<any>(null)
-
   const supabase = getSupabaseClient()
 
-  // Check if auth context is available
+  // Fetch profile settings when user or profile changes
   useEffect(() => {
-    try {
-      // Try to get the auth user from Supabase directly
-      const getUser = async () => {
-        const { data } = await supabase.auth.getUser()
-        if (data?.user) {
-          setUser(data.user)
-          setAuthAvailable(true)
-        } else {
-          setAuthAvailable(false)
-        }
+    async function fetchProfileSettings() {
+      if (!user || !profile) {
+        setSettings(null)
         setIsLoading(false)
+        return
       }
 
-      getUser()
-    } catch (error) {
-      console.error("Error checking auth:", error)
-      setAuthAvailable(false)
-      setIsLoading(false)
-    }
-  }, [supabase])
+      try {
+        setIsLoading(true)
+        setError(null)
 
-  // Fetch profile from database with validation and caching
-  const fetchProfile = useCallback(async (): Promise<FullProfile | null> => {
+        const { data, error } = await supabase.from("profile_settings").select("*").eq("profile_id", user.id).single()
+
+        if (error) {
+          console.error("Error fetching profile settings:", error)
+          setError("Failed to load profile settings")
+          return
+        }
+
+        setSettings(data || {})
+      } catch (err) {
+        console.error("Unexpected error fetching profile settings:", err)
+        setError("An unexpected error occurred")
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    fetchProfileSettings()
+  }, [user, profile, supabase])
+
+  // Update profile settings
+  const updateSettings = async (newSettings: Partial<ProfileSettings>) => {
     if (!user) {
-      setIsLoading(false)
-      return null
+      toast({
+        title: "Not authenticated",
+        description: "You must be logged in to update settings",
+        variant: "destructive",
+      })
+      return
     }
 
     try {
       setIsLoading(true)
       setError(null)
 
-      // Check cache first
-      const cachedProfile = getCachedProfile(user.id)
-      if (cachedProfile) {
-        setProfile(cachedProfile)
-        setCompletionStatus(calculateProfileCompletion(cachedProfile))
-        setIsLoading(false)
-        return cachedProfile
-      }
+      // Merge with existing settings
+      const updatedSettings = { ...settings, ...newSettings }
 
-      // Fetch from database
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+      const { error } = await supabase.from("profile_settings").upsert({
+        profile_id: user.id,
+        ...updatedSettings,
+        updated_at: new Date().toISOString(),
+      })
 
       if (error) {
-        console.error("Error fetching profile:", error)
-        setError("Failed to load profile")
-        setIsLoading(false)
-        return null
+        console.error("Error updating profile settings:", error)
+        setError("Failed to update settings")
+        toast({
+          title: "Update failed",
+          description: "Could not update your settings",
+          variant: "destructive",
+        })
+        return
       }
 
-      // Validate profile data
-      try {
-        const validatedProfile = profileSchema.parse(data)
-
-        // Check if profile needs migration
-        if (!data.username || !data.theme_preference) {
-          const migratedProfile = await migrateProfile(user.id)
-          if (migratedProfile) {
-            // Update cache and state with migrated profile
-            setCachedProfile(user.id, migratedProfile)
-            setProfile(migratedProfile)
-            setCompletionStatus(calculateProfileCompletion(migratedProfile))
-            setIsLoading(false)
-            return migratedProfile
-          }
-        }
-
-        // If no migration needed or migration failed, use the validated profile
-        const fullProfile = data as FullProfile
-        setCachedProfile(user.id, fullProfile)
-        setProfile(fullProfile)
-        setCompletionStatus(calculateProfileCompletion(fullProfile))
-        return fullProfile
-      } catch (validationError) {
-        console.error("Profile validation error:", validationError)
-        setError("Profile data is invalid")
-        return null
-      }
+      setSettings(updatedSettings)
+      toast({
+        title: "Settings updated",
+        description: "Your settings have been saved successfully",
+      })
     } catch (err) {
-      console.error("Exception in fetchProfile:", err)
+      console.error("Unexpected error updating settings:", err)
       setError("An unexpected error occurred")
-      return null
+      toast({
+        title: "Update failed",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      })
     } finally {
       setIsLoading(false)
     }
-  }, [user, supabase])
+  }
 
-  // Refresh profile data
-  const refreshProfile = useCallback(async (): Promise<void> => {
-    if (user) {
-      // Clear cache to force a fresh fetch
-      clearCachedProfile(user.id)
-      await fetchProfile()
-    }
-  }, [user, fetchProfile])
-
-  // Update profile information
-  const updateProfile = async (data: ProfileUpdateData): Promise<{ success: boolean; error?: string }> => {
-    if (!user) {
-      return { success: false, error: "Not authenticated" }
-    }
+  // Refresh profile settings
+  const refreshSettings = async () => {
+    if (!user) return
 
     try {
-      // Validate the update data
-      const validatedData = profileSchema.partial().parse({
-        ...profile,
-        ...data,
-      })
+      setIsLoading(true)
+      setError(null)
 
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          ...data,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id)
+      const { data, error } = await supabase.from("profile_settings").select("*").eq("profile_id", user.id).single()
 
       if (error) {
-        console.error("Error updating profile:", error)
-        return { success: false, error: error.message }
+        console.error("Error refreshing profile settings:", error)
+        setError("Failed to refresh settings")
+        return
       }
 
-      // Update cache and state
-      await refreshProfile()
-
-      toast({
-        title: "Profile updated",
-        description: "Your profile has been successfully updated.",
-      })
-
-      return { success: true }
-    } catch (err: any) {
-      console.error("Exception in updateProfile:", err)
-      return { success: false, error: err.message || "Failed to update profile" }
-    }
-  }
-
-  // Update user preferences
-  const updatePreferences = async (data: PreferencesUpdateData): Promise<{ success: boolean; error?: string }> => {
-    if (!user) {
-      return { success: false, error: "Not authenticated" }
-    }
-
-    try {
-      // Validate the preferences data
-      const validatedData = preferencesSchema.partial().parse({
-        ...profile,
-        ...data,
-      })
-
-      const { error } = await supabase
-        .from("profiles")
-        .update({
-          ...data,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id)
-
-      if (error) {
-        console.error("Error updating preferences:", error)
-        return { success: false, error: error.message }
-      }
-
-      // Update cache and state
-      await refreshProfile()
-
-      toast({
-        title: "Preferences updated",
-        description: "Your preferences have been successfully updated.",
-      })
-
-      return { success: true }
-    } catch (err: any) {
-      console.error("Exception in updatePreferences:", err)
-      return { success: false, error: err.message || "Failed to update preferences" }
-    }
-  }
-
-  // Upload avatar image
-  const uploadAvatar = async (file: File): Promise<{ success: boolean; url?: string; error?: string }> => {
-    if (!user) {
-      return { success: false, error: "Not authenticated" }
-    }
-
-    try {
-      // Validate file type
-      if (!file.type.startsWith("image/")) {
-        return { success: false, error: "File must be an image" }
-      }
-
-      // Validate file size (max 5MB)
-      if (file.size > 5 * 1024 * 1024) {
-        return { success: false, error: "File size must be less than 5MB" }
-      }
-
-      // Upload to storage
-      const fileExt = file.name.split(".").pop()
-      const fileName = `${user.id}-${Date.now()}.${fileExt}`
-      const filePath = `avatars/${fileName}`
-
-      const { error: uploadError } = await supabase.storage.from("profiles").upload(filePath, file)
-
-      if (uploadError) {
-        console.error("Error uploading avatar:", uploadError)
-        return { success: false, error: uploadError.message }
-      }
-
-      // Get public URL
-      const { data: urlData } = supabase.storage.from("profiles").getPublicUrl(filePath)
-
-      const avatarUrl = urlData.publicUrl
-
-      // Update profile with new avatar URL
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({
-          avatar_url: avatarUrl,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id)
-
-      if (updateError) {
-        console.error("Error updating profile with avatar:", updateError)
-        return { success: false, error: updateError.message }
-      }
-
-      // Update cache and state
-      await refreshProfile()
-
-      toast({
-        title: "Avatar updated",
-        description: "Your profile picture has been successfully updated.",
-      })
-
-      return { success: true, url: avatarUrl }
-    } catch (err: any) {
-      console.error("Exception in uploadAvatar:", err)
-      return { success: false, error: err.message || "Failed to upload avatar" }
-    }
-  }
-
-  // Delete avatar
-  const deleteAvatar = async (): Promise<{ success: boolean; error?: string }> => {
-    if (!user || !profile?.avatar_url) {
-      return { success: false, error: "No avatar to delete" }
-    }
-
-    try {
-      // Extract file path from URL
-      const url = new URL(profile.avatar_url)
-      const filePath = url.pathname.split("/").pop()
-
-      if (filePath) {
-        // Delete from storage
-        const { error: deleteError } = await supabase.storage.from("profiles").remove([`avatars/${filePath}`])
-
-        if (deleteError) {
-          console.error("Error deleting avatar from storage:", deleteError)
-          // Continue anyway to update the profile
-        }
-      }
-
-      // Update profile to remove avatar URL
-      const { error: updateError } = await supabase
-        .from("profiles")
-        .update({
-          avatar_url: null,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id)
-
-      if (updateError) {
-        console.error("Error updating profile after avatar deletion:", updateError)
-        return { success: false, error: updateError.message }
-      }
-
-      // Update cache and state
-      await refreshProfile()
-
-      toast({
-        title: "Avatar removed",
-        description: "Your profile picture has been removed.",
-      })
-
-      return { success: true }
-    } catch (err: any) {
-      console.error("Exception in deleteAvatar:", err)
-      return { success: false, error: err.message || "Failed to delete avatar" }
-    }
-  }
-
-  // Initialize profile on auth change
-  useEffect(() => {
-    if (authAvailable && user) {
-      fetchProfile()
-    } else {
+      setSettings(data || {})
+    } catch (err) {
+      console.error("Unexpected error refreshing settings:", err)
+      setError("An unexpected error occurred")
+    } finally {
       setIsLoading(false)
     }
-  }, [authAvailable, user, fetchProfile])
-
-  // If auth is not available, render children without the context
-  if (!authAvailable) {
-    console.warn("Auth not available, ProfileProvider will not provide profile functionality")
-    return <>{children}</>
   }
 
+  // Context value
   const value = {
-    profile,
+    settings,
     isLoading,
     error,
-    completionStatus,
-    updateProfile,
-    updatePreferences,
-    uploadAvatar,
-    deleteAvatar,
-    fetchProfile,
-    refreshProfile,
+    updateSettings,
+    refreshSettings,
   }
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>
 }
 
+// Custom hook to use the profile context
 export function useProfile() {
   const context = useContext(ProfileContext)
   if (context === undefined) {

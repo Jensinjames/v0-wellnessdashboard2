@@ -1,20 +1,15 @@
-// Prevent static prerendering
+import { WellnessDashboardClientLoader } from "@/components/dashboard/wellness-dashboard-client-loader"
+import { generateServerSafeId } from "@/utils/server-safe-id"
+
 export const dynamic = "force-dynamic"
 
-import { Suspense } from "react"
-import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton"
-import { WellnessDashboardClient } from "@/components/dashboard/wellness-dashboard-client"
-import { AuthWrapper } from "@/components/auth/auth-wrapper"
-
 export default function DashboardPage() {
+  // Use server-safe IDs for any needed identifiers
+  const dashboardId = generateServerSafeId("dashboard")
+
   return (
-    <main className="container mx-auto py-6 px-4 md:px-6">
-      <h1 className="text-3xl font-bold mb-6">Wellness Dashboard</h1>
-      <Suspense fallback={<DashboardSkeleton />}>
-        <AuthWrapper fallback={<DashboardSkeleton />}>
-          <WellnessDashboardClient />
-        </AuthWrapper>
-      </Suspense>
-    </main>
+    <div id={dashboardId}>
+      <WellnessDashboardClientLoader />
+    </div>
   )
 }

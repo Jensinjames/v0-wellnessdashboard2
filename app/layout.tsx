@@ -3,7 +3,7 @@ import "@/styles/globals.css"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import { ThemeProvider } from "@/components/theme-provider"
-import { AuthProvider } from "@/context/auth-context-fixed" // Make sure we're using the fixed version
+import { AuthProviderWrapper } from "@/components/auth/auth-provider-wrapper"
 import { ProfileProvider } from "@/context/profile-context"
 import { ScreenReaderAnnouncerProvider } from "@/components/accessibility/screen-reader-announcer"
 import { Toaster } from "@/components/ui/toaster"
@@ -31,8 +31,8 @@ export default function RootLayout({
       <body className={inter.className}>
         {/* Theme provider must be the outermost provider */}
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
-          {/* Auth provider must come before profile provider */}
-          <AuthProvider>
+          {/* Use the wrapper instead of directly using AuthProvider */}
+          <AuthProviderWrapper>
             {/* Profile provider depends on auth context */}
             <ProfileProvider>
               {/* Screen reader announcer for accessibility */}
@@ -42,7 +42,7 @@ export default function RootLayout({
                 <Toaster />
               </ScreenReaderAnnouncerProvider>
             </ProfileProvider>
-          </AuthProvider>
+          </AuthProviderWrapper>
         </ThemeProvider>
       </body>
     </html>

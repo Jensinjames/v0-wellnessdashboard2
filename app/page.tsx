@@ -1,5 +1,6 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
+import { HomeClientComponents } from "./home-client-components"
 
 export default function Home() {
   return (
@@ -19,6 +20,9 @@ export default function Home() {
             </Button>
           </div>
         </div>
+
+        {/* Client components are isolated here */}
+        <HomeClientComponents />
       </main>
       <footer className="border-t py-6 text-center text-sm text-muted-foreground">
         <p>© {new Date().getFullYear()} Wellness Dashboard. All rights reserved.</p>
