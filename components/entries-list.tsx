@@ -2,9 +2,8 @@
 
 import { useState } from "react"
 import { format } from "date-fns"
-import { Edit2, Trash2, Filter, ArrowUpDown } from "lucide-react"
+import { Filter, ArrowUpDown } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import {
   Dialog,
   DialogContent,
@@ -13,12 +12,12 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { useWellness } from "@/context/wellness-context"
-import type { WellnessEntryData, CategoryId, WellnessCategory } from "@/types/wellness"
+import { EnhancedEntriesTable } from "@/components/enhanced-entries-table"
+import type { WellnessEntryData, CategoryId } from "@/types/wellness"
 
 interface EntriesListProps {
   onEdit: (entry: WellnessEntryData) => void
@@ -226,7 +225,7 @@ export function EntriesList({ onEdit }: EntriesListProps) {
               aria-atomic="false"
               aria-relevant="additions removals"
             >
-              <EntriesTable
+              <EnhancedEntriesTable
                 entries={filteredEntries}
                 onEdit={onEdit}
                 onDelete={confirmDelete}
@@ -248,7 +247,7 @@ export function EntriesList({ onEdit }: EntriesListProps) {
               aria-relevant="additions removals"
             >
               {filteredWeekEntries.length > 0 ? (
-                <EntriesTable
+                <EnhancedEntriesTable
                   entries={filteredWeekEntries}
                   onEdit={onEdit}
                   onDelete={confirmDelete}
@@ -319,136 +318,5 @@ export function EntriesList({ onEdit }: EntriesListProps) {
         </DialogContent>
       </Dialog>
     </Card>
-  )
-}
-
-interface EntriesTableProps {
-  entries: WellnessEntryData[]
-  onEdit: (entry: WellnessEntryData) => void
-  onDelete: (id: string) => void
-  getCategoryScore: (entry: WellnessEntryData, categoryId: CategoryId) => number
-  getOverallScore: (entry: WellnessEntryData) => number
-  getScoreBadgeColor: (score: number) => string
-  getCategoryColorClass: (categoryId: CategoryId) => string
-  searchTerm: string
-  categories: WellnessCategory[]
-}
-
-function EntriesTable({
-  entries,
-  onEdit,
-  onDelete,
-  getCategoryScore,
-  getOverallScore,
-  getScoreBadgeColor,
-  getCategoryColorClass,
-  searchTerm,
-  categories,
-}: EntriesTableProps) {
-  // Get enabled categories for display
-  const enabledCategories = categories.filter((c) => c.enabled).slice(0, 4)
-
-  return (
-    <div className="w-full">
-      <Table>
-        <TableHeader>
-          <TableRow className="hover:bg-transparent">
-            <TableHead className="w-[120px]">Date</TableHead>
-            <TableHead>Overall</TableHead>
-            {enabledCategories.map((category) => (
-              <TableHead key={category.id} className="hidden md:table-cell">
-                {category.name}
-              </TableHead>
-            ))}
-            <TableHead className="text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {entries.length > 0 ? (
-            entries.map((entry) => {
-              const overallScore = getOverallScore(entry)
-              const entryDate = format(new Date(entry.date), "MMM d, yyyy")
-              const entryId = entry.id
-
-              return (
-                <TableRow key={entryId} className="group">
-                  <TableCell className="font-medium">{entryDate}</TableCell>
-                  <TableCell>
-                    <Badge className={`${getScoreBadgeColor(overallScore)} shadow-sm text-white`}>
-                      {overallScore}%
-                    </Badge>
-                  </TableCell>
-                  {enabledCategories.map((category) => {
-                    const categoryScore = getCategoryScore(entry, category.id)
-                    return (
-                      <TableCell key={category.id} className="hidden md:table-cell">
-                        <Badge
-                          variant="outline"
-                          className={`bg-${category.color}-50 text-${category.color}-700 hover:bg-${category.color}-100 border-${category.color}-200 shadow-sm`}
-                        >
-                          {Math.round(categoryScore)}%
-                        </Badge>
-                      </TableCell>
-                    )
-                  })}
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2 opacity-0 transition-opacity group-hover:opacity-100">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onEdit(entry)}
-                        className="h-8 w-8 rounded-full"
-                        aria-label={`Edit entry from ${entryDate}`}
-                        id={`edit-entry-${entryId}`}
-                      >
-                        <Edit2 className="h-4 w-4" aria-hidden="true" />
-                        <span className="sr-only">Edit entry from {entryDate}</span>
-                      </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        onClick={() => onDelete(entryId)}
-                        className="h-8 w-8 rounded-full text-red-700 hover:bg-red-50 hover:text-red-600"
-                        aria-label={`Delete entry from ${entryDate}`}
-                        id={`delete-entry-${entryId}`}
-                      >
-                        <Trash2 className="h-4 w-4" aria-hidden="true" />
-                        <span className="sr-only">Delete entry from {entryDate}</span>
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )
-            })
-          ) : (
-            <TableRow>
-              <TableCell colSpan={6 + enabledCategories.length} className="h-32 text-center">
-                <div className="flex flex-col items-center justify-center">
-                  <div className="rounded-full bg-muted p-3">
-                    <svg
-                      xmlns="http://www.w3.org/2000/svg"
-                      viewBox="0 0 20 20"
-                      fill="currentColor"
-                      className="h-6 w-6 text-muted-foreground"
-                      aria-hidden="true"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-7-4a1 1 0 11-2 0 1 1 0 012 0zM9 9a.75.75 0 000 1.5h.253a.25.25 0 01.244.304l-.459 2.066A1.75 1.75 0 0010.747 15H11a.75.75 0 000-1.5h-.253a.25.25 0 01-.244-.304l.459-2.066A1.75 1.75 0 009.253 9H9z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                  </div>
-                  <h3 className="mt-4 text-lg font-medium">No entries found</h3>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    {searchTerm ? "Try adjusting your search term." : "Add your first wellness entry to get started."}
-                  </p>
-                </div>
-              </TableCell>
-            </TableRow>
-          )}
-        </TableBody>
-      </Table>
-    </div>
   )
 }
