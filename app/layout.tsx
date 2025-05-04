@@ -6,12 +6,18 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { AuthProvider } from "@/context/auth-context"
 import { ProfileProvider } from "@/context/profile-context"
 import { ScreenReaderAnnouncerProvider } from "@/components/accessibility/screen-reader-announcer"
+import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "Wellness Dashboard",
   description: "Track and visualize your wellness journey",
+  viewport: "width=device-width, initial-scale=1",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "white" },
+    { media: "(prefers-color-scheme: dark)", color: "#09090b" },
+  ],
     generator: 'v0.dev'
 }
 
@@ -23,10 +29,18 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
+        {/* Theme provider must be the outermost provider */}
         <ThemeProvider attribute="class" defaultTheme="light" enableSystem={false}>
+          {/* Auth provider must come before profile provider */}
           <AuthProvider>
+            {/* Profile provider depends on auth context */}
             <ProfileProvider>
-              <ScreenReaderAnnouncerProvider>{children}</ScreenReaderAnnouncerProvider>
+              {/* Screen reader announcer for accessibility */}
+              <ScreenReaderAnnouncerProvider>
+                {children}
+                {/* Toast notifications */}
+                <Toaster />
+              </ScreenReaderAnnouncerProvider>
             </ProfileProvider>
           </AuthProvider>
         </ThemeProvider>
