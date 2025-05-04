@@ -11,6 +11,7 @@ import * as LucideIcons from "lucide-react"
 import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd"
 
 import { Button } from "@/components/ui/button"
+import { HighContrastButton } from "@/components/ui/high-contrast-button"
 import {
   Dialog,
   DialogContent,
@@ -75,6 +76,7 @@ const availableColors = [
   { name: "Fuchsia", value: "fuchsia" },
   { name: "Pink", value: "pink" },
   { name: "Rose", value: "rose" },
+  { name: "Faith", value: "faith" }, // Added faith color
 ]
 
 // Available units for metrics
@@ -603,7 +605,7 @@ export function CategoryManagement() {
                                 <Button
                                   variant="outline"
                                   size="sm"
-                                  className="text-red-500 hover:text-red-700"
+                                  className="text-red-700 hover:text-red-800" // Improved contrast
                                   onClick={() => setShowDeleteConfirm(category.id)}
                                   aria-label={`Delete ${category.name} category and all its metrics`}
                                 >
@@ -664,7 +666,7 @@ export function CategoryManagement() {
                                           <Button
                                             variant="ghost"
                                             size="icon"
-                                            className="text-red-500 hover:text-red-700"
+                                            className="text-red-700 hover:text-red-800" // Improved contrast
                                             onClick={() => handleDeleteMetric(category.id, metric.id)}
                                             aria-label={`Delete ${metric.name} metric from ${category.name} category`}
                                           >
@@ -829,7 +831,7 @@ export function CategoryManagement() {
                           {availableColors.map((color) => (
                             <SelectItem key={color.value} value={color.value}>
                               <div className="flex items-center gap-2">
-                                <div className={`w-4 h-4 rounded-full bg-${color.value}-500`}></div>
+                                <div className={`w-4 h-4 rounded-full bg-${color.value}-600`}></div>
                                 <span>{color.name}</span>
                               </div>
                             </SelectItem>
@@ -851,14 +853,14 @@ export function CategoryManagement() {
                 >
                   Cancel
                 </Button>
-                <Button
+                <HighContrastButton
                   type="submit"
                   aria-label={
                     editingCategory ? `Update ${editingCategory.name} category` : "Create new wellness category"
                   }
                 >
                   {editingCategory ? "Update" : "Create"} Category
-                </Button>
+                </HighContrastButton>
               </DialogFooter>
             </form>
           </Form>
@@ -1075,9 +1077,9 @@ export function CategoryManagement() {
                 >
                   Cancel
                 </Button>
-                <Button type="submit" aria-label={editingMetric ? "Update metric" : "Add metric"}>
+                <HighContrastButton type="submit" aria-label={editingMetric ? "Update metric" : "Add metric"}>
                   {editingMetric ? "Update" : "Add"} Metric
-                </Button>
+                </HighContrastButton>
               </DialogFooter>
             </form>
           </Form>
@@ -1098,13 +1100,13 @@ export function CategoryManagement() {
             <Button variant="outline" onClick={() => setShowDeleteConfirm(null)} aria-label="Cancel deletion">
               Cancel
             </Button>
-            <Button
+            <HighContrastButton
               variant="destructive"
               onClick={() => showDeleteConfirm && handleDeleteCategory(showDeleteConfirm)}
               aria-label="Confirm category deletion"
             >
               Delete
-            </Button>
+            </HighContrastButton>
           </DialogFooter>
         </DialogContent>
       </Dialog>
