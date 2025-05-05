@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react"
 import { parseISO } from "date-fns"
 import { ActivityPatterns } from "@/components/activity-patterns"
-import type { Activity } from "@/utils/activity-chart-utils"
+import type { Activity } from "@/components/activity-patterns"
 import { Skeleton } from "@/components/ui/skeleton"
 
 export default function ActivityPatternsPage() {
