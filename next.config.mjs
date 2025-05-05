@@ -9,23 +9,7 @@ const nextConfig = {
   },
   images: {
     unoptimized: true,
-  },
-  webpack: (config) => {
-    // Handle URL imports during build
-    config.module.rules.push({
-      test: /\.(js|jsx|ts|tsx)$/,
-      use: {
-        loader: 'string-replace-loader',
-        options: {
-          search: /import\s+.*from\s+['"]https:\/\/.*['"]/g,
-          replace: '// URL import removed for build',
-          flags: 'g'
-        }
-      }
-    });
-    
-    return config;
-  },
+  }
 };
 
 export default nextConfig;

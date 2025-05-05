@@ -1,5 +1,5 @@
 {
   "buildCommand": "next build",
-  "installCommand": "cp package.deploy.json package.json && npm install",
+  "installCommand": "node -e \"require('fs').copyFileSync('package.minimal.json', 'package.json')\" && yarn install --frozen-lockfile",
   "framework": "nextjs"
 }
