@@ -1,1 +1,4 @@
+# Ignore all Supabase Edge Functions
 supabase/
+supabase/functions/
+*.ts.map
