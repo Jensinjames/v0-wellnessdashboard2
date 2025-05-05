@@ -1,20 +1,14 @@
 "use client"
 
-import { getSupabaseClient } from "@/lib/supabase"
 import { useEffect, useState } from "react"
+import { createSupabaseBrowserClient } from "@/lib/supabase-browser"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 import type { RealtimeChannel } from "@supabase/supabase-js"
 
-let supabaseInstance: SupabaseClient<Database> | null = null
-
-export function useSupabase() {
-  const [client] = useState(() => {
-    if (!supabaseInstance) {
-      supabaseInstance = getSupabaseClient()
-    }
-    return supabaseInstance
-  })
+// Use this hook to access the Supabase client in client components
+export function useSupabase(): SupabaseClient<Database> {
+  const [client] = useState(() => createSupabaseBrowserClient())
 
   return client
 }

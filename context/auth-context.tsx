@@ -4,7 +4,7 @@ import type React from "react"
 import { createContext, useContext, useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import type { User, Session } from "@supabase/supabase-js"
-import { getSupabaseClient } from "@/lib/supabase"
+import { useSupabase } from "@/hooks/use-supabase"
 import { toast } from "@/components/ui/use-toast"
 import { logDatabaseError, safeDbOperation } from "@/utils/db-error-handler"
 import { validateUserData } from "@/utils/validation"
@@ -64,7 +64,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
-  const supabase = getSupabaseClient()
+  const supabase = useSupabase()
 
   // Use refs to prevent infinite loops and track fetch attempts
   const fetchingProfile = useRef<Record<string, boolean>>({})

@@ -63,11 +63,11 @@
     "@supabase/postgrest-js": "latest",
     "fs": "latest",
     "path": "latest",
-    "@supabase/auth-helpers-nextjs": "latest",
     "child_process": "latest",
     "util": "latest",
     "glob": "latest",
-    "https:": "latest"
+    "https:": "latest",
+    "@supabase/ssr": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",
