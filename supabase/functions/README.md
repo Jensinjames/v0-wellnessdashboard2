@@ -39,3 +39,10 @@ To run the functions locally:
 \`\`\`bash
 supabase start
 supabase functions serve
+\`\`\`
+
+## Important Notes
+
+- Edge Functions use Deno, which uses URL imports instead of npm packages
+- Do not try to build these functions with the Next.js application
+- Always deploy these functions separately using the Supabase CLI
