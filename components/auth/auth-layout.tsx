@@ -22,4 +22,15 @@ export function AuthLayout({ children, title = "Authentication", redirectIfAuthe
   )
 }
 
+export function AuthFormLoading({ title = "Authentication" }: { title?: string }) {
+  return (
+    <div className="container flex h-screen items-center justify-center" aria-live="polite" aria-busy="true">
+      <div className="text-center">
+        <h1 className="text-xl font-semibold mb-2">{title}</h1>
+        <p>Loading authentication form...</p>
+      </div>
+    </div>
+  )
+}
+
 export default AuthLayout
