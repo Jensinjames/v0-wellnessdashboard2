@@ -48,7 +48,7 @@ export interface UserPreferencesType {
   emailNotifications: boolean
   notificationPreferences: {
     activity_updates: boolean
-    new_features: boolean
+    newFeatures: boolean
     marketing: boolean
   }
   language: string
