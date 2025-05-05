@@ -9,12 +9,48 @@ import { toast } from "@/components/ui/use-toast"
 import { Loader2, AlertTriangle } from "lucide-react"
 
 export function WellnessDashboardClient() {
-  const { user, isLoading, profile } = useAuth()
   const router = useRouter()
   const [authChecked, setAuthChecked] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
   const MAX_RETRIES = 3
+
+  // Initialize authContext outside the try-catch to ensure it's always defined
+  const authContext = useAuth()
+  const [authError, setAuthError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!authContext) {
+      setAuthError("Authentication system is not properly initialized.")
+    }
+  }, [authContext])
+
+  if (authError) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen p-4">
+        <div className="bg-destructive/10 p-6 rounded-lg max-w-md w-full mb-6">
+          <div className="flex items-center mb-4">
+            <AlertTriangle className="h-6 w-6 text-destructive mr-2" aria-hidden="true" />
+            <h2 className="text-xl font-semibold">Authentication Error</h2>
+          </div>
+          <p className="mb-4">
+            The authentication system is not properly initialized. Please try refreshing the page or contact support if
+            the issue persists.
+          </p>
+          <div className="flex flex-col sm:flex-row gap-2">
+            <Button variant="outline" onClick={() => window.location.reload()} aria-label="Refresh the page">
+              Refresh Page
+            </Button>
+            <Button onClick={() => router.push("/")} aria-label="Return to the home page">
+              Return Home
+            </Button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const { user, isLoading, profile } = authContext
 
   useEffect(() => {
     // Only proceed after auth check is complete
