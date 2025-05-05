@@ -1,15 +1,15 @@
 "use client"
 
 import type React from "react"
-
 import { Card } from "@/components/ui/card"
 
 interface AuthLayoutProps {
   children: React.ReactNode
   title?: string
+  redirectIfAuthenticated?: boolean
 }
 
-export function AuthLayout({ children, title = "Authentication" }: AuthLayoutProps) {
+export function AuthLayout({ children, title = "Authentication", redirectIfAuthenticated = true }: AuthLayoutProps) {
   return (
     <div className="container flex h-screen items-center justify-center">
       <Card className="w-full max-w-md mx-auto">
@@ -22,13 +22,4 @@ export function AuthLayout({ children, title = "Authentication" }: AuthLayoutPro
   )
 }
 
-export function AuthFormLoading({ title = "Authentication" }: { title?: string }) {
-  return (
-    <div className="container flex h-screen items-center justify-center">
-      <div className="text-center">
-        <h1 className="text-xl font-semibold mb-2">{title}</h1>
-        <p>Loading authentication form...</p>
-      </div>
-    </div>
-  )
-}
+export default AuthLayout

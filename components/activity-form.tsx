@@ -3,13 +3,17 @@
 import type React from "react"
 
 import { useState, useEffect } from "react"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { validateActivityForm } from "@/utils/form-validation"
 import type { Activity } from "@/types/wellness"
 import { generateId } from "@/utils/id-generator"
 
-export function ActivityForm() {
+interface ActivityFormProps {
+  className?: string
+}
+
+export function ActivityForm({ className }: ActivityFormProps) {
   const [date, setDate] = useState<Date>(new Date())
   const [category, setCategory] = useState<string>("")
   const [duration, setDuration] = useState<number>(30)
@@ -77,13 +81,16 @@ export function ActivityForm() {
   }
 
   return (
-    <Card>
+    <Card className={className}>
       <CardHeader>
         <CardTitle>Log Activity</CardTitle>
+        <CardDescription>Record your wellness activities to track your progress over time.</CardDescription>
       </CardHeader>
       <CardContent>
-        <p className="mb-4">Activity form will be displayed here.</p>
-        <Button>Save Activity</Button>
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <p>Activity form fields will be displayed here.</p>
+          <Button type="submit">Save Activity</Button>
+        </form>
       </CardContent>
     </Card>
   )

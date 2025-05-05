@@ -1,22 +1,11 @@
 "use client"
-
-import { Suspense } from "react"
-import dynamic from "next/dynamic"
-import { AuthFormLoading } from "@/components/auth/auth-layout"
-
-// Dynamically import the ForgotPasswordForm with { ssr: false } to prevent server-side rendering
-const ForgotPasswordForm = dynamic(
-  () => import("@/components/auth/forgot-password-form").then((mod) => mod.ForgotPasswordForm),
-  {
-    ssr: false,
-    loading: () => <AuthFormLoading />,
-  },
-)
+import { Card } from "@/components/ui/card"
+import { ForgotPasswordForm } from "@/components/auth/forgot-password-form"
 
 export default function ForgotPasswordClient() {
   return (
-    <Suspense fallback={<AuthFormLoading />}>
+    <Card className="w-full max-w-md mx-auto">
       <ForgotPasswordForm />
-    </Suspense>
+    </Card>
   )
 }

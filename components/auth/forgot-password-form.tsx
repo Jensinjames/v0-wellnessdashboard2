@@ -1,87 +1,26 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useRouter } from "next/navigation"
+import type React from "react"
+import { useState } from "react"
 import Link from "next/link"
-import { z } from "zod"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
+import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle, Loader2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
-import { useAuth } from "@/context/auth-context"
-
-const forgotPasswordSchema = z.object({
-  email: z.string().email("Please enter a valid email address"),
-})
-
-type ForgotPasswordFormValues = z.infer<typeof forgotPasswordSchema>
 
 export function ForgotPasswordForm() {
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [email, setEmail] = useState("")
+  const [isSubmitting, setIsSubmitting] = useState(false)
   const [isSubmitted, setIsSubmitted] = useState(false)
-  const [isClient, setIsClient] = useState(false)
-  const router = useRouter()
 
-  // Set isClient to true when component mounts (client-side only)
-  useEffect(() => {
-    setIsClient(true)
-  }, [])
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsSubmitting(true)
 
-  // Only use auth hook on the client side
-  const auth = useAuth()
-  const { resetPassword } = auth || { resetPassword: null }
-
-  const form = useForm<ForgotPasswordFormValues>({
-    resolver: zodResolver(forgotPasswordSchema),
-    defaultValues: {
-      email: "",
-    },
-  })
-
-  const onSubmit = async (values: ForgotPasswordFormValues) => {
-    if (!resetPassword) {
-      setError("Authentication is not available. Please try again later.")
-      return
-    }
-
-    setIsLoading(true)
-    setError(null)
-
-    try {
-      const { error } = await resetPassword(values.email)
-
-      if (error) {
-        setError(error.message)
-        return
-      }
-
+    // Simulate API call
+    setTimeout(() => {
+      setIsSubmitting(false)
       setIsSubmitted(true)
-    } catch (err) {
-      setError("An unexpected error occurred. Please try again.")
-      console.error(err)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // If not on client yet, show a simple loading state
-  if (!isClient) {
-    return (
-      <>
-        <CardHeader>
-          <CardTitle>Forgot password</CardTitle>
-          <CardDescription>Loading form...</CardDescription>
-        </CardHeader>
-        <CardContent className="flex justify-center py-8">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-primary"></div>
-        </CardContent>
-      </>
-    )
+    }, 1000)
   }
 
   if (isSubmitted) {
@@ -110,39 +49,24 @@ export function ForgotPasswordForm() {
         <CardDescription>Enter your email to reset your password</CardDescription>
       </CardHeader>
       <CardContent>
-        {error && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email</FormLabel>
-                  <FormControl>
-                    <Input type="email" placeholder="john.doe@example.com" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div className="space-y-2">
+            <label htmlFor="email" className="block text-sm font-medium">
+              Email
+            </label>
+            <Input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="john.doe@example.com"
+              required
             />
-            <Button type="submit" className="w-full" disabled={isLoading}>
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  <span>Sending reset link...</span>
-                </>
-              ) : (
-                "Send reset link"
-              )}
-            </Button>
-          </form>
-        </Form>
+          </div>
+          <Button type="submit" className="w-full" disabled={isSubmitting}>
+            {isSubmitting ? "Sending reset link..." : "Send reset link"}
+          </Button>
+        </form>
       </CardContent>
       <CardFooter className="flex justify-center">
         <p className="text-sm text-muted-foreground">
@@ -156,5 +80,4 @@ export function ForgotPasswordForm() {
   )
 }
 
-// Add default export for dynamic import
 export default ForgotPasswordForm
