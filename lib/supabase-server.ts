@@ -1,10 +1,13 @@
 import { createServerClient } from "@supabase/ssr"
-import { cookies } from "next/headers"
 import type { Database } from "@/types/database"
+import type { CookieOptions } from "@supabase/ssr"
 
-export function createClient() {
-  const cookieStore = cookies()
-
+// This is a helper function to create a server client in route handlers and server actions
+// It doesn't use next/headers directly, so it can be imported anywhere
+export function createClient(
+  cookieGetter: (name: string) => string | undefined,
+  cookieSetter: (name: string, value: string, options: CookieOptions) => void,
+) {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
     throw new Error("Supabase URL and anon key are required")
   }
@@ -12,23 +15,13 @@ export function createClient() {
   return createServerClient<Database>(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
     cookies: {
       get(name: string) {
-        return cookieStore.get(name)?.value
+        return cookieGetter(name)
       },
-      set(
-        name: string,
-        value: string,
-        options: {
-          path: string
-          maxAge: number
-          domain?: string
-          sameSite?: "lax" | "strict" | "none"
-          secure?: boolean
-        },
-      ) {
-        cookieStore.set({ name, value, ...options })
+      set(name: string, value: string, options: CookieOptions) {
+        cookieSetter(name, value, options)
       },
       remove(name: string, options: { path: string; domain?: string }) {
-        cookieStore.set({ name, value: "", ...options, maxAge: 0 })
+        cookieSetter(name, "", { ...options, maxAge: 0 })
       },
     },
   })

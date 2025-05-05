@@ -5,12 +5,10 @@ import type React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { useAuth } from "@/context/auth-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { handleAuthError } from "@/utils/auth-error-handler"
-import { getSupabaseClient } from "@/lib/supabase-client"
-import { ensureProfileExists } from "@/services/profile-service"
 
 export function SignUpForm() {
   const [email, setEmail] = useState("")
@@ -18,6 +16,7 @@ export function SignUpForm() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { signUp } = useAuth()
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -32,28 +31,16 @@ export function SignUpForm() {
     }
 
     try {
-      const supabase = getSupabaseClient()
-      const { data, error: signUpError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
+      const { error } = await signUp({ email, password })
 
-      if (signUpError) {
-        setError(handleAuthError(signUpError, "sign-up"))
+      if (error) {
+        setError(error.message)
         return
-      }
-
-      // Create user profile
-      if (data.user) {
-        await ensureProfileExists(data.user.id, email)
       }
 
       router.push("/auth/verify-email")
     } catch (err: any) {
-      setError(handleAuthError(err, "sign-up"))
+      setError(err.message || "An unexpected error occurred")
     } finally {
       setIsLoading(false)
     }

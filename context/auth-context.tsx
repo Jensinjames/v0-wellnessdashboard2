@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation"
 import type { Session, User } from "@supabase/supabase-js"
 import { getSupabaseClient } from "@/lib/supabase-client"
 import { handleAuthError } from "@/utils/auth-error-handler"
+import { ensureProfileExists } from "@/services/profile-service"
 import type { Database } from "@/types/database"
 
 type UserProfile = Database["public"]["Tables"]["profiles"]["Row"]
@@ -107,19 +108,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const supabase = getSupabaseClient()
 
-      // Use a direct fetch with error handling instead of the Supabase client
-      // This gives us more control over error handling
-      const response = await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/profiles?id=eq.${userId}&limit=1`, {
-        method: "GET",
-        headers: {
-          "Content-Type": "application/json",
-          apikey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
-          Authorization: `Bearer ${session?.access_token || ""}`,
-        },
-      })
+      // Use the Supabase client directly (no next/headers)
+      const { data, error, status } = await supabase.from("profiles").select("*").eq("id", userId).single()
 
       // Check for rate limiting
-      if (response.status === 429) {
+      if (status === 429) {
         console.log(`Rate limited (429), retrying in ${backoffTime * 2}ms...`)
 
         // If we've tried too many times, use a mock profile
@@ -134,12 +127,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return fetchProfile(userId, retryCount + 1)
       }
 
-      // Handle other errors
-      if (!response.ok) {
-        console.error(`Error fetching profile: ${response.status} ${response.statusText}`)
+      if (error) {
+        console.error(`Error fetching profile (status ${status}):`, error)
 
         // If we get a 404, the profile might not exist yet
-        if (response.status === 404 || response.status === 406) {
+        if (status === 404 || status === 406) {
           // Try to create the profile
           await createProfile(userId)
           return
@@ -156,18 +148,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
-      // Parse the response
-      const data = await response.json()
-
-      if (Array.isArray(data) && data.length > 0) {
-        setProfile(data[0])
-      } else if (user?.email) {
-        // If no profile found, try to create one
-        await createProfile(userId)
-      } else {
-        // If we can't create a profile, use a mock one
-        setProfile(createMockProfile(userId, user?.email))
-      }
+      setProfile(data)
     } catch (error) {
       console.error("Unexpected error fetching profile:", error)
 
@@ -189,21 +170,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const supabase = getSupabaseClient()
 
-      // Create new profile
-      const newProfile = {
-        id: userId,
-        email: user.email,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      }
+      // Use the client-side helper
+      const profile = await ensureProfileExists(userId, user.email, supabase)
 
-      const { data, error } = await supabase.from("profiles").upsert(newProfile, { onConflict: "id" }).select().single()
-
-      if (error) {
-        console.error("Error creating profile:", error)
-        setProfile(createMockProfile(userId, user.email))
+      if (profile) {
+        setProfile(profile)
       } else {
-        setProfile(data)
+        setProfile(createMockProfile(userId, user.email))
       }
     } catch (error) {
       console.error("Unexpected error creating profile:", error)

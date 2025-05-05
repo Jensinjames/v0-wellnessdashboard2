@@ -1,13 +1,18 @@
-import { Suspense } from "react"
-import { AuthLayout, AuthFormLoading } from "@/components/auth/auth-layout"
 import { SignUpForm } from "@/components/auth/sign-up-form"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 export default function SignUpPage() {
   return (
-    <Suspense fallback={<AuthFormLoading title="Sign Up" />}>
-      <AuthLayout title="Sign Up" description="Create a new account to get started">
-        <SignUpForm />
-      </AuthLayout>
-    </Suspense>
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>Sign Up</CardTitle>
+          <CardDescription>Create a new account to get started</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <SignUpForm />
+        </CardContent>
+      </Card>
+    </div>
   )
 }

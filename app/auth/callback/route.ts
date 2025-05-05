@@ -1,4 +1,3 @@
-import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import type { NextRequest } from "next/server"
@@ -10,14 +9,16 @@ export async function GET(request: NextRequest) {
   const next = requestUrl.searchParams.get("next") || "/dashboard"
 
   if (code) {
-    const cookieStore = cookies()
+    const response = NextResponse.redirect(new URL(next, request.url))
+
+    // Create supabase client using cookies from the request/response
     const supabase = createServerClient<Database>(
       process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "",
       process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
       {
         cookies: {
           get(name: string) {
-            return cookieStore.get(name)?.value
+            return request.cookies.get(name)?.value
           },
           set(
             name: string,
@@ -30,18 +31,20 @@ export async function GET(request: NextRequest) {
               secure?: boolean
             },
           ) {
-            cookieStore.set({ name, value, ...options })
+            response.cookies.set({ name, value, ...options })
           },
           remove(name: string, options: { path: string; domain?: string }) {
-            cookieStore.set({ name, value: "", ...options, maxAge: 0 })
+            response.cookies.set({ name, value: "", ...options, maxAge: 0 })
           },
         },
       },
     )
 
     await supabase.auth.exchangeCodeForSession(code)
+
+    return response
   }
 
-  // URL to redirect to after sign in process completes
-  return NextResponse.redirect(new URL(next, request.url))
+  // If no code, redirect to sign in
+  return NextResponse.redirect(new URL("/auth/sign-in", request.url))
 }

@@ -5,17 +5,17 @@ import type React from "react"
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
+import { useAuth } from "@/context/auth-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { handleAuthError } from "@/utils/auth-error-handler"
-import { getSupabaseClient } from "@/lib/supabase-client"
 
 export function SignInForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { signIn } = useAuth()
   const router = useRouter()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -24,21 +24,16 @@ export function SignInForm() {
     setError(null)
 
     try {
-      const supabase = getSupabaseClient()
-      const { error: signInError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
+      const { error } = await signIn({ email, password })
 
-      if (signInError) {
-        setError(handleAuthError(signInError, "sign-in"))
+      if (error) {
+        setError(error.message)
         return
       }
 
       router.push("/dashboard")
-      router.refresh()
     } catch (err: any) {
-      setError(handleAuthError(err, "sign-in"))
+      setError(err.message || "An unexpected error occurred")
     } finally {
       setIsLoading(false)
     }
