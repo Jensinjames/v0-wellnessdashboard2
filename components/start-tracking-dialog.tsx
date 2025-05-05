@@ -61,14 +61,20 @@ export function StartTrackingDialog({ open, onOpenChange }: StartTrackingDialogP
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[500px]">
         <DialogHeader>
-          <DialogTitle>Start Activity Tracking</DialogTitle>
-          <DialogDescription>
+          <DialogTitle id="tracking-dialog-title">Start Activity Tracking</DialogTitle>
+          <DialogDescription id="tracking-dialog-description">
             Select a category and metric to start tracking. The timer will run until you stop it.
           </DialogDescription>
         </DialogHeader>
 
         <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6" id="tracking-form">
+          <form
+            onSubmit={form.handleSubmit(onSubmit)}
+            className="space-y-6"
+            id="tracking-form"
+            aria-labelledby="tracking-dialog-title"
+            aria-describedby="tracking-dialog-description"
+          >
             <FormField
               control={form.control}
               name="categoryId"
@@ -85,7 +91,11 @@ export function StartTrackingDialog({ open, onOpenChange }: StartTrackingDialogP
                     defaultValue={field.value}
                   >
                     <FormControl>
-                      <SelectTrigger id="tracking-category" aria-label="Select wellness category">
+                      <SelectTrigger
+                        id="tracking-category"
+                        name="tracking-category"
+                        aria-label="Select wellness category"
+                      >
                         <SelectValue placeholder="Select a category" />
                       </SelectTrigger>
                     </FormControl>
@@ -97,7 +107,7 @@ export function StartTrackingDialog({ open, onOpenChange }: StartTrackingDialogP
                       ))}
                     </SelectContent>
                   </Select>
-                  <FormMessage />
+                  <FormMessage id="category-error" aria-live="polite" />
                 </FormItem>
               )}
             />
@@ -110,7 +120,7 @@ export function StartTrackingDialog({ open, onOpenChange }: StartTrackingDialogP
                   <FormLabel htmlFor="tracking-metric">Metric</FormLabel>
                   <Select onValueChange={field.onChange} defaultValue={field.value} disabled={!selectedCategoryId}>
                     <FormControl>
-                      <SelectTrigger id="tracking-metric" aria-label="Select metric to track">
+                      <SelectTrigger id="tracking-metric" name="tracking-metric" aria-label="Select metric to track">
                         <SelectValue placeholder="Select a metric" />
                       </SelectTrigger>
                     </FormControl>
@@ -122,7 +132,7 @@ export function StartTrackingDialog({ open, onOpenChange }: StartTrackingDialogP
                       ))}
                     </SelectContent>
                   </Select>
-                  <FormMessage />
+                  <FormMessage id="metric-error" aria-live="polite" />
                 </FormItem>
               )}
             />
@@ -136,12 +146,13 @@ export function StartTrackingDialog({ open, onOpenChange }: StartTrackingDialogP
                   <FormControl>
                     <Textarea
                       id="tracking-notes"
+                      name="tracking-notes"
                       placeholder="Add notes about this activity..."
                       className="resize-none"
                       {...field}
                     />
                   </FormControl>
-                  <FormMessage />
+                  <FormMessage id="notes-error" aria-live="polite" />
                 </FormItem>
               )}
             />

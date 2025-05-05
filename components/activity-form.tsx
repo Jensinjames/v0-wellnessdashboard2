@@ -92,7 +92,7 @@ export function ActivityForm() {
         <CardDescription>Record your wellness activities to track your progress over time.</CardDescription>
       </CardHeader>
       <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-6" id="activity-form">
+        <form onSubmit={handleSubmit} className="space-y-6" id="activity-form" aria-labelledby="activity-form-title">
           {Object.keys(errors).length > 0 && <FormErrorSummary errors={errors} />}
 
           <div className="space-y-4">
@@ -119,7 +119,11 @@ export function ActivityForm() {
                     <SelectItem value="creative">Creative</SelectItem>
                   </SelectContent>
                 </Select>
-                {errors.category && <p className="text-sm text-red-500">{errors.category}</p>}
+                {errors.category && (
+                  <p className="text-sm text-red-500" id="category-error" aria-live="polite">
+                    {errors.category}
+                  </p>
+                )}
               </div>
             </div>
 
@@ -128,13 +132,19 @@ export function ActivityForm() {
                 <Label htmlFor="activity-duration">Duration (minutes)</Label>
                 <Input
                   id="activity-duration"
+                  name="activity-duration"
                   type="number"
                   min="1"
                   value={duration}
                   onChange={(e) => setDuration(Number.parseInt(e.target.value) || 0)}
                   aria-invalid={!!errors.duration}
+                  aria-describedby={errors.duration ? "duration-error" : undefined}
                 />
-                {errors.duration && <p className="text-sm text-red-500">{errors.duration}</p>}
+                {errors.duration && (
+                  <p className="text-sm text-red-500" id="duration-error" aria-live="polite">
+                    {errors.duration}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-2">
@@ -142,6 +152,7 @@ export function ActivityForm() {
                 <div className="pt-2">
                   <Slider
                     id="activity-intensity"
+                    name="activity-intensity"
                     min={1}
                     max={5}
                     step={1}
@@ -168,18 +179,25 @@ export function ActivityForm() {
               </div>
               <Textarea
                 id="activity-notes"
+                name="activity-notes"
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}
                 placeholder="Add any additional notes about this activity..."
                 maxLength={200}
                 aria-invalid={!!errors.notes}
+                aria-describedby={errors.notes ? "notes-error" : undefined}
               />
-              {errors.notes && <p className="text-sm text-red-500">{errors.notes}</p>}
+              {errors.notes && (
+                <p className="text-sm text-red-500" id="notes-error" aria-live="polite">
+                  {errors.notes}
+                </p>
+              )}
             </div>
 
             <div className="flex items-center space-x-2">
               <Switch
                 id="activity-reminder"
+                name="activity-reminder"
                 checked={reminder}
                 onCheckedChange={setReminder}
                 aria-label="Set reminder for next time"
@@ -207,8 +225,10 @@ export function ActivityForm() {
 
       {activities && activities.length > 0 && (
         <CardFooter className="flex flex-col">
-          <h3 className="text-lg font-medium mb-2">Recent Activities</h3>
-          <div className="w-full space-y-2">
+          <h3 className="text-lg font-medium mb-2" id="recent-activities-heading">
+            Recent Activities
+          </h3>
+          <div className="w-full space-y-2" aria-labelledby="recent-activities-heading">
             {activities
               .slice(-3)
               .reverse()

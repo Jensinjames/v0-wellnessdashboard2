@@ -180,8 +180,10 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
       <Dialog open={open} onOpenChange={onOpenChange}>
         <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>{entryToEdit ? "Edit Wellness Entry" : "Add New Wellness Entry"}</DialogTitle>
-            <DialogDescription>
+            <DialogTitle id="entry-form-title">
+              {entryToEdit ? "Edit Wellness Entry" : "Add New Wellness Entry"}
+            </DialogTitle>
+            <DialogDescription id="entry-form-description">
               {entryToEdit
                 ? "Update your wellness entry details below."
                 : "Record your daily activities and metrics across all wellness categories."}
@@ -189,7 +191,13 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
           </DialogHeader>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6" id="entry-form">
+            <form
+              onSubmit={form.handleSubmit(onSubmit)}
+              className="space-y-6"
+              id="entry-form"
+              aria-labelledby="entry-form-title"
+              aria-describedby="entry-form-description"
+            >
               {/* Date Picker */}
               <FormField
                 control={form.control}
@@ -202,9 +210,11 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
                         <FormControl>
                           <Button
                             id="entry-date"
+                            name="entry-date"
                             variant={"outline"}
                             className={cn("w-full pl-3 text-left font-normal", !field.value && "text-muted-foreground")}
                             aria-label={field.value ? `Selected date: ${format(field.value, "PPP")}` : "Select a date"}
+                            aria-haspopup="dialog"
                           >
                             {field.value ? format(field.value, "PPP") : <span>Pick a date</span>}
                             <CalendarIcon className="ml-auto h-4 w-4 opacity-50" aria-hidden="true" />
@@ -227,7 +237,7 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
                         />
                       </PopoverContent>
                     </Popover>
-                    <FormMessage />
+                    <FormMessage id="date-error" aria-live="polite" />
                   </FormItem>
                 )}
               />
@@ -261,6 +271,7 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
                       value={category.id}
                       className="space-y-4 pt-4"
                       id={`tabpanel-${category.id}`}
+                      aria-labelledby={`tab-${category.id}`}
                     >
                       <div
                         className={cn(
@@ -269,7 +280,10 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
                           "border-slate-200 dark:border-slate-800",
                         )}
                       >
-                        <h3 className={cn("font-medium", `text-${categoryColor}-800 dark:text-${categoryColor}-300`)}>
+                        <h3
+                          className={cn("font-medium", `text-${categoryColor}-800 dark:text-${categoryColor}-300`)}
+                          id={`${category.id}-heading`}
+                        >
                           {category.name} Activities
                         </h3>
 
@@ -292,7 +306,9 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
               {/* Additional categories section */}
               {enabledCategories.length > 4 && (
                 <div className="space-y-4">
-                  <h3 className="text-lg font-medium">Additional Categories</h3>
+                  <h3 className="text-lg font-medium" id="additional-categories-heading">
+                    Additional Categories
+                  </h3>
 
                   {enabledCategories.slice(4).map((category) => {
                     const categoryColor = getCategoryColorKey(category.id)
@@ -305,8 +321,12 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
                           `bg-${categoryColor}-50 dark:bg-${categoryColor}-950/20`,
                           "border-slate-200 dark:border-slate-800",
                         )}
+                        aria-labelledby={`${category.id}-additional-heading`}
                       >
-                        <h3 className={cn("font-medium", `text-${categoryColor}-800 dark:text-${categoryColor}-300`)}>
+                        <h3
+                          className={cn("font-medium", `text-${categoryColor}-800 dark:text-${categoryColor}-300`)}
+                          id={`${category.id}-additional-heading`}
+                        >
                           {category.name} Activities
                         </h3>
 
@@ -332,10 +352,11 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
                   variant="outline"
                   onClick={() => onOpenChange(false)}
                   aria-label="Cancel entry form"
+                  id="cancel-entry-button"
                 >
                   Cancel
                 </Button>
-                <Button type="submit" aria-label={entryToEdit ? "Update entry" : "Save entry"}>
+                <Button type="submit" aria-label={entryToEdit ? "Update entry" : "Save entry"} id="save-entry-button">
                   {entryToEdit ? "Update" : "Save"} Entry
                 </Button>
               </DialogFooter>
@@ -358,6 +379,7 @@ interface MetricEntryFieldProps {
     min: number
     max: number
     step: number
+    defaultValue: number
   }
   form: any
   valueChangesRef: React.RefObject<HTMLDivElement>
@@ -391,6 +413,7 @@ function MetricEntryField({ category, metric, form, valueChangesRef }: MetricEnt
             <FormControl>
               <Input
                 id={fieldId}
+                name={fieldId}
                 type="number"
                 min={metric.min}
                 max={metric.max}
@@ -406,7 +429,7 @@ function MetricEntryField({ category, metric, form, valueChangesRef }: MetricEnt
                 aria-valuenow={field.value}
               />
             </FormControl>
-            <FormMessage />
+            <FormMessage id={`${fieldId}-error`} aria-live="polite" />
           </FormItem>
         )}
       />
@@ -422,7 +445,7 @@ function MetricEntryField({ category, metric, form, valueChangesRef }: MetricEnt
         <FormItem>
           <div className="flex justify-between">
             <FormLabel htmlFor={fieldId}>{metric.name}</FormLabel>
-            <span className="text-sm">
+            <span className="text-sm" id={`${fieldId}-value`} aria-live="polite">
               {metric.unit === "level" && metric.id === "stressLevel"
                 ? `${field.value} - ${getStressLevelLabel(field.value)}`
                 : getUnitLabel(metric.unit, field.value)}
@@ -431,6 +454,7 @@ function MetricEntryField({ category, metric, form, valueChangesRef }: MetricEnt
           <FormControl>
             <Slider
               id={fieldId}
+              name={fieldId}
               min={metric.min}
               max={metric.max}
               step={metric.step}
@@ -444,9 +468,10 @@ function MetricEntryField({ category, metric, form, valueChangesRef }: MetricEnt
               aria-valuemin={metric.min}
               aria-valuemax={metric.max}
               aria-valuenow={field.value}
+              aria-describedby={`${fieldId}-value`}
             />
           </FormControl>
-          <FormMessage />
+          <FormMessage id={`${fieldId}-error`} aria-live="polite" />
         </FormItem>
       )}
     />

@@ -67,7 +67,9 @@
     "util": "latest",
     "glob": "latest",
     "https:": "latest",
-    "@supabase/ssr": "latest"
+    "@supabase/ssr": "latest",
+    "@babel/parser": "latest",
+    "@babel/traverse": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",
