@@ -1,5 +1,5 @@
 {
-  "buildCommand": "next build",
-  "installCommand": "bash scripts/deploy-prep.sh && npm install --no-package-lock --no-audit",
+  "buildCommand": "npm run build",
+  "installCommand": "npm install --no-package-lock --legacy-peer-deps",
   "framework": "nextjs"
 }
