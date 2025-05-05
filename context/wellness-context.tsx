@@ -2,6 +2,8 @@
 
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
+import { useAuth } from "@/context/auth-context"
+import { getSupabaseClient } from "@/lib/supabase-client"
 import {
   type WellnessCategory,
   type WellnessGoal,
@@ -9,11 +11,15 @@ import {
   DEFAULT_CATEGORIES,
   type CategoryId,
 } from "@/types/wellness"
+import { useSync } from "@/hooks/use-sync"
 
 interface WellnessContextType {
   categories: WellnessCategory[]
   goals: WellnessGoal[]
   entries: WellnessEntryData[]
+  isLoading: boolean
+  error: string | null
+  isOffline: boolean
   addCategory: (category: WellnessCategory) => any
   updateCategory: (categoryId: CategoryId, updates: Partial<WellnessCategory>) => any
   removeCategory: (categoryId: CategoryId) => void
@@ -27,57 +33,48 @@ interface WellnessContextType {
   reorderCategories: (startIndex: number, endIndex: number) => void
   categoryIdExists: (id: string) => boolean
   metricIdExistsInCategory: (categoryId: string, metricId: string) => boolean
+  refreshData: () => Promise<void>
 }
 
 const WellnessContext = createContext<WellnessContextType | undefined>(undefined)
 
-// Sample entries for demonstration
-const sampleEntries: WellnessEntryData[] = [
-  {
-    id: "1",
-    date: new Date(2023, 3, 15),
-    metrics: [
-      { categoryId: "faith", metricId: "dailyPrayer", value: 15 },
-      { categoryId: "faith", metricId: "meditation", value: 10 },
-      { categoryId: "faith", metricId: "scriptureStudy", value: 20 },
-      { categoryId: "life", metricId: "familyTime", value: 2 },
-      { categoryId: "life", metricId: "socialActivities", value: 1 },
-      { categoryId: "life", metricId: "hobbies", value: 1.5 },
-      { categoryId: "work", metricId: "productivity", value: 75 },
-      { categoryId: "work", metricId: "projectsCompleted", value: 1 },
-      { categoryId: "work", metricId: "learningHours", value: 2 },
-      { categoryId: "health", metricId: "exercise", value: 1 },
-      { categoryId: "health", metricId: "sleep", value: 7 },
-      { categoryId: "health", metricId: "stressLevel", value: 4 },
-    ],
-  },
-  // Add more sample entries as needed
-]
-
-// Generate initial goals from default categories
-const generateInitialGoals = (): WellnessGoal[] => {
-  return DEFAULT_CATEGORIES.flatMap((category) =>
-    category.metrics.map((metric) => ({
-      categoryId: category.id,
-      metricId: metric.id,
-      value: metric.defaultGoal,
-    })),
-  )
-}
-
 export function WellnessProvider({ children }: { children: React.ReactNode }) {
-  const [categories, setCategories] = useState<WellnessCategory[]>(DEFAULT_CATEGORIES)
-  const [goals, setGoals] = useState<WellnessGoal[]>(generateInitialGoals())
-  const [entries, setEntries] = useState<WellnessEntryData[]>(sampleEntries)
+  const { user } = useAuth()
+  const { queueSync } = useSync()
+  const [categories, setCategories] = useState<WellnessCategory[]>([])
+  const [goals, setGoals] = useState<WellnessGoal[]>([])
+  const [entries, setEntries] = useState<WellnessEntryData[]>([])
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [isOffline, setIsOffline] = useState(false)
+
+  // Check network status
+  useEffect(() => {
+    const handleOnline = () => setIsOffline(false)
+    const handleOffline = () => setIsOffline(true)
+
+    window.addEventListener("online", handleOnline)
+    window.addEventListener("offline", handleOffline)
+
+    // Set initial state
+    setIsOffline(!navigator.onLine)
+
+    return () => {
+      window.removeEventListener("online", handleOnline)
+      window.removeEventListener("offline", handleOffline)
+    }
+  }, [])
 
   // Load data from localStorage on component mount
   useEffect(() => {
-    const loadData = () => {
+    const loadLocalData = () => {
       try {
         // Load categories
         const savedCategories = localStorage.getItem("wellnessCategories")
         if (savedCategories) {
           setCategories(JSON.parse(savedCategories))
+        } else {
+          setCategories(DEFAULT_CATEGORIES)
         }
 
         // Load goals
@@ -97,11 +94,12 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
           setEntries(parsedEntries)
         }
       } catch (error) {
-        console.error("Error loading wellness data:", error)
+        console.error("Error loading wellness data from localStorage:", error)
       }
     }
 
-    loadData()
+    // Load local data initially
+    loadLocalData()
   }, [])
 
   // Save data to localStorage whenever it changes
@@ -117,6 +115,173 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
     localStorage.setItem("wellnessEntries", JSON.stringify(entries))
   }, [entries])
 
+  // Fetch data from Supabase when user changes
+  useEffect(() => {
+    if (user) {
+      refreshData()
+    } else {
+      // If no user, use default categories but empty goals and entries
+      setCategories(DEFAULT_CATEGORIES)
+      setGoals([])
+      setEntries([])
+      setIsLoading(false)
+    }
+  }, [user])
+
+  // Function to refresh data from Supabase
+  const refreshData = async () => {
+    if (!user) return
+
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      // Check if we're offline
+      if (isOffline) {
+        console.log("Operating in offline mode, using local data")
+        setIsLoading(false)
+        return
+      }
+
+      const supabase = getSupabaseClient()
+
+      // Fetch user categories
+      try {
+        const { data: categoriesData, error: categoriesError } = await supabase
+          .from("user_categories")
+          .select("*")
+          .eq("user_id", user.id)
+
+        if (categoriesError) throw new Error(`Error fetching categories: ${categoriesError.message}`)
+
+        // If no categories found, use default categories
+        const userCategories =
+          categoriesData && categoriesData.length > 0
+            ? categoriesData.map(mapDbCategoryToWellnessCategory)
+            : DEFAULT_CATEGORIES
+
+        // Fetch user metrics for each category
+        for (const category of userCategories) {
+          try {
+            const { data: metricsData, error: metricsError } = await supabase
+              .from("user_metrics")
+              .select("*")
+              .eq("category_id", category.id)
+
+            if (metricsError) throw new Error(`Error fetching metrics: ${metricsError.message}`)
+
+            category.metrics =
+              metricsData && metricsData.length > 0
+                ? metricsData.map(mapDbMetricToWellnessMetric)
+                : category.metrics || []
+          } catch (metricError) {
+            console.error("Error fetching metrics:", metricError)
+            // Continue with other categories
+          }
+        }
+
+        setCategories(userCategories)
+      } catch (categoryError) {
+        console.error("Error in category fetching:", categoryError)
+        // Fall back to default categories
+        setCategories(DEFAULT_CATEGORIES)
+      }
+
+      // Fetch user goals
+      try {
+        const { data: goalsData, error: goalsError } = await supabase
+          .from("user_goals")
+          .select("*")
+          .eq("user_id", user.id)
+
+        if (goalsError) throw new Error(`Error fetching goals: ${goalsError.message}`)
+
+        const userGoals = goalsData && goalsData.length > 0 ? goalsData.map(mapDbGoalToWellnessGoal) : []
+
+        setGoals(userGoals)
+      } catch (goalError) {
+        console.error("Error fetching goals:", goalError)
+        // Keep existing goals
+      }
+
+      // Fetch user entries
+      try {
+        const { data: entriesData, error: entriesError } = await supabase
+          .from("user_entries")
+          .select("*, entry_metrics(*)")
+          .eq("user_id", user.id)
+          .order("entry_date", { ascending: false })
+
+        if (entriesError) throw new Error(`Error fetching entries: ${entriesError.message}`)
+
+        const userEntries =
+          entriesData && entriesData.length > 0 ? entriesData.map((entry) => mapDbEntryToWellnessEntry(entry)) : []
+
+        setEntries(userEntries)
+      } catch (entryError) {
+        console.error("Error fetching entries:", entryError)
+        // Keep existing entries
+      }
+    } catch (err) {
+      console.error("Error fetching wellness data:", err)
+      setError(err instanceof Error ? err.message : "Unknown error fetching wellness data")
+
+      // If we have an error, check if it's a network error
+      if (
+        err instanceof Error &&
+        (err.message.includes("Failed to fetch") ||
+          err.message.includes("Network Error") ||
+          err.message.includes("network"))
+      ) {
+        setIsOffline(true)
+        console.log("Network error detected, switching to offline mode")
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  // Helper functions to map database objects to wellness types
+  const mapDbCategoryToWellnessCategory = (dbCategory: any): WellnessCategory => ({
+    id: dbCategory.id,
+    name: dbCategory.name,
+    description: dbCategory.description || "",
+    icon: dbCategory.icon || "Activity",
+    color: dbCategory.color || "gray",
+    enabled: dbCategory.enabled,
+    metrics: [],
+  })
+
+  const mapDbMetricToWellnessMetric = (dbMetric: any) => ({
+    id: dbMetric.id,
+    name: dbMetric.name,
+    description: dbMetric.description || "",
+    unit: dbMetric.unit,
+    min: dbMetric.min_value,
+    max: dbMetric.max_value,
+    step: dbMetric.step_value,
+    defaultValue: dbMetric.default_value,
+    defaultGoal: dbMetric.default_goal,
+  })
+
+  const mapDbGoalToWellnessGoal = (dbGoal: any): WellnessGoal => ({
+    categoryId: dbGoal.metric_id?.split(":")[0] || "",
+    metricId: dbGoal.metric_id?.split(":")[1] || "",
+    value: dbGoal.target_value,
+  })
+
+  const mapDbEntryToWellnessEntry = (dbEntry: any): WellnessEntryData => ({
+    id: dbEntry.id,
+    date: new Date(dbEntry.entry_date),
+    metrics: Array.isArray(dbEntry.entry_metrics)
+      ? dbEntry.entry_metrics.map((metric: any) => ({
+          categoryId: metric.metric_id?.split(":")[0] || "",
+          metricId: metric.metric_id?.split(":")[1] || "",
+          value: metric.value,
+        }))
+      : [],
+  })
+
   // Category management functions
   const categoryIdExists = (id: string): boolean => {
     return categories.some((cat) => cat.id === id)
@@ -128,7 +293,9 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
   }
 
   // Category management functions
-  const addCategory = (category: WellnessCategory) => {
+  const addCategory = async (category: WellnessCategory) => {
+    if (!user) return { success: false, message: "User not authenticated" }
+
     // Check if category ID already exists
     if (categoryIdExists(category.id)) {
       return {
@@ -149,11 +316,67 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
       metricIds.add(metric.id)
     }
 
+    // Update local state first for immediate feedback
     setCategories((prev) => [...prev, category])
-    return { success: true }
+
+    // Queue the operation for sync
+    queueSync({ type: "ADD_CATEGORY", payload: category })
+
+    // If offline, just return success
+    if (isOffline) {
+      return { success: true }
+    }
+
+    try {
+      const supabase = getSupabaseClient()
+
+      // Add category to database
+      const { data, error } = await supabase
+        .from("user_categories")
+        .insert({
+          id: category.id,
+          user_id: user.id,
+          name: category.name,
+          description: category.description,
+          icon: category.icon,
+          color: category.color,
+          enabled: category.enabled,
+        })
+        .select()
+
+      if (error) throw error
+
+      // Add metrics to database
+      for (const metric of category.metrics) {
+        const { error: metricError } = await supabase.from("user_metrics").insert({
+          id: metric.id,
+          category_id: category.id,
+          name: metric.name,
+          description: metric.description,
+          unit: metric.unit,
+          min_value: metric.min,
+          max_value: metric.max,
+          step_value: metric.step,
+          default_value: metric.defaultValue,
+          default_goal: metric.defaultGoal,
+        })
+
+        if (metricError) throw metricError
+      }
+
+      return { success: true }
+    } catch (err) {
+      console.error("Error adding category:", err)
+      return {
+        success: false,
+        message: err instanceof Error ? err.message : "Unknown error adding category",
+      }
+    }
   }
 
-  const updateCategory = (categoryId: CategoryId, updates: Partial<WellnessCategory>) => {
+  const updateCategory = async (categoryId: CategoryId, updates: Partial<WellnessCategory>) => {
+    if (!user) return { success: false, message: "User not authenticated" }
+
     // If we're updating metrics, check for duplicates
     if (updates.metrics) {
       const metricIds = new Set<string>()
@@ -168,18 +391,142 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    // Update local state first for immediate feedback
     setCategories((prev) => prev.map((cat) => (cat.id === categoryId ? { ...cat, ...updates } : cat)))
-    return { success: true }
+
+    // Queue the operation for sync
+    queueSync({ type: "UPDATE_CATEGORY", payload: { id: categoryId, updates } })
+
+    // If offline, just return success
+    if (isOffline) {
+      return { success: true }
+    }
+
+    try {
+      const supabase = getSupabaseClient()
+
+      // Update category in database
+      const { error } = await supabase
+        .from("user_categories")
+        .update({
+          name: updates.name,
+          description: updates.description,
+          icon: updates.icon,
+          color: updates.color,
+          enabled: updates.enabled,
+        })
+        .eq("id", categoryId)
+        .eq("user_id", user.id)
+
+      if (error) throw error
+
+      // If metrics are updated, handle them
+      if (updates.metrics) {
+        // Get current metrics
+        const { data: currentMetrics, error: fetchError } = await supabase
+          .from("user_metrics")
+          .select("id")
+          .eq("category_id", categoryId)
+
+        if (fetchError) throw fetchError
+
+        const currentMetricIds = new Set(currentMetrics.map((m) => m.id))
+        const updatedMetricIds = new Set(updates.metrics.map((m) => m.id))
+
+        // Delete metrics that are no longer in the updated list
+        for (const metricId of currentMetricIds) {
+          if (!updatedMetricIds.has(metricId)) {
+            const { error: deleteError } = await supabase
+              .from("user_metrics")
+              .delete()
+              .eq("id", metricId)
+              .eq("category_id", categoryId)
+
+            if (deleteError) throw deleteError
+          }
+        }
+
+        // Update or insert metrics
+        for (const metric of updates.metrics) {
+          if (currentMetricIds.has(metric.id)) {
+            // Update existing metric
+            const { error: updateError } = await supabase
+              .from("user_metrics")
+              .update({
+                name: metric.name,
+                description: metric.description,
+                unit: metric.unit,
+                min_value: metric.min,
+                max_value: metric.max,
+                step_value: metric.step,
+                default_value: metric.defaultValue,
+                default_goal: metric.defaultGoal,
+              })
+              .eq("id", metric.id)
+              .eq("category_id", categoryId)
+
+            if (updateError) throw updateError
+          } else {
+            // Insert new metric
+            const { error: insertError } = await supabase.from("user_metrics").insert({
+              id: metric.id,
+              category_id: categoryId,
+              name: metric.name,
+              description: metric.description,
+              unit: metric.unit,
+              min_value: metric.min,
+              max_value: metric.max,
+              step_value: metric.step,
+              default_value: metric.defaultValue,
+              default_goal: metric.defaultGoal,
+            })
+
+            if (insertError) throw insertError
+          }
+        }
+      }
+
+      return { success: true }
+    } catch (err) {
+      console.error("Error updating category:", err)
+      return {
+        success: false,
+        message: err instanceof Error ? err.message : "Unknown error updating category",
+      }
+    }
   }
 
-  const removeCategory = (categoryId: CategoryId) => {
+  const removeCategory = async (categoryId: CategoryId) => {
+    if (!user) return
+
+    // Update local state first for immediate feedback
     setCategories((prev) => prev.filter((cat) => cat.id !== categoryId))
-    // Also remove related goals
     setGoals((prev) => prev.filter((goal) => goal.categoryId !== categoryId))
+
+    // Queue the operation for sync
+    queueSync({ type: "REMOVE_CATEGORY", payload: categoryId })
+
+    // If offline, just return
+    if (isOffline) return
+
+    try {
+      const supabase = getSupabaseClient()
+
+      // Delete category from database (cascade will handle metrics)
+      const { error } = await supabase.from("user_categories").delete().eq("id", categoryId).eq("user_id", user.id)
+
+      if (error) throw error
+    } catch (err) {
+      console.error("Error removing category:", err)
+      setError(err instanceof Error ? err.message : "Unknown error removing category")
+    }
   }
 
   // Goal management functions
-  const setGoal = (goal: WellnessGoal) => {
+  const setGoal = async (goal: WellnessGoal) => {
+    if (!user) return
+
+    // Update local state first for immediate feedback
     setGoals((prev) => {
       const existingIndex = prev.findIndex((g) => g.categoryId === goal.categoryId && g.metricId === goal.metricId)
 
@@ -193,101 +540,285 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
         return [...prev, goal]
       }
     })
+
+    // Queue the operation for sync
+    queueSync({ type: "SET_GOAL", payload: goal })
+
+    // If offline, just return
+    if (isOffline) return
+
+    try {
+      const supabase = getSupabaseClient()
+      const metricKey = `${goal.categoryId}:${goal.metricId}`
+
+      // Check if goal exists
+      const { data: existingGoal, error: checkError } = await supabase
+        .from("user_goals")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("metric_id", metricKey)
+        .maybeSingle()
+
+      if (checkError) throw checkError
+
+      if (existingGoal) {
+        // Update existing goal
+        const { error: updateError } = await supabase
+          .from("user_goals")
+          .update({ target_value: goal.value })
+          .eq("id", existingGoal.id)
+
+        if (updateError) throw updateError
+      } else {
+        // Insert new goal
+        const { error: insertError } = await supabase.from("user_goals").insert({
+          user_id: user.id,
+          metric_id: metricKey,
+          target_value: goal.value,
+          start_date: new Date().toISOString().split("T")[0],
+        })
+
+        if (insertError) throw insertError
+      }
+    } catch (err) {
+      console.error("Error setting goal:", err)
+      setError(err instanceof Error ? err.message : "Unknown error setting goal")
+    }
   }
 
-  const updateGoals = (newGoals: WellnessGoal[]) => {
-    setGoals((prev) => {
-      const updated = [...prev]
+  const updateGoals = async (newGoals: WellnessGoal[]) => {
+    if (!user) return
 
-      newGoals.forEach((newGoal) => {
-        const existingIndex = updated.findIndex(
-          (g) => g.categoryId === newGoal.categoryId && g.metricId === newGoal.metricId,
-        )
+    // Update local state first
+    for (const goal of newGoals) {
+      setGoals((prev) => {
+        const existingIndex = prev.findIndex((g) => g.categoryId === goal.categoryId && g.metricId === goal.metricId)
 
         if (existingIndex >= 0) {
           // Update existing goal
-          updated[existingIndex] = newGoal
+          const updated = [...prev]
+          updated[existingIndex] = goal
+          return updated
         } else {
           // Add new goal
-          updated.push(newGoal)
+          return [...prev, goal]
         }
       })
 
-      return updated
-    })
+      // Queue each goal for sync
+      queueSync({ type: "SET_GOAL", payload: goal })
+    }
+
+    // If offline, just return
+    if (isOffline) return
+
+    try {
+      for (const goal of newGoals) {
+        await setGoal(goal)
+      }
+    } catch (err) {
+      console.error("Error updating goals:", err)
+      setError(err instanceof Error ? err.message : "Unknown error updating goals")
+    }
   }
 
   // Entry management functions
-  const addEntry = (entry: WellnessEntryData) => {
-    // Check if this is an update to an existing entry for today
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
+  const addEntry = async (entry: WellnessEntryData) => {
+    if (!user) return
 
-    const entryDate = new Date(entry.date)
-    entryDate.setHours(0, 0, 0, 0)
-
-    const isSameDay = entryDate.getTime() === today.getTime()
-
-    if (isSameDay) {
-      // For entries from today, check if we already have entries for these metrics
-      const existingTodayEntries = entries.filter((e) => {
-        const eDate = new Date(e.date)
-        eDate.setHours(0, 0, 0, 0)
-        return eDate.getTime() === today.getTime()
-      })
-
-      if (existingTodayEntries.length > 0) {
-        // Update existing entries for today with the new metrics
-        const updatedEntries = entries.map((e) => {
-          const eDate = new Date(e.date)
-          eDate.setHours(0, 0, 0, 0)
-
-          if (eDate.getTime() === today.getTime()) {
-            // This is an entry for today, update its metrics
-            const updatedMetrics = [...e.metrics]
-
-            // For each metric in the new entry
-            entry.metrics.forEach((newMetric) => {
-              const existingMetricIndex = updatedMetrics.findIndex(
-                (m) => m.categoryId === newMetric.categoryId && m.metricId === newMetric.metricId,
-              )
-
-              if (existingMetricIndex >= 0) {
-                // Update existing metric value
-                updatedMetrics[existingMetricIndex] = {
-                  ...updatedMetrics[existingMetricIndex],
-                  value: updatedMetrics[existingMetricIndex].value + newMetric.value,
-                }
-              } else {
-                // Add new metric
-                updatedMetrics.push(newMetric)
-              }
-            })
-
-            return {
-              ...e,
-              metrics: updatedMetrics,
-            }
-          }
-
-          return e
-        })
-
-        setEntries(updatedEntries)
-        return
-      }
+    // Generate a unique ID if not provided
+    const entryWithId = {
+      ...entry,
+      id: entry.id || crypto.randomUUID(),
     }
 
-    // If not updating an existing entry, add as new
-    setEntries((prev) => [...prev, entry])
+    // Update local state first for immediate feedback
+    setEntries((prev) => [entryWithId, ...prev])
+
+    // Queue the operation for sync
+    queueSync({ type: "ADD_ENTRY", payload: entryWithId })
+
+    // If offline, just return
+    if (isOffline) return
+
+    try {
+      const supabase = getSupabaseClient()
+
+      // Format entry date
+      const entryDate = new Date(entry.date)
+      entryDate.setHours(0, 0, 0, 0)
+      const formattedDate = entryDate.toISOString().split("T")[0]
+
+      // Check if entry exists for this date
+      const { data: existingEntry, error: checkError } = await supabase
+        .from("user_entries")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("entry_date", formattedDate)
+        .maybeSingle()
+
+      if (checkError) throw checkError
+
+      let entryId: string
+
+      if (existingEntry) {
+        // Use existing entry
+        entryId = existingEntry.id
+      } else {
+        // Create new entry
+        const { data: newEntry, error: insertError } = await supabase
+          .from("user_entries")
+          .insert({
+            user_id: user.id,
+            entry_date: formattedDate,
+          })
+          .select()
+
+        if (insertError) throw insertError
+        if (!newEntry || newEntry.length === 0) throw new Error("Failed to create entry")
+
+        entryId = newEntry[0].id
+      }
+
+      // Add metrics for the entry
+      for (const metric of entry.metrics) {
+        const metricKey = `${metric.categoryId}:${metric.metricId}`
+
+        // Check if metric exists for this entry
+        const { data: existingMetric, error: metricCheckError } = await supabase
+          .from("entry_metrics")
+          .select("id")
+          .eq("entry_id", entryId)
+          .eq("metric_id", metricKey)
+          .maybeSingle()
+
+        if (metricCheckError) throw metricCheckError
+
+        if (existingMetric) {
+          // Update existing metric
+          const { error: updateError } = await supabase
+            .from("entry_metrics")
+            .update({ value: metric.value })
+            .eq("id", existingMetric.id)
+
+          if (updateError) throw updateError
+        } else {
+          // Insert new metric
+          const { error: insertError } = await supabase.from("entry_metrics").insert({
+            entry_id: entryId,
+            metric_id: metricKey,
+            value: metric.value,
+          })
+
+          if (insertError) throw insertError
+        }
+      }
+
+      // Refresh entries to get the updated data
+      await refreshData()
+    } catch (err) {
+      console.error("Error adding entry:", err)
+      setError(err instanceof Error ? err.message : "Unknown error adding entry")
+    }
   }
 
-  const updateEntry = (entryId: string, updates: Partial<WellnessEntryData>) => {
+  const updateEntry = async (entryId: string, updates: Partial<WellnessEntryData>) => {
+    if (!user) return
+
+    // Update local state first for immediate feedback
     setEntries((prev) => prev.map((entry) => (entry.id === entryId ? { ...entry, ...updates } : entry)))
+
+    // Queue the operation for sync
+    queueSync({ type: "UPDATE_ENTRY", payload: { id: entryId, updates } })
+
+    // If offline, just return
+    if (isOffline) return
+
+    try {
+      const supabase = getSupabaseClient()
+
+      // If date is updated
+      if (updates.date) {
+        const formattedDate = new Date(updates.date).toISOString().split("T")[0]
+
+        const { error: updateError } = await supabase
+          .from("user_entries")
+          .update({ entry_date: formattedDate })
+          .eq("id", entryId)
+          .eq("user_id", user.id)
+
+        if (updateError) throw updateError
+      }
+
+      // If metrics are updated
+      if (updates.metrics) {
+        // Get current metrics
+        const { data: currentMetrics, error: fetchError } = await supabase
+          .from("entry_metrics")
+          .select("id, metric_id")
+          .eq("entry_id", entryId)
+
+        if (fetchError) throw fetchError
+
+        // Create a map of current metrics
+        const currentMetricMap = new Map(currentMetrics.map((m) => [m.metric_id, m.id]))
+
+        // Process each updated metric
+        for (const metric of updates.metrics) {
+          const metricKey = `${metric.categoryId}:${metric.metricId}`
+
+          if (currentMetricMap.has(metricKey)) {
+            // Update existing metric
+            const { error: updateError } = await supabase
+              .from("entry_metrics")
+              .update({ value: metric.value })
+              .eq("id", currentMetricMap.get(metricKey))
+
+            if (updateError) throw updateError
+          } else {
+            // Insert new metric
+            const { error: insertError } = await supabase.from("entry_metrics").insert({
+              entry_id: entryId,
+              metric_id: metricKey,
+              value: metric.value,
+            })
+
+            if (insertError) throw insertError
+          }
+        }
+      }
+
+      // Refresh entries to get the updated data
+      await refreshData()
+    } catch (err) {
+      console.error("Error updating entry:", err)
+      setError(err instanceof Error ? err.message : "Unknown error updating entry")
+    }
   }
 
-  const removeEntry = (entryId: string) => {
+  const removeEntry = async (entryId: string) => {
+    if (!user) return
+
+    // Update local state first for immediate feedback
     setEntries((prev) => prev.filter((entry) => entry.id !== entryId))
+
+    // Queue the operation for sync
+    queueSync({ type: "REMOVE_ENTRY", payload: entryId })
+
+    // If offline, just return
+    if (isOffline) return
+
+    try {
+      const supabase = getSupabaseClient()
+
+      // Delete entry from database (cascade will handle metrics)
+      const { error } = await supabase.from("user_entries").delete().eq("id", entryId).eq("user_id", user.id)
+
+      if (error) throw error
+    } catch (err) {
+      console.error("Error removing entry:", err)
+      setError(err instanceof Error ? err.message : "Unknown error removing entry")
+    }
   }
 
   // Helper functions
@@ -309,19 +840,27 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
     return metric?.defaultGoal || 0
   }
 
-  const reorderCategories = (startIndex: number, endIndex: number) => {
+  const reorderCategories = async (startIndex: number, endIndex: number) => {
+    if (!user) return
+
     setCategories((prev) => {
       const result = Array.from(prev)
       const [removed] = result.splice(startIndex, 1)
       result.splice(endIndex, 0, removed)
       return result
     })
+
+    // In a real implementation, you would update the order in the database
+    // This is a placeholder for that functionality
   }
 
   const value = {
     categories,
     goals,
     entries,
+    isLoading,
+    error,
+    isOffline,
     addCategory,
     updateCategory,
     removeCategory,
@@ -335,6 +874,7 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
     reorderCategories,
     categoryIdExists,
     metricIdExistsInCategory,
+    refreshData,
   }
 
   return <WellnessContext.Provider value={value}>{children}</WellnessContext.Provider>

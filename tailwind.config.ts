@@ -50,6 +50,13 @@ const config: Config = {
           "3": "hsl(var(--chart-3))",
           "4": "hsl(var(--chart-4))",
           "5": "hsl(var(--chart-5))",
+          faith: "hsl(142, 76%, 36%)", // Green
+          life: "hsl(43, 96%, 58%)", // Yellow
+          work: "hsl(0, 84%, 60%)", // Red
+          health: "hsl(330, 81%, 60%)", // Pink
+          focus: "hsl(217, 91%, 60%)", // Blue
+          background: "hsl(0, 0%, 100%)",
+          muted: "hsl(210, 40%, 96%)",
         },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",

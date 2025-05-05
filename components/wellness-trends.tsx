@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -52,6 +52,31 @@ export function WellnessTrends() {
       impact: "high",
     },
   ]
+
+  const weeklyTrendData = useMemo(() => {
+    // Mock implementation, replace with actual data processing
+    return trendData
+  }, [entries])
+
+  const dailyTrendData = useMemo(() => {
+    // Mock implementation, replace with actual data processing
+    return trendData
+  }, [entries])
+
+  const categoryComparisonData = useMemo(() => {
+    // Mock implementation, replace with actual data processing
+    return correlationData
+  }, [entries])
+
+  const radarChartData = useMemo(() => {
+    // Mock implementation, replace with actual data processing
+    return [
+      { subject: "Mood", A: 70, B: 80, fullMark: 100 },
+      { subject: "Energy", A: 85, B: 90, fullMark: 100 },
+      { subject: "Stress", A: 60, B: 70, fullMark: 100 },
+      { subject: "Sleep", A: 90, B: 95, fullMark: 100 },
+    ]
+  }, [entries])
 
   return (
     <Card>

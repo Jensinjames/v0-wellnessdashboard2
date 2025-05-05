@@ -1,6 +1,6 @@
 "use client"
 
-import type React from "react"
+import React from "react"
 
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
@@ -281,7 +281,7 @@ interface MetricEntryFieldProps {
   form: any
 }
 
-function MetricEntryField({ category, metric, form }: MetricEntryFieldProps) {
+const MetricEntryField = React.memo(({ category, metric, form }: MetricEntryFieldProps) => {
   const fieldName = `${category.id}_${metric.id}` as any
 
   // Render different input types based on the metric unit
@@ -340,4 +340,4 @@ function MetricEntryField({ category, metric, form }: MetricEntryFieldProps) {
       )}
     />
   )
-}
+})

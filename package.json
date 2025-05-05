@@ -58,9 +58,10 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "latest",
     "zod": "latest",
+    "@supabase/supabase-js": "latest",
     "react-beautiful-dnd": "latest",
     "turndown": "latest",
-    "@supabase/supabase-js": "latest"
+    "@supabase/auth-helpers-nextjs": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",

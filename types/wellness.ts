@@ -40,6 +40,12 @@ export interface WellnessEntryData {
   metrics: WellnessEntryMetric[]
 }
 
+export interface WellnessMetricInput {
+  categoryId: string
+  metricId: string
+  value: number
+}
+
 // Helper function to get unit label
 export function getUnitLabel(unit: string, value: number): string {
   switch (unit) {
