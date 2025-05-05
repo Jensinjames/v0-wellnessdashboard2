@@ -1,5 +1,5 @@
 {
   "buildCommand": "next build",
-  "installCommand": "npm install --no-package-lock --legacy-peer-deps --ignore-scripts",
+  "installCommand": "cp package.deploy.json package.json && npm install",
   "framework": "nextjs"
 }
