@@ -10,19 +10,21 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  // Ensure we're not trying to transpile URL imports
-  transpilePackages: [],
   // Explicitly ignore the supabase directory during build
   webpack: (config, { isServer }) => {
     // Add a rule to ignore URL imports
     config.module.rules.push({
-      test: /\.ts$/,
-      include: /supabase\/functions/,
-      use: 'null-loader',
+      test: /\.(js|ts|tsx)$/,
+      loader: 'string-replace-loader',
+      options: {
+        search: /import\s+.*from\s+["']https?:\/\/.*["']/g,
+        replace: '// URL import removed for build',
+        flags: 'g'
+      }
     });
     
     return config;
   },
 };
 
-export default nextConfig
+export default nextConfig;

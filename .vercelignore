@@ -1,4 +1,8 @@
-# Ignore all Supabase Edge Functions
-supabase/
-supabase/functions/
-*.ts.map
+.git
+.github
+.husky
+.vscode
+node_modules
+supabase/functions
+scripts/find-url-imports.ts
+scripts/fix-url-imports.ts
