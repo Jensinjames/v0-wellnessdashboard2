@@ -1,5 +1,5 @@
 {
-  "buildCommand": "npm run build",
-  "installCommand": "npm install --no-package-lock --legacy-peer-deps",
+  "buildCommand": "next build",
+  "installCommand": "node scripts/fix-url-imports-pre-install.js && npm install --no-package-lock --legacy-peer-deps --ignore-scripts",
   "framework": "nextjs"
 }
