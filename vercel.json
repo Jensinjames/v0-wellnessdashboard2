@@ -1,5 +1,5 @@
 {
   "buildCommand": "next build",
-  "installCommand": "bash scripts/simple-deploy-prep.sh && npm install",
+  "installCommand": "bash scripts/deploy-prep.sh && npm install --no-package-lock --no-audit",
   "framework": "nextjs"
 }
