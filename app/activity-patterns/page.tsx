@@ -9,11 +9,10 @@ export default function ActivityPatternsPage() {
   const [activities, setActivities] = useState<Activity[]>([])
   const [loading, setLoading] = useState(true)
 
-  // Simulate loading activities from storage or API
+  // Simulate loading activities
   useEffect(() => {
-    // In a real app, you would fetch this from an API or local storage
     const loadActivities = () => {
-      // Generate some sample data for demonstration
+      // Sample data
       const sampleActivities: Activity[] = [
         {
           id: "1",
@@ -37,7 +36,7 @@ export default function ActivityPatternsPage() {
         },
       ]
 
-      // Sort by date (without using parseISO)
+      // Sort by date
       sampleActivities.sort((a, b) => {
         const dateA = typeof a.date === "string" ? new Date(a.date) : a.date
         const dateB = typeof b.date === "string" ? new Date(b.date) : b.date

@@ -80,4 +80,5 @@ export function ForgotPasswordForm() {
   )
 }
 
+// Include both default and named exports for maximum compatibility
 export default ForgotPasswordForm

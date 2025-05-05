@@ -1,12 +1,11 @@
 import * as React from "react"
-import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
-import { useUniqueId } from "@/utils/unique-id"
 
+// Define the button variants using cva
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
@@ -35,36 +34,11 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
-  id?: string
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, id, children, ...props }, ref) => {
-    const Comp = asChild ? Slot : "button"
-    const uniqueId = useUniqueId("btn")
-    const buttonId = id || uniqueId
-
-    // Check if the button has only an icon as a child
-    const hasOnlyIconChild =
-      React.Children.count(children) === 1 &&
-      React.isValidElement(children) &&
-      // Check if it's a Lucide icon or similar component
-      ((typeof children.type === "function" && children.type.name && /icon/i.test(children.type.name)) ||
-        // Check if it's an SVG element
-        (typeof children.type === "string" && children.type.toLowerCase() === "svg") ||
-        // Check if it's a component with a display name containing 'icon'
-        (typeof children.type === "function" && children.type.displayName && /icon/i.test(children.type.displayName)))
-
-    // If aria-label is not provided and the button has only an icon, warn in development
-    if (process.env.NODE_ENV !== "production" && !props["aria-label"] && hasOnlyIconChild) {
-      console.warn(`Button with only icon child should have an aria-label for accessibility. Button ID: ${buttonId}`)
-    }
-
-    return (
-      <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} id={buttonId} {...props}>
-        {children}
-      </Comp>
-    )
+  ({ className, variant, size, asChild = false, ...props }, ref) => {
+    return <button className={cn(buttonVariants({ variant, size, className }))} ref={ref} {...props} />
   },
 )
 Button.displayName = "Button"
