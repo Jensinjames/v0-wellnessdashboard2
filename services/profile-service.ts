@@ -27,6 +27,16 @@ export async function ensureProfileExists(userId: string, email: string, supabas
         return existingProfile as Profile
       }
     } catch (error: any) {
+      // If we get a network error, return null to use mock profile
+      if (
+        error.message?.includes("Failed to fetch") ||
+        error.message?.includes("Network Error") ||
+        error.message?.includes("network")
+      ) {
+        console.error("Network error checking profile:", error)
+        return null
+      }
+
       // If we get a rate limiting error
       if (error.message?.includes("Too Many Requests") || error.message?.includes("429")) {
         console.log("Rate limited during profile check, waiting 2 seconds...")
@@ -66,6 +76,16 @@ export async function ensureProfileExists(userId: string, email: string, supabas
 
       return profile as Profile
     } catch (error: any) {
+      // If we get a network error, return null to use mock profile
+      if (
+        error.message?.includes("Failed to fetch") ||
+        error.message?.includes("Network Error") ||
+        error.message?.includes("network")
+      ) {
+        console.error("Network error creating profile:", error)
+        return null
+      }
+
       // If we get a rate limiting error
       if (error.message?.includes("Too Many Requests") || error.message?.includes("429")) {
         console.log("Rate limited during profile creation, waiting 2 seconds...")

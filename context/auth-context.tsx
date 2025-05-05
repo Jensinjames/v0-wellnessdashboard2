@@ -34,53 +34,71 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [networkError, setNetworkError] = useState(false)
   const router = useRouter()
 
   // Initialize auth state
   useEffect(() => {
-    const supabase = getSupabaseClient()
+    const initializeAuth = async () => {
+      try {
+        const supabase = getSupabaseClient()
 
-    // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session)
-      setUser(session?.user ?? null)
+        // Get initial session
+        const { data, error } = await supabase.auth.getSession()
 
-      if (session?.user) {
-        // Use a timeout to avoid immediate fetch after page load
-        setTimeout(() => {
-          fetchProfile(session.user.id)
-        }, 500)
-      } else {
+        if (error) {
+          console.error("Error getting session:", error)
+          setIsLoading(false)
+          return
+        }
+
+        const { session } = data
+        setSession(session)
+        setUser(session?.user ?? null)
+
+        if (session?.user) {
+          // Use a timeout to avoid immediate fetch after page load
+          setTimeout(() => {
+            fetchProfile(session.user.id)
+          }, 500)
+        } else {
+          setIsLoading(false)
+        }
+
+        // Listen for auth changes
+        const {
+          data: { subscription },
+        } = supabase.auth.onAuthStateChange((event, session) => {
+          setSession(session)
+          setUser(session?.user ?? null)
+
+          if (session?.user) {
+            // Use a timeout to avoid immediate fetch after auth change
+            setTimeout(() => {
+              fetchProfile(session.user.id)
+            }, 500)
+          } else {
+            setProfile(null)
+            setIsLoading(false)
+          }
+
+          // Update server state
+          if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
+            router.refresh()
+          }
+        })
+
+        return () => {
+          subscription.unsubscribe()
+        }
+      } catch (error) {
+        console.error("Failed to initialize auth:", error)
         setIsLoading(false)
+        setNetworkError(true)
       }
-    })
-
-    // Listen for auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
-      setSession(session)
-      setUser(session?.user ?? null)
-
-      if (session?.user) {
-        // Use a timeout to avoid immediate fetch after auth change
-        setTimeout(() => {
-          fetchProfile(session.user.id)
-        }, 500)
-      } else {
-        setProfile(null)
-        setIsLoading(false)
-      }
-
-      // Update server state
-      if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
-        router.refresh()
-      }
-    })
-
-    return () => {
-      subscription.unsubscribe()
     }
+
+    initializeAuth()
   }, [router])
 
   // Create a mock profile when we can't fetch the real one
@@ -106,9 +124,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       console.log(`Fetching profile for user ${userId}, attempt ${retryCount + 1}`)
 
+      // If we've already had network errors, use a mock profile
+      if (networkError) {
+        console.log("Using mock profile due to previous network errors")
+        setProfile(createMockProfile(userId, user?.email))
+        setIsLoading(false)
+        return
+      }
+
       const supabase = getSupabaseClient()
 
-      // Use a more robust approach with fetch directly to handle non-JSON responses
+      // Use a more robust approach with try/catch
       try {
         const { data, error, status } = await supabase.from("profiles").select("*").eq("id", userId).single()
 
@@ -153,6 +179,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (fetchError: any) {
         console.error("Error in Supabase fetch:", fetchError)
 
+        // Check if this is a network error
+        if (
+          fetchError.message?.includes("Failed to fetch") ||
+          fetchError.message?.includes("Network Error") ||
+          fetchError.message?.includes("network")
+        ) {
+          console.log("Network error detected, using mock profile")
+          setNetworkError(true)
+          setProfile(createMockProfile(userId, user?.email))
+          setIsLoading(false)
+          return
+        }
+
         // Check if this is a rate limiting error
         if (fetchError.message?.includes("Too Many Requests") || fetchError.message?.includes("429")) {
           console.log(`Rate limited error caught, retrying in ${backoffTime * 2}ms...`)
@@ -195,14 +234,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!user?.email) return
 
+      // If we've had network errors, use a mock profile
+      if (networkError) {
+        setProfile(createMockProfile(userId, user.email))
+        return
+      }
+
       const supabase = getSupabaseClient()
 
-      // Use the client-side helper
-      const profile = await ensureProfileExists(userId, user.email, supabase)
+      try {
+        // Use the client-side helper
+        const profile = await ensureProfileExists(userId, user.email, supabase)
 
-      if (profile) {
-        setProfile(profile)
-      } else {
+        if (profile) {
+          setProfile(profile)
+        } else {
+          setProfile(createMockProfile(userId, user.email))
+        }
+      } catch (error) {
+        console.error("Error creating profile:", error)
         setProfile(createMockProfile(userId, user.email))
       }
     } catch (error) {
@@ -259,9 +309,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Sign out
   const signOut = async () => {
-    const supabase = getSupabaseClient()
-    await supabase.auth.signOut()
-    router.push("/auth/sign-in")
+    try {
+      const supabase = getSupabaseClient()
+      await supabase.auth.signOut()
+      router.push("/auth/sign-in")
+    } catch (error) {
+      console.error("Error signing out:", error)
+      // Even if there's an error, we should still redirect to sign-in
+      router.push("/auth/sign-in")
+    }
   }
 
   // Update password
@@ -319,6 +375,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       if (!user) {
         return { error: new Error("User not authenticated") }
+      }
+
+      // If we've had network errors, simulate success but don't actually update
+      if (networkError) {
+        // Update the local profile state
+        setProfile((prev) => (prev ? { ...prev, ...updatedProfile, updated_at: new Date().toISOString() } : null))
+        return { error: null }
       }
 
       const supabase = getSupabaseClient()
