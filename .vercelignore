@@ -1,8 +1,0 @@
-.git
-.github
-.husky
-.vscode
-node_modules
-supabase/functions
-scripts/find-url-imports.ts
-scripts/fix-url-imports.ts

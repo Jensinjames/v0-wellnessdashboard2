@@ -1,84 +1,86 @@
 "use client"
 
 import type React from "react"
+
 import { useState } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Label } from "@/components/ui/label"
+import { handleAuthError } from "@/utils/auth-error-handler"
+import { getSupabaseClient } from "@/lib/supabase-client"
 
 export function ForgotPasswordForm() {
   const [email, setEmail] = useState("")
-  const [isSubmitting, setIsSubmitting] = useState(false)
-  const [isSubmitted, setIsSubmitted] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setIsSubmitting(true)
+    setIsLoading(true)
+    setError(null)
 
-    // Simulate API call
-    setTimeout(() => {
-      setIsSubmitting(false)
-      setIsSubmitted(true)
-    }, 1000)
+    try {
+      const supabase = getSupabaseClient()
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password`,
+      })
+
+      if (resetError) {
+        setError(handleAuthError(resetError, "password-reset"))
+        return
+      }
+
+      setSuccess(true)
+    } catch (err: any) {
+      setError(handleAuthError(err, "password-reset"))
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  if (isSubmitted) {
+  if (success) {
     return (
-      <>
-        <CardHeader>
-          <CardTitle>Check your email</CardTitle>
-          <CardDescription>We've sent a password reset link to your email address.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p className="text-center text-muted-foreground">Please check your email for further instructions.</p>
-        </CardContent>
-        <CardFooter className="flex justify-center">
-          <Link href="/auth/sign-in">
-            <Button variant="outline">Back to sign in</Button>
+      <div className="space-y-4">
+        <div className="rounded-md bg-green-50 p-4 text-sm text-green-700">
+          Password reset instructions have been sent to your email.
+        </div>
+        <div className="text-center text-sm">
+          <Link href="/auth/sign-in" className="text-blue-600 hover:text-blue-500">
+            Return to sign in
           </Link>
-        </CardFooter>
-      </>
+        </div>
+      </div>
     )
   }
 
   return (
-    <>
-      <CardHeader>
-        <CardTitle>Forgot password</CardTitle>
-        <CardDescription>Enter your email to reset your password</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form onSubmit={handleSubmit} className="space-y-4">
-          <div className="space-y-2">
-            <label htmlFor="email" className="block text-sm font-medium">
-              Email
-            </label>
-            <Input
-              id="email"
-              type="email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="john.doe@example.com"
-              required
-            />
-          </div>
-          <Button type="submit" className="w-full" disabled={isSubmitting}>
-            {isSubmitting ? "Sending reset link..." : "Send reset link"}
-          </Button>
-        </form>
-      </CardContent>
-      <CardFooter className="flex justify-center">
-        <p className="text-sm text-muted-foreground">
-          Remember your password?{" "}
-          <Link href="/auth/sign-in" className="text-primary hover:underline">
-            Sign in
-          </Link>
-        </p>
-      </CardFooter>
-    </>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {error && <div className="rounded-md bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+
+      <div className="space-y-2">
+        <Label htmlFor="email">Email</Label>
+        <Input
+          id="email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          disabled={isLoading}
+        />
+      </div>
+
+      <Button type="submit" className="w-full" disabled={isLoading}>
+        {isLoading ? "Sending Reset Link..." : "Send Reset Link"}
+      </Button>
+
+      <div className="text-center text-sm">
+        Remember your password?{" "}
+        <Link href="/auth/sign-in" className="text-blue-600 hover:text-blue-500">
+          Sign in
+        </Link>
+      </div>
+    </form>
   )
 }
-
-// Include both default and named exports for maximum compatibility
-export default ForgotPasswordForm

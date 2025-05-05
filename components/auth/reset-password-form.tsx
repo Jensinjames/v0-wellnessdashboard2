@@ -1,181 +1,95 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import type React from "react"
+
+import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { useForm } from "react-hook-form"
-import { z } from "zod"
-
-import { CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
-import { useToast } from "@/hooks/use-toast"
 import { Button } from "@/components/ui/button"
-import { Eye, EyeOff } from "lucide-react"
-import { FormLoadingButton } from "@/components/auth/form-loading-button"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle } from "lucide-react"
-
-const resetPasswordSchema = z
-  .object({
-    password: z.string().min(8, {
-      message: "Password must be at least 8 characters long",
-    }),
-    confirmPassword: z.string(),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords do not match",
-    path: ["confirmPassword"],
-  })
-
-type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>
+import { Input } from "@/components/ui/input"
+import { Label } from "@/components/ui/label"
+import { handleAuthError } from "@/utils/auth-error-handler"
+import { getSupabaseClient } from "@/lib/supabase-client"
 
 export function ResetPasswordForm() {
+  const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [showPassword, setShowPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [isClient, setIsClient] = useState(false)
+  const [success, setSuccess] = useState(false)
   const router = useRouter()
-  const { toast } = useToast()
 
-  // Set isClient to true when component mounts (client-side only)
-  useEffect(() => {
-    setIsClient(true)
-  }, [])
-
-  const form = useForm<ResetPasswordFormValues>({
-    resolver: zodResolver(resetPasswordSchema),
-    defaultValues: {
-      password: "",
-      confirmPassword: "",
-    },
-  })
-
-  async function onSubmit(data: ResetPasswordFormValues) {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
     setIsLoading(true)
     setError(null)
 
-    try {
-      // Here you would typically call your API to reset the password
-      // For now, we'll just simulate a successful password reset
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+    if (password !== confirmPassword) {
+      setError("Passwords do not match")
+      setIsLoading(false)
+      return
+    }
 
-      toast({
-        title: "Password reset successful",
-        description: "Your password has been reset successfully.",
+    try {
+      const supabase = getSupabaseClient()
+      const { error: updateError } = await supabase.auth.updateUser({
+        password,
       })
 
-      router.push("/auth/sign-in")
-    } catch (error: any) {
-      setError(error.message || "There was an error resetting your password. Please try again.")
+      if (updateError) {
+        setError(handleAuthError(updateError, "password-update"))
+        return
+      }
+
+      setSuccess(true)
+      setTimeout(() => {
+        router.push("/auth/sign-in")
+      }, 2000)
+    } catch (err: any) {
+      setError(handleAuthError(err, "password-update"))
     } finally {
       setIsLoading(false)
     }
   }
 
-  // If not on client yet, show a simple loading state
-  if (!isClient) {
+  if (success) {
     return (
-      <>
-        <CardHeader>
-          <CardTitle>Reset Password</CardTitle>
-          <CardDescription>Loading reset password form...</CardDescription>
-        </CardHeader>
-        <CardContent className="flex justify-center py-8">
-          <div className="h-8 w-8 animate-spin rounded-full border-2 border-gray-300 border-t-primary"></div>
-        </CardContent>
-      </>
+      <div className="rounded-md bg-green-50 p-4 text-sm text-green-700">
+        Your password has been reset successfully. Redirecting to sign in...
+      </div>
     )
   }
 
   return (
-    <>
-      <CardHeader>
-        <CardTitle>Reset Password</CardTitle>
-        <CardDescription>Enter your new password below to reset your password.</CardDescription>
-      </CardHeader>
-      <CardContent>
-        {error && (
-          <Alert variant="destructive" className="mb-4">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            <FormField
-              control={form.control}
-              name="password"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>New Password</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <Input
-                        type={showPassword ? "text" : "password"}
-                        placeholder="Enter your new password"
-                        {...field}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-0 top-0 h-full px-3"
-                        onClick={() => setShowPassword(!showPassword)}
-                        aria-label={showPassword ? "Hide password" : "Show password"}
-                      >
-                        {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </Button>
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormField
-              control={form.control}
-              name="confirmPassword"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Confirm Password</FormLabel>
-                  <FormControl>
-                    <div className="relative">
-                      <Input
-                        type={showConfirmPassword ? "text" : "password"}
-                        placeholder="Confirm your new password"
-                        {...field}
-                      />
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="icon"
-                        className="absolute right-0 top-0 h-full px-3"
-                        onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        aria-label={showConfirmPassword ? "Hide password" : "Show password"}
-                      >
-                        {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                      </Button>
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-            <FormLoadingButton isLoading={isLoading} loadingText="Resetting Password...">
-              Reset Password
-            </FormLoadingButton>
-          </form>
-        </Form>
-      </CardContent>
-      <CardFooter className="flex justify-center">
-        <Button variant="link" onClick={() => router.push("/auth/sign-in")}>
-          Back to Sign In
-        </Button>
-      </CardFooter>
-    </>
+    <form onSubmit={handleSubmit} className="space-y-4">
+      {error && <div className="rounded-md bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+
+      <div className="space-y-2">
+        <Label htmlFor="password">New Password</Label>
+        <Input
+          id="password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          disabled={isLoading}
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="confirm-password">Confirm New Password</Label>
+        <Input
+          id="confirm-password"
+          type="password"
+          value={confirmPassword}
+          onChange={(e) => setConfirmPassword(e.target.value)}
+          required
+          disabled={isLoading}
+        />
+      </div>
+
+      <Button type="submit" className="w-full" disabled={isLoading}>
+        {isLoading ? "Resetting Password..." : "Reset Password"}
+      </Button>
+    </form>
   )
 }
-
-// Add default export for dynamic import
-export default ResetPasswordForm

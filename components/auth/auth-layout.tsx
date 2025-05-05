@@ -1,22 +1,23 @@
-"use client"
-
 import type React from "react"
-import { Card } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 
 interface AuthLayoutProps {
   children: React.ReactNode
-  title?: string
-  redirectIfAuthenticated?: boolean
+  title: string
+  description?: string
+  footer?: React.ReactNode
 }
 
-export function AuthLayout({ children, title = "Authentication", redirectIfAuthenticated = true }: AuthLayoutProps) {
+export function AuthLayout({ children, title, description, footer }: AuthLayoutProps) {
   return (
-    <div className="container flex h-screen items-center justify-center">
-      <Card className="w-full max-w-md mx-auto">
-        <div className="p-6">
-          <h1 className="text-xl font-semibold mb-4">{title}</h1>
-          {children}
-        </div>
+    <div className="flex min-h-screen items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          {description && <CardDescription>{description}</CardDescription>}
+        </CardHeader>
+        <CardContent>{children}</CardContent>
+        {footer && <CardFooter>{footer}</CardFooter>}
       </Card>
     </div>
   )
@@ -24,13 +25,22 @@ export function AuthLayout({ children, title = "Authentication", redirectIfAuthe
 
 export function AuthFormLoading({ title = "Authentication" }: { title?: string }) {
   return (
-    <div className="container flex h-screen items-center justify-center" aria-live="polite" aria-busy="true">
-      <div className="text-center">
-        <h1 className="text-xl font-semibold mb-2">{title}</h1>
-        <p>Loading authentication form...</p>
-      </div>
+    <div
+      className="flex min-h-screen items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8"
+      aria-live="polite"
+      aria-busy="true"
+    >
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>{title}</CardTitle>
+          <CardDescription>Loading authentication form...</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <div className="flex justify-center py-8">
+            <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   )
 }
-
-export default AuthLayout

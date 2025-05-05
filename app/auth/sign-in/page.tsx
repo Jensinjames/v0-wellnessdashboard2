@@ -1,19 +1,13 @@
-import type { Metadata } from "next"
-import { AuthLayout } from "@/components/auth/auth-layout"
-import SignInClient from "./client"
-
-export const metadata: Metadata = {
-  title: "Sign In",
-  description: "Sign in to your account",
-}
-
-// Add config to disable static generation
-export const dynamic = "force-dynamic"
+import { Suspense } from "react"
+import { AuthLayout, AuthFormLoading } from "@/components/auth/auth-layout"
+import { SignInForm } from "@/components/auth/sign-in-form"
 
 export default function SignInPage() {
   return (
-    <AuthLayout title="Sign In" redirectPath="/dashboard">
-      <SignInClient />
-    </AuthLayout>
+    <Suspense fallback={<AuthFormLoading title="Sign In" />}>
+      <AuthLayout title="Sign In" description="Enter your credentials to access your account">
+        <SignInForm />
+      </AuthLayout>
+    </Suspense>
   )
 }

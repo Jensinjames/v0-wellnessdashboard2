@@ -1,34 +1,90 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { useAuth } from "@/context/auth-context"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Navigation } from "@/components/navigation"
+import { useSessionPersistence } from "@/hooks/use-session-persistence"
+
 export default function DashboardPage() {
+  const { user, profile, isLoading } = useAuth()
+  const [isClient, setIsClient] = useState(false)
+
+  // Ensure session persistence
+  useSessionPersistence()
+
+  // Handle hydration mismatch
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
+
+  if (!isClient) {
+    return null
+  }
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
+      </div>
+    )
+  }
+
   return (
-    <div className="container py-6">
-      <h1 className="text-3xl font-bold mb-6">Wellness Dashboard</h1>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 mb-8">
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-xl font-semibold mb-3">Activity Summary</h2>
-          <p>Your activity summary will appear here.</p>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-xl font-semibold mb-3">Wellness Score</h2>
-          <p>Your wellness score will appear here.</p>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-md">
-          <h2 className="text-xl font-semibold mb-3">Goals Progress</h2>
-          <p>Your goals progress will appear here.</p>
-        </div>
+    <>
+      <Navigation />
+      <div className="container mx-auto py-8">
+        <Card>
+          <CardHeader>
+            <CardTitle>Welcome to your Wellness Dashboard</CardTitle>
+            <CardDescription>
+              {profile?.first_name
+                ? `Hello, ${profile.first_name}! You are signed in as ${user?.email}`
+                : `You are signed in as ${user?.email || "Guest"}`}
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">Faith</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">0%</div>
+                  <p className="text-xs text-muted-foreground">Goal: 10 hours</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">Life</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">0%</div>
+                  <p className="text-xs text-muted-foreground">Goal: 20 hours</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">Work</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">0%</div>
+                  <p className="text-xs text-muted-foreground">Goal: 40 hours</p>
+                </CardContent>
+              </Card>
+              <Card>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-sm font-medium">Health</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-2xl font-bold">0%</div>
+                  <p className="text-xs text-muted-foreground">Goal: 14 hours</p>
+                </CardContent>
+              </Card>
+            </div>
+          </CardContent>
+        </Card>
       </div>
-
-      <div className="bg-white p-6 rounded-lg shadow-md mb-8">
-        <h2 className="text-xl font-semibold mb-3">Recent Activities</h2>
-        <p>Your recent activities will appear here.</p>
-      </div>
-
-      <div className="bg-white p-6 rounded-lg shadow-md">
-        <h2 className="text-xl font-semibold mb-3">Wellness Trends</h2>
-        <p>Your wellness trends will appear here.</p>
-      </div>
-    </div>
+    </>
   )
 }
