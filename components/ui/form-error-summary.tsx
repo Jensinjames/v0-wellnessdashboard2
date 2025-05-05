@@ -1,18 +1,27 @@
-import { AlertCircle } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { AlertTriangle } from "lucide-react"
 
 interface FormErrorSummaryProps {
+  errors: Record<string, string>
   title?: string
-  description: string
-  className?: string
 }
 
-export function FormErrorSummary({ title = "Error", description, className = "" }: FormErrorSummaryProps) {
+export function FormErrorSummary({ errors, title = "Please correct the following errors:" }: FormErrorSummaryProps) {
+  const errorCount = Object.keys(errors).length
+
+  if (errorCount === 0) return null
+
   return (
-    <Alert variant="destructive" className={`mb-4 ${className}`} role="alert" aria-live="assertive">
-      <AlertCircle className="h-4 w-4" aria-hidden="true" />
-      <AlertTitle className="sr-only">{title}</AlertTitle>
-      <AlertDescription>{description}</AlertDescription>
+    <Alert variant="destructive" role="alert">
+      <AlertTriangle className="h-4 w-4" />
+      <AlertTitle>{title}</AlertTitle>
+      <AlertDescription>
+        <ul className="list-disc pl-5 mt-2 space-y-1">
+          {Object.entries(errors).map(([field, message]) => (
+            <li key={field}>{message}</li>
+          ))}
+        </ul>
+      </AlertDescription>
     </Alert>
   )
 }

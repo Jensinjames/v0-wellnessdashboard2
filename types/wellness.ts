@@ -320,11 +320,32 @@ export function getCategoryColorClass(
 
 export interface Activity {
   id: string
-  categoryId: string
-  categoryName: string
-  subcategoryId: string
-  subcategoryName: string
   date: string
+  category: string
   duration: number
-  value: number
+  intensity: number
+  notes: string
+  reminder: boolean
+}
+
+export interface Goal {
+  id: string
+  category: string
+  target: number
+  timeframe: "daily" | "weekly" | "monthly"
+  startDate: string
+  endDate?: string
+  isActive: boolean
+  progress: number
+}
+
+export interface Category {
+  id: string
+  name: string
+  color: string
+  icon?: string
+  description?: string
+  parentId?: string
+  isActive: boolean
+  order: number
 }

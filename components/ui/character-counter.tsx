@@ -1,20 +1,30 @@
+import { cn } from "@/lib/utils"
+
 interface CharacterCounterProps {
-  current: number
-  max: number
+  value: string
+  maxLength: number
   className?: string
 }
 
-export function CharacterCounter({ current, max, className = "" }: CharacterCounterProps) {
-  const getCounterColor = () => {
-    const percentage = (current / max) * 100
-    if (percentage > 100) return "text-red-500"
-    if (percentage > 90) return "text-amber-500"
-    return "text-muted-foreground"
-  }
+export function CharacterCounter({ value, maxLength, className }: CharacterCounterProps) {
+  const count = value?.length || 0
+  const remaining = maxLength - count
+  const isWarning = remaining <= maxLength * 0.1 && remaining > 0
+  const isExceeded = remaining < 0
 
   return (
-    <span className={`text-xs ${getCounterColor()} ${className}`}>
-      {current}/{max}
-    </span>
+    <div
+      className={cn("text-xs", isWarning ? "text-amber-600" : "", isExceeded ? "text-red-500" : "", className)}
+      aria-live="polite"
+    >
+      <span className="sr-only">
+        {isExceeded
+          ? `Character limit exceeded by ${Math.abs(remaining)} characters`
+          : `${remaining} characters remaining`}
+      </span>
+      <span aria-hidden="true">
+        {count}/{maxLength}
+      </span>
+    </div>
   )
 }

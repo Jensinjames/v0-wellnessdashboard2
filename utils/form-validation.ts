@@ -255,21 +255,58 @@ export const activityFormSchema = z.object({
 })
 
 // Activity form validation function
-export const validateActivityForm = (data: any) => {
-  try {
-    const result = activityFormSchema.safeParse(data)
-    if (!result.success) {
-      const formattedErrors = result.error.format()
-      return {
-        valid: false,
-        errors: collectFormErrors(formattedErrors, data),
-      }
-    }
-    return { valid: true }
-  } catch (error) {
-    return {
-      valid: false,
-      errors: ["An unexpected error occurred during validation"],
-    }
+// export const validateActivityForm = (data: any) => {
+//   try {
+//     const result = activityFormSchema.safeParse(data)
+//     if (!result.success) {
+//       const formattedErrors = result.error.format()
+//       return {
+//         valid: false,
+//         errors: collectFormErrors(formattedErrors, data),
+//       }
+//     }
+//     return { valid: true }
+//   } catch (error) {
+//     return {
+//       valid: false,
+//       errors: ["An unexpected error occurred during validation"],
+//     }
+//   }
+// }
+
+interface ActivityFormData {
+  category: string
+  duration: number
+  intensity: number
+  notes: string
+}
+
+export function validateActivityForm(data: ActivityFormData): Record<string, string> {
+  const errors: Record<string, string> = {}
+
+  if (!data.category) {
+    errors.category = "Please select a category"
   }
+
+  if (!data.duration) {
+    errors.duration = "Please enter a duration"
+  } else if (data.duration <= 0) {
+    errors.duration = "Duration must be greater than 0"
+  } else if (data.duration > 1440) {
+    errors.duration = "Duration cannot exceed 24 hours (1440 minutes)"
+  }
+
+  if (data.notes && data.notes.length > 200) {
+    errors.notes = "Notes cannot exceed 200 characters"
+  }
+
+  return errors
+}
+
+export function validateGoalForm(data: any): Record<string, string> {
+  const errors: Record<string, string> = {}
+
+  // Add goal form validation logic here
+
+  return errors
 }

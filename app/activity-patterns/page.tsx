@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { parseISO } from "date-fns"
+import { parseISO } from "date-fns" // Corrected import
 import { ActivityPatterns } from "@/components/activity-patterns"
 import type { Activity } from "@/components/activity-patterns"
 import { Skeleton } from "@/components/ui/skeleton"
