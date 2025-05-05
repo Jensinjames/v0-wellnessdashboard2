@@ -1,51 +1,61 @@
 "use client"
 
 import type React from "react"
-
 import { createContext, useContext, useState } from "react"
 
+type AnnouncementPolitenessSetting = "polite" | "assertive"
+
 interface ScreenReaderAnnouncerContextType {
-  announce: (message: string, politeness?: "polite" | "assertive") => void
+  announce: (message: string, politeness?: AnnouncementPolitenessSetting) => void
 }
 
-const ScreenReaderAnnouncerContext = createContext<ScreenReaderAnnouncerContextType>({
-  announce: () => {},
-})
+const ScreenReaderAnnouncerContext = createContext<ScreenReaderAnnouncerContextType | undefined>(undefined)
+
+export function useScreenReaderAnnouncer() {
+  const context = useContext(ScreenReaderAnnouncerContext)
+  if (context === undefined) {
+    throw new Error("useScreenReaderAnnouncer must be used within a ScreenReaderAnnouncerProvider")
+  }
+  return context
+}
+
+interface LiveRegionProps {
+  children: React.ReactNode
+  priority?: AnnouncementPolitenessSetting
+  className?: string
+}
+
+export function LiveRegion({ children, priority = "polite", className = "" }: LiveRegionProps) {
+  return (
+    <div aria-live={priority} aria-atomic="true" className={`sr-only ${className}`}>
+      {children}
+    </div>
+  )
+}
 
 export function ScreenReaderAnnouncerProvider({ children }: { children: React.ReactNode }) {
   const [politeAnnouncement, setPoliteAnnouncement] = useState("")
   const [assertiveAnnouncement, setAssertiveAnnouncement] = useState("")
 
-  const announce = (message: string, politeness: "polite" | "assertive" = "polite") => {
-    if (politeness === "polite") {
-      setPoliteAnnouncement(message)
+  const announce = (message: string, politeness: AnnouncementPolitenessSetting = "polite") => {
+    if (politeness === "assertive") {
+      setAssertiveAnnouncement("")
+      setTimeout(() => setAssertiveAnnouncement(message), 50)
     } else {
-      setAssertiveAnnouncement(message)
+      setPoliteAnnouncement("")
+      setTimeout(() => setPoliteAnnouncement(message), 50)
     }
-
-    // Clear announcements after they've been read
-    setTimeout(() => {
-      if (politeness === "polite") {
-        setPoliteAnnouncement("")
-      } else {
-        setAssertiveAnnouncement("")
-      }
-    }, 3000)
   }
 
   return (
     <ScreenReaderAnnouncerContext.Provider value={{ announce }}>
       {children}
-      <div aria-live="polite" aria-atomic="true" className="sr-only" role="status">
+      <div aria-live="polite" className="sr-only" aria-atomic="true">
         {politeAnnouncement}
       </div>
-      <div aria-live="assertive" aria-atomic="true" className="sr-only" role="alert">
+      <div aria-live="assertive" className="sr-only" aria-atomic="true">
         {assertiveAnnouncement}
       </div>
     </ScreenReaderAnnouncerContext.Provider>
   )
-}
-
-export function useScreenReaderAnnouncer() {
-  return useContext(ScreenReaderAnnouncerContext)
 }
