@@ -2,7 +2,7 @@ export function handleAuthError(error: any, operation: string): string {
   console.error(`Authentication error during ${operation}:`, error)
 
   // Handle rate limiting
-  if (error.status === 429) {
+  if (error.status === 429 || error.message?.includes("Too Many Requests")) {
     return "Too many requests. Please try again in a moment."
   }
 

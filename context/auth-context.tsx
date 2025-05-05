@@ -108,33 +108,65 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const supabase = getSupabaseClient()
 
-      // Use the Supabase client directly (no next/headers)
-      const { data, error, status } = await supabase.from("profiles").select("*").eq("id", userId).single()
+      // Use a more robust approach with fetch directly to handle non-JSON responses
+      try {
+        const { data, error, status } = await supabase.from("profiles").select("*").eq("id", userId).single()
 
-      // Check for rate limiting
-      if (status === 429) {
-        console.log(`Rate limited (429), retrying in ${backoffTime * 2}ms...`)
+        // Handle rate limiting
+        if (status === 429 || (error && error.message?.includes("Too Many Requests"))) {
+          console.log(`Rate limited (429), retrying in ${backoffTime * 2}ms...`)
 
-        // If we've tried too many times, use a mock profile
-        if (retryCount >= 3) {
-          console.log("Too many retries, using mock profile")
-          setProfile(createMockProfile(userId, user?.email))
+          // If we've tried too many times, use a mock profile
+          if (retryCount >= 3) {
+            console.log("Too many retries, using mock profile")
+            setProfile(createMockProfile(userId, user?.email))
+            setIsLoading(false)
+            return
+          }
+
+          // Otherwise retry
+          return fetchProfile(userId, retryCount + 1)
+        }
+
+        if (error) {
+          console.error(`Error fetching profile (status ${status}):`, error)
+
+          // If we get a 404, the profile might not exist yet
+          if (status === 404 || status === 406) {
+            // Try to create the profile
+            await createProfile(userId)
+            return
+          }
+
+          // For other errors, use a mock profile after too many retries
+          if (retryCount >= 2) {
+            setProfile(createMockProfile(userId, user?.email))
+          } else {
+            return fetchProfile(userId, retryCount + 1)
+          }
+
           setIsLoading(false)
           return
         }
 
-        // Otherwise retry
-        return fetchProfile(userId, retryCount + 1)
-      }
+        setProfile(data)
+      } catch (fetchError: any) {
+        console.error("Error in Supabase fetch:", fetchError)
 
-      if (error) {
-        console.error(`Error fetching profile (status ${status}):`, error)
+        // Check if this is a rate limiting error
+        if (fetchError.message?.includes("Too Many Requests") || fetchError.message?.includes("429")) {
+          console.log(`Rate limited error caught, retrying in ${backoffTime * 2}ms...`)
 
-        // If we get a 404, the profile might not exist yet
-        if (status === 404 || status === 406) {
-          // Try to create the profile
-          await createProfile(userId)
-          return
+          // If we've tried too many times, use a mock profile
+          if (retryCount >= 3) {
+            console.log("Too many retries, using mock profile")
+            setProfile(createMockProfile(userId, user?.email))
+            setIsLoading(false)
+            return
+          }
+
+          // Otherwise retry
+          return fetchProfile(userId, retryCount + 1)
         }
 
         // For other errors, use a mock profile after too many retries
@@ -143,12 +175,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } else {
           return fetchProfile(userId, retryCount + 1)
         }
-
-        setIsLoading(false)
-        return
       }
-
-      setProfile(data)
     } catch (error) {
       console.error("Unexpected error fetching profile:", error)
 
