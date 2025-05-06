@@ -1,8 +1,11 @@
 "use client"
 
-import { useState, useEffect, useMemo } from "react"
+import type React from "react"
+
+import { useState, useEffect, useMemo, useCallback } from "react"
 import type { UserProfile, ProfileFormData, ProfileCompletionStatus } from "@/types/auth"
 import { validateProfileData } from "@/utils/profile-utils"
+import { useAuth } from "@/context/auth-context"
 
 /**
  * Hook for validating profile form data
@@ -10,6 +13,7 @@ import { validateProfileData } from "@/utils/profile-utils"
 export function useProfileValidation(formData: ProfileFormData) {
   const [errors, setErrors] = useState<Record<string, string> | null>(null)
   const [isDirty, setIsDirty] = useState<Record<string, boolean>>({})
+  const [touchedFields, setTouchedFields] = useState<Set<string>>(new Set())
 
   // Validate on form data change
   useEffect(() => {
@@ -18,28 +22,57 @@ export function useProfileValidation(formData: ProfileFormData) {
   }, [formData])
 
   // Mark field as dirty when it's touched
-  const markFieldAsDirty = (fieldName: string) => {
+  const markFieldAsDirty = useCallback((fieldName: string) => {
     setIsDirty((prev) => ({
       ...prev,
       [fieldName]: true,
     }))
-  }
+    setTouchedFields((prev) => {
+      const newSet = new Set(prev)
+      newSet.add(fieldName)
+      return newSet
+    })
+  }, [])
+
+  // Mark all fields as dirty
+  const markAllFieldsAsDirty = useCallback(() => {
+    const allFields = Object.keys(formData)
+    const dirtyState: Record<string, boolean> = {}
+    const newTouchedFields = new Set<string>()
+
+    allFields.forEach((field) => {
+      dirtyState[field] = true
+      newTouchedFields.add(field)
+    })
+
+    setIsDirty(dirtyState)
+    setTouchedFields(newTouchedFields)
+  }, [formData])
 
   // Get error for a specific field, but only if it's dirty
-  const getFieldError = (fieldName: string): string | undefined => {
-    if (!isDirty[fieldName]) return undefined
-    return errors?.[fieldName]
-  }
+  const getFieldError = useCallback(
+    (fieldName: string): string | undefined => {
+      if (!isDirty[fieldName]) return undefined
+      return errors?.[fieldName]
+    },
+    [errors, isDirty],
+  )
 
   // Check if the form is valid
   const isValid = errors === null
 
+  // Check if the form has been modified
+  const isModified = useMemo(() => touchedFields.size > 0, [touchedFields])
+
   return {
     errors,
     isValid,
+    isModified,
     markFieldAsDirty,
+    markAllFieldsAsDirty,
     getFieldError,
     isDirty,
+    touchedFields: Array.from(touchedFields),
   }
 }
 
@@ -88,6 +121,7 @@ export function useProfileCompletion(profile: UserProfile | null): ProfileComple
 export function useProfileUpdateValidation() {
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitError, setSubmitError] = useState<Error | null>(null)
+  const [submitSuccess, setSubmitSuccess] = useState(false)
 
   const validateUpdate = async <T extends ProfileFormData>(
     formData: T,
@@ -95,6 +129,7 @@ export function useProfileUpdateValidation() {
   ) => {
     setIsSubmitting(true)
     setSubmitError(null)
+    setSubmitSuccess(false)
 
     try {
       // Validate the form data
@@ -113,6 +148,7 @@ export function useProfileUpdateValidation() {
         return { success: false, error }
       }
 
+      setSubmitSuccess(true)
       return { success: true, error: null }
     } catch (error) {
       const errorObj = error instanceof Error ? error : new Error(String(error))
@@ -126,6 +162,64 @@ export function useProfileUpdateValidation() {
   return {
     isSubmitting,
     submitError,
+    submitSuccess,
     validateUpdate,
+    resetSubmitState: () => {
+      setSubmitError(null)
+      setSubmitSuccess(false)
+    },
+  }
+}
+
+/**
+ * Combined hook for profile management
+ */
+export function useProfileManager() {
+  const { profile, refreshProfile } = useAuth()
+  const [formData, setFormData] = useState<ProfileFormData>({
+    first_name: profile?.first_name || "",
+    last_name: profile?.last_name || "",
+    avatar_url: profile?.avatar_url || null,
+  })
+
+  // Update form data when profile changes
+  useEffect(() => {
+    if (profile) {
+      setFormData({
+        first_name: profile.first_name || "",
+        last_name: profile.last_name || "",
+        avatar_url: profile.avatar_url || null,
+      })
+    }
+  }, [profile])
+
+  const validation = useProfileValidation(formData)
+  const updateValidation = useProfileUpdateValidation()
+  const completionStatus = useProfileCompletion(profile)
+
+  // Handle form field changes
+  const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const { name, value } = e.target
+    setFormData((prev) => ({ ...prev, [name]: value }))
+  }, [])
+
+  // Handle form field blur
+  const handleBlur = useCallback(
+    (e: React.FocusEvent<HTMLInputElement>) => {
+      validation.markFieldAsDirty(e.target.name)
+    },
+    [validation],
+  )
+
+  return {
+    profile,
+    formData,
+    setFormData,
+    handleChange,
+    handleBlur,
+    refreshProfile,
+    ...validation,
+    ...updateValidation,
+    completionStatus,
   }
 }

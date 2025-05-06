@@ -1,58 +1,79 @@
-"use client"
-
-import { useProfileCompletion } from "@/hooks/use-profile-validation"
 import { Progress } from "@/components/ui/progress"
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"
+import { CheckCircle2, AlertCircle, ChevronRight } from "lucide-react"
 import type { UserProfile } from "@/types/auth"
-import { AlertCircle, CheckCircle } from "lucide-react"
+import { useProfileCompletion } from "@/hooks/use-profile-validation"
+import { Button } from "@/components/ui/button"
+import Link from "next/link"
 
 interface ProfileCompletionIndicatorProps {
   profile: UserProfile | null
   showDetails?: boolean
+  showCta?: boolean
   className?: string
 }
 
 export function ProfileCompletionIndicator({
   profile,
   showDetails = false,
+  showCta = false,
   className = "",
 }: ProfileCompletionIndicatorProps) {
-  const { isComplete, missingFields, completionPercentage } = useProfileCompletion(profile)
+  const { isComplete, completionPercentage, missingFields } = useProfileCompletion(profile)
+
+  if (isComplete) {
+    return (
+      <Alert className={`bg-green-50 border-green-200 ${className}`}>
+        <CheckCircle2 className="h-4 w-4 text-green-600" />
+        <AlertTitle className="text-green-800">Profile Complete</AlertTitle>
+        <AlertDescription className="text-green-700">Your profile is complete and up to date.</AlertDescription>
+      </Alert>
+    )
+  }
 
   return (
-    <div className={`space-y-2 ${className}`}>
-      <div className="flex items-center justify-between">
-        <span className="text-sm font-medium">Profile Completion</span>
-        <span className="text-sm font-medium">{completionPercentage}%</span>
+    <div className={`space-y-3 ${className}`}>
+      <Alert className="bg-amber-50 border-amber-200">
+        <AlertCircle className="h-4 w-4 text-amber-600" />
+        <AlertTitle className="text-amber-800">Profile Incomplete</AlertTitle>
+        <AlertDescription className="text-amber-700">
+          Please complete your profile to access all features.
+        </AlertDescription>
+      </Alert>
+
+      <div className="space-y-2">
+        <div className="flex justify-between text-sm">
+          <span>Profile completion</span>
+          <span className="font-medium">{completionPercentage}%</span>
+        </div>
+        <Progress value={completionPercentage} className="h-2" />
       </div>
 
-      <Progress value={completionPercentage} className="h-2" />
-
-      {showDetails && (
-        <div className="mt-4 space-y-2">
-          {isComplete ? (
-            <div className="flex items-center text-green-600 text-sm">
-              <CheckCircle className="h-4 w-4 mr-2" />
-              <span>Your profile is complete!</span>
-            </div>
-          ) : (
-            <>
-              <div className="flex items-center text-amber-600 text-sm">
-                <AlertCircle className="h-4 w-4 mr-2" />
-                <span>Please complete your profile</span>
-              </div>
-
-              {missingFields.length > 0 && (
-                <ul className="pl-6 text-sm space-y-1">
-                  {missingFields.map((field) => (
-                    <li key={field} className="list-disc text-gray-600">
-                      {field.replace("_", " ")}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </>
-          )}
+      {showDetails && missingFields.length > 0 && (
+        <div className="rounded-md bg-amber-50 p-3 text-sm">
+          <p className="font-medium text-amber-800 mb-2">Missing information:</p>
+          <ul className="list-disc pl-5 text-amber-700 space-y-1">
+            {missingFields.map((field) => (
+              <li key={field}>
+                {field === "first_name"
+                  ? "First name"
+                  : field === "last_name"
+                    ? "Last name"
+                    : field === "avatar_url"
+                      ? "Profile picture"
+                      : field}
+              </li>
+            ))}
+          </ul>
         </div>
+      )}
+
+      {showCta && (
+        <Button asChild className="w-full mt-2">
+          <Link href="/profile">
+            Complete Profile <ChevronRight className="ml-2 h-4 w-4" />
+          </Link>
+        </Button>
       )}
     </div>
   )

@@ -2,56 +2,72 @@
 
 import type React from "react"
 
-import { useState } from "react"
 import { useAuth } from "@/context/auth-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { ProfileCompletionIndicator } from "@/components/profile/profile-completion-indicator"
-import { useProfileValidation, useProfileUpdateValidation } from "@/hooks/use-profile-validation"
-import type { ProfileFormData } from "@/types/auth"
-import { Loader2 } from "lucide-react"
+import { useProfileManager } from "@/hooks/use-profile-validation"
+import { Loader2, CheckCircle2 } from "lucide-react"
+import { useEffect } from "react"
 
 export function ProfileForm() {
-  const { profile, updateProfile } = useAuth()
+  const { updateProfile } = useAuth()
 
-  const [formData, setFormData] = useState<ProfileFormData>({
-    first_name: profile?.first_name || "",
-    last_name: profile?.last_name || "",
-    avatar_url: profile?.avatar_url || null,
-  })
+  const {
+    formData,
+    handleChange,
+    handleBlur,
+    isValid,
+    getFieldError,
+    markAllFieldsAsDirty,
+    isSubmitting,
+    submitError,
+    submitSuccess,
+    validateUpdate,
+    resetSubmitState,
+    completionStatus,
+  } = useProfileManager()
 
-  const { isValid, getFieldError, markFieldAsDirty } = useProfileValidation(formData)
-  const { isSubmitting, submitError, validateUpdate } = useProfileUpdateValidation()
+  // Reset success message after 3 seconds
+  useEffect(() => {
+    if (submitSuccess) {
+      const timer = setTimeout(() => {
+        resetSubmitState()
+      }, 3000)
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { name, value } = e.target
-    setFormData((prev) => ({ ...prev, [name]: value }))
-  }
-
-  const handleBlur = (e: React.FocusEvent<HTMLInputElement>) => {
-    markFieldAsDirty(e.target.name)
-  }
+      return () => clearTimeout(timer)
+    }
+  }, [submitSuccess, resetSubmitState])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    const result = await validateUpdate(formData, updateProfile)
+    // Mark all fields as dirty to show any validation errors
+    markAllFieldsAsDirty()
 
-    if (result.success) {
-      // Show success message or redirect
-    }
+    if (!isValid) return
+
+    await validateUpdate(formData, updateProfile)
   }
 
   return (
     <div className="space-y-6">
-      <ProfileCompletionIndicator profile={profile} showDetails />
+      <ProfileCompletionIndicator profile={formData as any} showDetails />
 
       <form onSubmit={handleSubmit} className="space-y-4">
         {submitError && (
           <Alert variant="destructive">
             <AlertDescription>{submitError.message}</AlertDescription>
+          </Alert>
+        )}
+
+        {submitSuccess && (
+          <Alert className="bg-green-50 border-green-200">
+            <CheckCircle2 className="h-4 w-4 text-green-600" />
+            <AlertTitle className="text-green-800">Success</AlertTitle>
+            <AlertDescription className="text-green-700">Your profile has been updated successfully.</AlertDescription>
           </Alert>
         )}
 

@@ -9,17 +9,30 @@ import type { User, Session } from "@supabase/supabase-js"
 import type { UserProfile } from "@/types/auth"
 import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
+import { validateAuthCredentials, sanitizeEmail } from "@/utils/auth-validation"
 
 interface AuthContextType {
   user: User | null
   profile: UserProfile | null
   session: Session | null
   isLoading: boolean
-  signIn: (email: string, password: string) => Promise<{ error: Error | null; mockSignIn?: boolean }>
+  signIn: (
+    email: unknown,
+    password: unknown,
+  ) => Promise<{
+    error: Error | null
+    mockSignIn?: boolean
+    fieldErrors?: { email?: string; password?: string }
+  }>
   signUp: (
-    email: string,
-    password: string,
-  ) => Promise<{ error: Error | null; mockSignUp?: boolean; networkIssue?: boolean }>
+    email: unknown,
+    password: unknown,
+  ) => Promise<{
+    error: Error | null
+    mockSignUp?: boolean
+    networkIssue?: boolean
+    fieldErrors?: { email?: string; password?: string }
+  }>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<void>
   getClientInfo: () => any
@@ -159,24 +172,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [supabase, router])
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = async (email: unknown, password: unknown) => {
     try {
-      // Fix: Ensure email and password are strings and properly formatted
-      if (typeof email !== "string" || typeof password !== "string") {
+      // Strictly validate email and password as strings
+      const validation = validateAuthCredentials(email, password)
+
+      if (!validation.valid) {
         return {
-          error: new Error("Email and password must be strings"),
+          error: new Error("Invalid credentials format"),
+          fieldErrors: validation.errors,
         }
       }
 
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (!emailRegex.test(email)) {
-        return {
-          error: new Error("Invalid email format"),
-        }
-      }
+      // Sanitize email
+      const sanitizedEmail = sanitizeEmail(email)
 
-      if (email === "demo@example.com" && password === "demo123") {
+      if (sanitizedEmail === "demo@example.com" && password === "demo123") {
         // Mock sign-in for demo user
         setUser({
           id: "mock-" + Math.random().toString(36).substring(2, 15),
@@ -213,10 +224,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } as Session)
         return { error: null, mockSignIn: true }
       } else {
-        // Fix: Use a properly structured object for signInWithPassword
+        // Use a properly structured object for signInWithPassword
         const { error } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
-          password,
+          email: sanitizedEmail,
+          password: password as string,
         })
 
         if (error?.message?.includes("Network request failed")) {
@@ -231,24 +242,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const signUp = async (email: string, password: string) => {
+  const signUp = async (email: unknown, password: unknown) => {
     try {
-      // Fix: Ensure email and password are strings and properly formatted
-      if (typeof email !== "string" || typeof password !== "string") {
+      // Strictly validate email and password as strings
+      const validation = validateAuthCredentials(email, password)
+
+      if (!validation.valid) {
         return {
-          error: new Error("Email and password must be strings"),
+          error: new Error("Invalid credentials format"),
+          fieldErrors: validation.errors,
         }
       }
 
-      // Validate email format
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-      if (!emailRegex.test(email)) {
-        return {
-          error: new Error("Invalid email format"),
-        }
-      }
+      // Sanitize email
+      const sanitizedEmail = sanitizeEmail(email)
 
-      if (email === "demo@example.com") {
+      if (sanitizedEmail === "demo@example.com") {
         // Mock sign-up for demo user
         setUser({
           id: "mock-" + Math.random().toString(36).substring(2, 15),
@@ -285,10 +294,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } as Session)
         return { error: null, mockSignUp: true }
       } else {
-        // Fix: Use a properly structured object for signUp
+        // Use a properly structured object for signUp
         const { error } = await supabase.auth.signUp({
-          email: email.trim(),
-          password,
+          email: sanitizedEmail,
+          password: password as string,
           options: {
             emailRedirectTo: `${window.location.origin}/auth/callback`,
           },
@@ -309,25 +318,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     await supabase.auth.signOut()
     router.push("/auth/sign-in")
-  }
-
-  const updateProfile = async (profileData: Partial<UserProfile>) => {
-    if (!user) return { error: new Error("Not authenticated") }
-
-    try {
-      const { error } = await supabase.from("profiles").update(profileData).eq("id", user.id)
-
-      if (error) {
-        return { error: new Error(error.message) }
-      }
-
-      // Refresh the profile
-      await refreshProfile()
-
-      return { error: null }
-    } catch (error: any) {
-      return { error: error instanceof Error ? error : new Error(String(error)) }
-    }
   }
 
   const refreshProfile = async () => {
