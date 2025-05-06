@@ -54,12 +54,20 @@ export function SignInForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
-      {error && <div className="rounded-md bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+    <form onSubmit={handleSubmit} className="space-y-4" aria-labelledby="sign-in-heading">
+      <h2 id="sign-in-heading" className="sr-only">
+        Sign in form
+      </h2>
+
+      {error && (
+        <Alert className="rounded-md bg-red-50 p-4 text-sm text-red-700" role="alert" aria-live="assertive">
+          {error}
+        </Alert>
+      )}
 
       {mockSignIn && (
-        <Alert className="mb-4">
-          <Info className="h-4 w-4" />
+        <Alert className="mb-4" role="status" aria-live="polite">
+          <Info className="h-4 w-4" aria-hidden="true" />
           <AlertTitle>Demo Mode</AlertTitle>
           <AlertDescription>
             You're being signed in with demo credentials. You'll be redirected to the dashboard shortly.
@@ -68,7 +76,9 @@ export function SignInForm() {
       )}
 
       <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="email" id="email-label">
+          Email
+        </Label>
         <Input
           id="email"
           type="email"
@@ -76,13 +86,22 @@ export function SignInForm() {
           onChange={(e) => setEmail(e.target.value)}
           required
           disabled={isLoading || mockSignIn}
+          aria-labelledby="email-label"
+          aria-required="true"
+          autoComplete="email"
         />
       </div>
 
       <div className="space-y-2">
         <div className="flex items-center justify-between">
-          <Label htmlFor="password">Password</Label>
-          <Link href="/auth/forgot-password" className="text-sm text-blue-600 hover:text-blue-500">
+          <Label htmlFor="password" id="password-label">
+            Password
+          </Label>
+          <Link
+            href="/auth/forgot-password"
+            className="text-sm text-blue-600 hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
+            aria-label="Forgot password"
+          >
             Forgot password?
           </Link>
         </div>
@@ -93,16 +112,28 @@ export function SignInForm() {
           onChange={(e) => setPassword(e.target.value)}
           required
           disabled={isLoading || mockSignIn}
+          aria-labelledby="password-label"
+          aria-required="true"
+          autoComplete="current-password"
         />
       </div>
 
-      <Button type="submit" className="w-full" disabled={isLoading || mockSignIn}>
+      <Button
+        type="submit"
+        className="w-full"
+        disabled={isLoading || mockSignIn}
+        aria-busy={isLoading}
+        aria-live="polite"
+      >
         {isLoading ? "Signing in..." : mockSignIn ? "Redirecting..." : "Sign in"}
       </Button>
 
       <div className="text-center text-sm">
         Don't have an account?{" "}
-        <Link href="/auth/sign-up" className="text-blue-600 hover:text-blue-500">
+        <Link
+          href="/auth/sign-up"
+          className="text-blue-600 hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
+        >
           Sign up
         </Link>
       </div>

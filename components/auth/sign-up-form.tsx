@@ -224,17 +224,21 @@ export function SignUpForm() {
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} className="space-y-4" aria-labelledby="sign-up-heading">
+      <h2 id="sign-up-heading" className="sr-only">
+        Sign up form
+      </h2>
+
       {error && !networkError && !databaseError && (
-        <Alert className="rounded-md bg-red-50 p-4 text-sm text-red-700">
-          <AlertTriangle className="h-4 w-4 mr-2" />
+        <Alert className="rounded-md bg-red-50 p-4 text-sm text-red-700" role="alert" aria-live="assertive">
+          <AlertTriangle className="h-4 w-4 mr-2" aria-hidden="true" />
           {error}
         </Alert>
       )}
 
       {networkError && (
-        <Alert className="rounded-md bg-amber-50 p-4 text-sm text-amber-700">
-          <AlertTriangle className="h-4 w-4" />
+        <Alert className="rounded-md bg-amber-50 p-4 text-sm text-amber-700" role="alert" aria-live="assertive">
+          <AlertTriangle className="h-4 w-4" aria-hidden="true" />
           <AlertTitle>Network Issue</AlertTitle>
           <AlertDescription>
             <p className="mb-2">{error || "Unable to connect to the authentication service."}</p>
@@ -246,14 +250,17 @@ export function SignUpForm() {
                 onClick={handleNetworkCheck}
                 disabled={isCheckingNetwork}
                 className="bg-amber-100/50"
+                aria-label={isCheckingNetwork ? "Checking network connection" : "Check network connection"}
               >
                 {isCheckingNetwork ? (
                   <>
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" /> Checking...
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                    <span>Checking...</span>
                   </>
                 ) : (
                   <>
-                    <Wifi className="h-4 w-4 mr-2" /> Check Connection
+                    <Wifi className="h-4 w-4 mr-2" aria-hidden="true" />
+                    <span>Check Connection</span>
                   </>
                 )}
               </Button>
@@ -263,8 +270,10 @@ export function SignUpForm() {
                 size="sm"
                 onClick={() => window.location.reload()}
                 className="bg-amber-100/50"
+                aria-label="Reload page"
               >
-                <RefreshCw className="h-4 w-4 mr-2" /> Reload Page
+                <RefreshCw className="h-4 w-4 mr-2" aria-hidden="true" />
+                <span>Reload Page</span>
               </Button>
             </div>
           </AlertDescription>
@@ -272,8 +281,8 @@ export function SignUpForm() {
       )}
 
       {databaseError && (
-        <Alert className="rounded-md bg-amber-50 p-4 text-sm text-amber-700">
-          <AlertTriangle className="h-4 w-4" />
+        <Alert className="rounded-md bg-amber-50 p-4 text-sm text-amber-700" role="alert" aria-live="assertive">
+          <AlertTriangle className="h-4 w-4" aria-hidden="true" />
           <AlertTitle>Database Issue</AlertTitle>
           <AlertDescription>
             <p className="mb-2">{error || "Unable to save user data to the database."}</p>
@@ -283,8 +292,8 @@ export function SignUpForm() {
       )}
 
       {mockSignUp && (
-        <Alert className="mb-4">
-          <Info className="h-4 w-4" />
+        <Alert className="mb-4" role="status" aria-live="polite">
+          <Info className="h-4 w-4" aria-hidden="true" />
           <AlertTitle>Demo Mode</AlertTitle>
           <AlertDescription>
             You're being signed up in demo mode due to {networkError ? "network connectivity" : "database connectivity"}{" "}
@@ -294,8 +303,8 @@ export function SignUpForm() {
       )}
 
       {signUpSuccess && (
-        <Alert className="mb-4 bg-green-50">
-          <Info className="h-4 w-4" />
+        <Alert className="mb-4 bg-green-50" role="status" aria-live="polite">
+          <Info className="h-4 w-4" aria-hidden="true" />
           <AlertTitle>Sign-up Successful</AlertTitle>
           <AlertDescription>
             Your account has been created successfully. You'll be redirected to the verification page.
@@ -304,7 +313,9 @@ export function SignUpForm() {
       )}
 
       <div className="space-y-2">
-        <Label htmlFor="email">Email</Label>
+        <Label htmlFor="email" id="email-label">
+          Email
+        </Label>
         <Input
           id="email"
           type="email"
@@ -312,11 +323,16 @@ export function SignUpForm() {
           onChange={(e) => setEmail(e.target.value)}
           required
           disabled={isLoading || mockSignUp || signUpSuccess}
+          aria-labelledby="email-label"
+          aria-required="true"
+          autoComplete="email"
         />
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="password">Password</Label>
+        <Label htmlFor="password" id="password-label">
+          Password
+        </Label>
         <Input
           id="password"
           type="password"
@@ -324,11 +340,20 @@ export function SignUpForm() {
           onChange={(e) => setPassword(e.target.value)}
           required
           disabled={isLoading || mockSignUp || signUpSuccess}
+          aria-labelledby="password-label"
+          aria-required="true"
+          autoComplete="new-password"
+          aria-describedby="password-requirements"
         />
+        <p id="password-requirements" className="text-xs text-gray-500">
+          Password should be at least 8 characters long
+        </p>
       </div>
 
       <div className="space-y-2">
-        <Label htmlFor="confirm-password">Confirm Password</Label>
+        <Label htmlFor="confirm-password" id="confirm-password-label">
+          Confirm Password
+        </Label>
         <Input
           id="confirm-password"
           type="password"
@@ -336,6 +361,9 @@ export function SignUpForm() {
           onChange={(e) => setConfirmPassword(e.target.value)}
           required
           disabled={isLoading || mockSignUp || signUpSuccess}
+          aria-labelledby="confirm-password-label"
+          aria-required="true"
+          autoComplete="new-password"
         />
       </div>
 
@@ -343,13 +371,18 @@ export function SignUpForm() {
         type="submit"
         className="w-full"
         disabled={isLoading || mockSignUp || signUpSuccess || (networkError && !navigator.onLine)}
+        aria-busy={isLoading}
+        aria-live="polite"
       >
         {isLoading ? "Signing up..." : mockSignUp ? "Redirecting..." : signUpSuccess ? "Success!" : "Sign up"}
       </Button>
 
       <div className="text-center text-sm">
         Already have an account?{" "}
-        <Link href="/auth/sign-in" className="text-blue-600 hover:text-blue-500">
+        <Link
+          href="/auth/sign-in"
+          className="text-blue-600 hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
+        >
           Sign in
         </Link>
       </div>
