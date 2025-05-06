@@ -17,6 +17,7 @@ export default function SignUp() {
   const router = useRouter()
   const { signUp } = useAuth()
 
+  const [name, setName] = useState("")
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [confirmPassword, setConfirmPassword] = useState("")
@@ -69,19 +70,31 @@ export default function SignUp() {
     setIsLoading(true)
 
     try {
-      const { success, message } = await signUp(email, password)
+      // Sign up the user
+      const {
+        success,
+        message,
+        error: signUpError,
+      } = await signUp(email, password, {
+        name: name || email.split("@")[0],
+      })
 
       if (!success) {
         setError(message)
         return
       }
 
-      setSuccess(message || "Account created successfully. Please check your email to verify your account.")
+      // Show success message
+      setSuccess(message)
 
       // Clear form
+      setName("")
       setEmail("")
       setPassword("")
       setConfirmPassword("")
+
+      // Log detailed information for debugging
+      console.log("User registration successful:", { email })
 
       // Announce success to screen readers
       const announcement = document.createElement("div")
@@ -90,9 +103,12 @@ export default function SignUp() {
       announcement.className = "sr-only"
       announcement.textContent = "Sign up successful. Please check your email to verify your account."
       document.body.appendChild(announcement)
+
+      // Optional: redirect after a delay
+      // setTimeout(() => router.push("/auth/signin"), 3000)
     } catch (err) {
-      setError("An unexpected error occurred. Please try again.")
       console.error("Sign up error:", err)
+      setError("An unexpected error occurred. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -140,6 +156,22 @@ export default function SignUp() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4" aria-label="Sign up form">
+            <div className="space-y-2">
+              <Label htmlFor="name" className="block">
+                Name (optional)
+              </Label>
+              <Input
+                id="name"
+                type="text"
+                name="name"
+                autoComplete="name"
+                placeholder="Your name"
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                disabled={isLoading || !!success}
+              />
+            </div>
+
             <div className="space-y-2">
               <Label htmlFor="email" className="block">
                 Email

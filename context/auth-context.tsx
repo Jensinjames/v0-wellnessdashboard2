@@ -1,21 +1,38 @@
 "use client"
 
 import type React from "react"
-
 import { createContext, useContext, useEffect, useState } from "react"
 import { getSupabaseClient } from "@/lib/supabase-client"
-import type { Session, User } from "@supabase/supabase-js"
+import type { Session, User, AuthError } from "@supabase/supabase-js"
+import { UserService } from "@/services/user-service"
 
 interface AuthContextType {
   user: User | null
   session: Session | null
   isLoading: boolean
-  error: string | null
-  signIn: (email: string, password: string) => Promise<{ success: boolean; message?: string }>
-  signUp: (email: string, password: string, metadata?: any) => Promise<{ success: boolean; message?: string }>
+  signUp: (
+    email: string,
+    password: string,
+    userData?: { name?: string },
+  ) => Promise<{
+    success: boolean
+    error: AuthError | Error | null
+    message: string
+  }>
+  signIn: (
+    email: string,
+    password: string,
+  ) => Promise<{
+    success: boolean
+    error: AuthError | Error | null
+    message: string
+  }>
   signOut: () => Promise<void>
-  resetPassword: (email: string) => Promise<{ success: boolean; message?: string }>
-  updatePassword: (password: string) => Promise<{ success: boolean; message?: string }>
+  resetPassword: (email: string) => Promise<{
+    success: boolean
+    error: AuthError | Error | null
+    message: string
+  }>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -24,24 +41,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     const supabase = getSupabaseClient()
-
-    // Try to get the session from localStorage first
-    try {
-      const storedSession = localStorage.getItem("supabase.auth.session")
-      if (storedSession) {
-        const parsedSession = JSON.parse(storedSession)
-        if (parsedSession && parsedSession.user) {
-          setSession(parsedSession)
-          setUser(parsedSession.user)
-        }
-      }
-    } catch (err) {
-      console.error("Error parsing stored session:", err)
-    }
 
     // Get the current session
     const initializeAuth = async () => {
@@ -57,17 +59,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (data && data.session) {
           setSession(data.session)
           setUser(data.session.user)
-
-          // Store session in localStorage for offline access
-          localStorage.setItem("supabase.auth.session", JSON.stringify(data.session))
         }
       } catch (err) {
         console.error("Error initializing auth:", err)
-        // Check if we have a stored session to use as fallback
-        const storedSession = localStorage.getItem("supabase.auth.session")
-        if (!storedSession) {
-          setError(err instanceof Error ? err.message : "Authentication error")
-        }
       } finally {
         setIsLoading(false)
       }
@@ -79,13 +73,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data: authListener } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession)
       setUser(newSession?.user ?? null)
-
-      // Store session in localStorage for offline access
-      if (newSession) {
-        localStorage.setItem("supabase.auth.session", JSON.stringify(newSession))
-      } else {
-        localStorage.removeItem("supabase.auth.session")
-      }
     })
 
     return () => {
@@ -93,9 +80,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [])
 
+  const signUp = async (email: string, password: string, userData?: { name?: string }) => {
+    try {
+      setIsLoading(true)
+      const supabase = getSupabaseClient()
+
+      // Ensure user_profiles table exists
+      await UserService.createUserProfilesTable()
+
+      // 1. Create the auth user
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+      })
+
+      if (error) {
+        throw error
+      }
+
+      if (!data.user) {
+        throw new Error("User creation failed")
+      }
+
+      // 2. Create the user profile in our database
+      const userProfile = await UserService.createUserProfile({
+        auth_id: data.user.id,
+        email: data.user.email!,
+        display_name: userData?.name || email.split("@")[0],
+      })
+
+      if (!userProfile) {
+        throw new Error("Database error saving new user")
+      }
+
+      return {
+        success: true,
+        error: null,
+        message: "Account created successfully! Please check your email for verification instructions.",
+      }
+    } catch (error) {
+      console.error("Sign up error:", error)
+      const errorMessage = error instanceof Error ? error.message : "Failed to create account"
+
+      return {
+        success: false,
+        error: error as AuthError | Error,
+        message: errorMessage,
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   const signIn = async (email: string, password: string) => {
     try {
-      setError(null)
+      setIsLoading(true)
       const supabase = getSupabaseClient()
 
       const { data, error } = await supabase.auth.signInWithPassword({
@@ -103,108 +142,84 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         password,
       })
 
-      if (error) throw error
-
-      return { success: true }
-    } catch (err) {
-      console.error("Sign in error:", err)
-      setError(err instanceof Error ? err.message : "Sign in failed")
-      return {
-        success: false,
-        message: err instanceof Error ? err.message : "Sign in failed. Please check your credentials and try again.",
+      if (error) {
+        throw error
       }
-    }
-  }
 
-  const signUp = async (email: string, password: string, metadata?: any) => {
-    try {
-      setError(null)
-      const supabase = getSupabaseClient()
+      // Check if we need to create a profile for this user
+      if (data.user) {
+        const profile = await UserService.getUserProfileByAuthId(data.user.id)
 
-      const { data, error } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: metadata,
-        },
-      })
-
-      if (error) throw error
+        if (!profile) {
+          // Create profile if it doesn't exist
+          await UserService.createUserProfile({
+            auth_id: data.user.id,
+            email: data.user.email!,
+            display_name: data.user.email!.split("@")[0],
+          })
+        }
+      }
 
       return {
         success: true,
-        message: "Please check your email for a confirmation link.",
+        error: null,
+        message: "Signed in successfully!",
       }
-    } catch (err) {
-      console.error("Sign up error:", err)
-      setError(err instanceof Error ? err.message : "Sign up failed")
+    } catch (error) {
+      console.error("Sign in error:", error)
+      const errorMessage = error instanceof Error ? error.message : "Failed to sign in"
+
       return {
         success: false,
-        message: err instanceof Error ? err.message : "Sign up failed. Please try again.",
+        error: error as AuthError | Error,
+        message: errorMessage,
       }
+    } finally {
+      setIsLoading(false)
     }
   }
 
   const signOut = async () => {
     try {
+      setIsLoading(true)
       const supabase = getSupabaseClient()
       await supabase.auth.signOut()
-
-      // Clear stored session
-      localStorage.removeItem("supabase.auth.session")
-    } catch (err) {
-      console.error("Sign out error:", err)
-      setError(err instanceof Error ? err.message : "Sign out failed")
+    } catch (error) {
+      console.error("Sign out error:", error)
+    } finally {
+      setIsLoading(false)
     }
   }
 
   const resetPassword = async (email: string) => {
     try {
-      setError(null)
+      setIsLoading(true)
       const supabase = getSupabaseClient()
 
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/update-password`,
       })
 
-      if (error) throw error
+      if (error) {
+        throw error
+      }
 
       return {
         success: true,
+        error: null,
         message: "Password reset instructions sent to your email.",
       }
-    } catch (err) {
-      console.error("Password reset error:", err)
-      setError(err instanceof Error ? err.message : "Password reset failed")
+    } catch (error) {
+      console.error("Reset password error:", error)
+      const errorMessage = error instanceof Error ? error.message : "Failed to reset password"
+
       return {
         success: false,
-        message: err instanceof Error ? err.message : "Password reset failed. Please try again.",
+        error: error as AuthError | Error,
+        message: errorMessage,
       }
-    }
-  }
-
-  const updatePassword = async (password: string) => {
-    try {
-      setError(null)
-      const supabase = getSupabaseClient()
-
-      const { error } = await supabase.auth.updateUser({
-        password,
-      })
-
-      if (error) throw error
-
-      return {
-        success: true,
-        message: "Password updated successfully.",
-      }
-    } catch (err) {
-      console.error("Update password error:", err)
-      setError(err instanceof Error ? err.message : "Password update failed")
-      return {
-        success: false,
-        message: err instanceof Error ? err.message : "Password update failed. Please try again.",
-      }
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -212,18 +227,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     session,
     isLoading,
-    error,
-    signIn,
     signUp,
+    signIn,
     signOut,
     resetPassword,
-    updatePassword,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
-export function useAuth() {
+export const useAuth = () => {
   const context = useContext(AuthContext)
   if (context === undefined) {
     throw new Error("useAuth must be used within an AuthProvider")
