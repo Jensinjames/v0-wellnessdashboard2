@@ -1,12 +1,12 @@
+import { ProfileForm } from "@/components/profile/profile-form"
 import { Navigation } from "@/components/navigation"
-import { WellnessDashboard } from "@/components/dashboard/wellness-dashboard"
 
-export default function DashboardPage() {
+export default function ProfilePage() {
   return (
     <>
       <Navigation />
       <div className="container mx-auto py-8">
-        <WellnessDashboard />
+        <ProfileForm />
       </div>
     </>
   )

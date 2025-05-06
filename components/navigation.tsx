@@ -2,55 +2,41 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Button } from "@/components/ui/button"
 import { useAuth } from "@/context/auth-context"
-import { BarChart2, Calendar, LayoutDashboard, LogOut, Settings, User } from "lucide-react"
+import { Button } from "@/components/ui/button"
 
 export function Navigation() {
   const pathname = usePathname()
   const { user, signOut } = useAuth()
 
-  const isActive = (path: string) => pathname === path
-
-  const navItems = [
-    { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-    { href: "/activity", label: "Activity", icon: BarChart2 },
-    { href: "/categories", label: "Categories", icon: Calendar },
-    { href: "/profile", label: "Profile", icon: User },
-    { href: "/settings", label: "Settings", icon: Settings },
-  ]
+  if (!user) return null
 
   return (
-    <nav className="flex flex-col space-y-1 p-2">
-      {navItems.map((item) => {
-        const Icon = item.icon
-        return (
-          <Button
-            key={item.href}
-            variant={isActive(item.href) ? "secondary" : "ghost"}
-            size="sm"
-            className="justify-start"
-            asChild
-          >
-            <Link href={item.href}>
-              <Icon className="mr-2 h-4 w-4" />
-              {item.label}
+    <nav className="border-b bg-background">
+      <div className="container flex h-16 items-center justify-between">
+        <div className="flex items-center gap-6">
+          <Link href="/dashboard" className="text-xl font-bold">
+            Wellness Dashboard
+          </Link>
+          <div className="flex gap-4">
+            <Link
+              href="/dashboard"
+              className={`text-sm ${pathname === "/dashboard" ? "font-medium text-primary" : "text-muted-foreground"}`}
+            >
+              Dashboard
             </Link>
-          </Button>
-        )
-      })}
-
-      {user && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="justify-start text-red-500 hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950"
-          onClick={() => signOut()}
-        >
-          <LogOut className="mr-2 h-4 w-4" />
+            <Link
+              href="/profile"
+              className={`text-sm ${pathname === "/profile" ? "font-medium text-primary" : "text-muted-foreground"}`}
+            >
+              Profile
+            </Link>
+          </div>
+        </div>
+        <Button variant="ghost" onClick={() => signOut()}>
           Sign Out
         </Button>
-      )}
+      </div>
     </nav>
   )
 }

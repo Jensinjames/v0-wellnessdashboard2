@@ -1,34 +1,65 @@
+import { createServerClient } from "@supabase/ssr"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 
-export function middleware(request: NextRequest) {
-  // Check if the request is for a client-side API route
-  if (request.nextUrl.pathname.startsWith("/api/")) {
-    // Get the environment variables
-    const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+export async function middleware(req: NextRequest) {
+  const res = NextResponse.next()
 
-    // Ensure the service key is not exposed to the client
-    if (serviceKey) {
-      // Remove sensitive headers from the request
-      const headers = new Headers(request.headers)
-      headers.delete("x-supabase-service-key")
-
-      // Continue with the modified request
-      return NextResponse.next({
-        request: {
-          headers,
+  // Create supabase client using cookies from the request
+  const supabase = createServerClient(
+    process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+    process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
+    {
+      cookies: {
+        get(name: string) {
+          return req.cookies.get(name)?.value
         },
-      })
-    }
+        set(
+          name: string,
+          value: string,
+          options: {
+            path: string
+            maxAge: number
+            domain?: string
+            sameSite?: "lax" | "strict" | "none"
+            secure?: boolean
+          },
+        ) {
+          res.cookies.set({ name, value, ...options })
+        },
+        remove(name: string, options: { path: string; domain?: string }) {
+          res.cookies.set({ name, value: "", ...options, maxAge: 0 })
+        },
+      },
+    },
+  )
+
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+
+  // Check auth condition
+  const isAuthRoute = req.nextUrl.pathname.startsWith("/auth")
+
+  // If accessing auth routes with a session, redirect to dashboard
+  if (isAuthRoute && session && req.nextUrl.pathname !== "/auth/callback") {
+    return NextResponse.redirect(new URL("/dashboard", req.url))
   }
 
-  // Continue with the request for non-API routes
-  return NextResponse.next()
+  // If accessing protected routes without a session, redirect to sign in
+  if (!isAuthRoute && !session) {
+    return NextResponse.redirect(new URL("/auth/sign-in", req.url))
+  }
+
+  return res
 }
 
 export const config = {
   matcher: [
-    // Match all API routes
-    "/api/:path*",
+    // Protected routes
+    "/dashboard/:path*",
+    "/profile/:path*",
+    // Auth routes
+    "/auth/:path*",
   ],
 }
