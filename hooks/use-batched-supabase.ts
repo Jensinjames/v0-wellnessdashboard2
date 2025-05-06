@@ -5,7 +5,7 @@ import { useAuth } from "@/context/auth-context"
 import { getSupabaseClient } from "@/lib/supabase-client"
 
 // Define types for our batching system
-type BatcherStatus = "idle" | "pending" | "success" | "error" | "rate-limited"
+type BatcherStatus = "idle" | "pending" | "success" | "error" | "rate-limited" | "network-error"
 
 type BatchPriority = "high" | "medium" | "low"
 
@@ -14,7 +14,9 @@ type BatchOptions = {
   category?: string
   onSuccess?: (data: any) => void
   onError?: (error: any) => void
-  bypassBatching?: boolean // New option to bypass batching for critical operations
+  bypassBatching?: boolean
+  retryOnNetworkError?: boolean
+  maxRetries?: number
 }
 
 interface BatchItem {
@@ -25,6 +27,9 @@ interface BatchItem {
   priority: BatchPriority
   category: string
   timestamp: number
+  retryCount?: number
+  retryOnNetworkError?: boolean
+  maxRetries?: number
 }
 
 // Create a singleton batch manager to maintain state across components
@@ -41,10 +46,21 @@ class BatchManager {
   private networkError = false
   private networkCheckTimer: NodeJS.Timeout | null = null
   private authOperationInProgress = false
+  private networkCheckInProgress = false
+  private lastSuccessfulNetworkCheck = 0
+  private networkCheckRetryCount = 0
+  private maxNetworkCheckRetries = 3
+  private networkCheckBackoff = 5000 // Start with 5 seconds
 
   private constructor() {
     // Private constructor to enforce singleton
     this.checkNetworkStatus()
+
+    // Add event listeners for online/offline events
+    if (typeof window !== "undefined") {
+      window.addEventListener("online", this.handleOnline)
+      window.addEventListener("offline", this.handleOffline)
+    }
   }
 
   public static getInstance(): BatchManager {
@@ -54,6 +70,21 @@ class BatchManager {
     return BatchManager.instance
   }
 
+  private handleOnline = () => {
+    console.log("Browser reports online status")
+    // Don't immediately set networkError to false
+    // Instead, verify with an actual network check
+    this.networkCheckRetryCount = 0
+    this.networkCheckBackoff = 5000
+    this.performNetworkCheck()
+  }
+
+  private handleOffline = () => {
+    console.log("Browser reports offline status")
+    this.networkError = true
+    this.notifyListeners("network-error")
+  }
+
   // Check network status periodically
   private checkNetworkStatus(): void {
     // Check immediately
@@ -61,48 +92,120 @@ class BatchManager {
 
     // Then check every 30 seconds
     this.networkCheckTimer = setInterval(() => {
-      this.performNetworkCheck()
+      // Only perform check if we haven't done one recently (within 10 seconds)
+      const now = Date.now()
+      if (now - this.lastSuccessfulNetworkCheck > 10000) {
+        this.performNetworkCheck()
+      }
     }, 30000)
   }
 
   private async performNetworkCheck(): Promise<void> {
+    // Prevent multiple simultaneous checks
+    if (this.networkCheckInProgress) return
+
+    this.networkCheckInProgress = true
+
     try {
       // Simple check to see if we can reach the Supabase URL
       if (typeof window !== "undefined") {
         const online = navigator.onLine
         if (!online) {
           this.networkError = true
+          this.notifyListeners("network-error")
+          this.networkCheckInProgress = false
           return
         }
 
-        // If we're online, do a more thorough check
+        // If we're online according to the browser, do a more thorough check
         const controller = new AbortController()
         const timeoutId = setTimeout(() => controller.abort(), 5000)
 
-        // Try to fetch the Supabase URL
-        await fetch(process.env.NEXT_PUBLIC_SUPABASE_URL || "", {
-          method: "HEAD",
-          signal: controller.signal,
-          mode: "no-cors", // Avoid CORS issues
-        })
+        try {
+          // Try multiple endpoints to be more resilient
+          const endpoints = [
+            process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+            "https://www.google.com",
+            "https://www.cloudflare.com",
+          ]
 
-        clearTimeout(timeoutId)
-        this.networkError = false
+          // Try each endpoint until one succeeds
+          for (const endpoint of endpoints) {
+            try {
+              const response = await fetch(endpoint, {
+                method: "HEAD",
+                signal: controller.signal,
+                mode: "no-cors", // Avoid CORS issues
+                cache: "no-store", // Avoid caching
+                credentials: "omit", // Don't send cookies
+              })
+
+              // If we get here, the network is working
+              clearTimeout(timeoutId)
+              this.networkError = false
+              this.lastSuccessfulNetworkCheck = Date.now()
+              this.networkCheckRetryCount = 0
+              this.networkCheckBackoff = 5000
+
+              // If we were previously in error state, notify listeners we're back online
+              this.notifyListeners("idle")
+
+              // Resume processing if we have items in the queue
+              if (this.queue.length > 0 && !this.processing && !this.rateLimited) {
+                this.scheduleBatch()
+              }
+
+              this.networkCheckInProgress = false
+              return
+            } catch (endpointError) {
+              // Try the next endpoint
+              console.warn(`Network check failed for ${endpoint}:`, endpointError)
+            }
+          }
+
+          // If we get here, all endpoints failed
+          throw new Error("All network check endpoints failed")
+        } catch (error) {
+          clearTimeout(timeoutId)
+          throw error
+        }
       }
     } catch (error) {
       console.warn("Network check failed:", error)
       this.networkError = true
+      this.notifyListeners("network-error")
+
+      // Implement exponential backoff for retries
+      if (this.networkCheckRetryCount < this.maxNetworkCheckRetries) {
+        this.networkCheckRetryCount++
+        this.networkCheckBackoff *= 2 // Exponential backoff
+
+        console.log(
+          `Scheduling network check retry in ${this.networkCheckBackoff}ms (attempt ${this.networkCheckRetryCount})`,
+        )
+
+        setTimeout(() => {
+          this.performNetworkCheck()
+        }, this.networkCheckBackoff)
+      }
+    } finally {
+      this.networkCheckInProgress = false
     }
   }
 
   // Set auth operation status
   public setAuthOperationStatus(inProgress: boolean): void {
     this.authOperationInProgress = inProgress
+
+    // If auth operation completed and we have items in queue, resume processing
+    if (!inProgress && this.queue.length > 0 && !this.processing && !this.rateLimited && !this.networkError) {
+      this.scheduleBatch()
+    }
   }
 
   public addToBatch(item: Omit<BatchItem, "id" | "timestamp">): string {
-    // If we have a network error, reject immediately
-    if (this.networkError) {
+    // If we have a network error and not retrying on network error, reject immediately
+    if (this.networkError && !item.retryOnNetworkError) {
       setTimeout(() => {
         item.reject(new Error("Network error: Unable to connect to the server"))
       }, 0)
@@ -115,6 +218,7 @@ class BatchManager {
       ...item,
       id,
       timestamp: Date.now(),
+      retryCount: 0,
     })
 
     this.notifyListeners("pending")
@@ -152,7 +256,13 @@ class BatchManager {
 
   private notifyListeners(status: BatcherStatus): void {
     Object.values(this.listeners).forEach((callbacks) => {
-      callbacks.forEach((callback) => callback(status))
+      callbacks.forEach((callback) => {
+        try {
+          callback(status)
+        } catch (error) {
+          console.error("Error in batch manager listener:", error)
+        }
+      })
     })
   }
 
@@ -214,14 +324,30 @@ class BatchManager {
           if (this.isRateLimitError(error)) {
             this.handleRateLimit()
           } else if (this.isNetworkError(error)) {
+            // Handle network error
             this.networkError = true
-            // Recheck network after a delay
-            setTimeout(() => this.performNetworkCheck(), 5000)
+            this.notifyListeners("network-error")
+
+            // If we should retry on network error
+            if (item.retryOnNetworkError && (item.retryCount || 0) < (item.maxRetries || 3)) {
+              // Put back in queue with incremented retry count
+              this.queue.push({
+                ...item,
+                retryCount: (item.retryCount || 0) + 1,
+              })
+
+              // Schedule a network check
+              setTimeout(() => this.performNetworkCheck(), 2000)
+            } else {
+              item.reject(error)
+            }
           } else if (this.isDatabaseError(error)) {
             // Handle database errors specially
             console.error("Database error in batch processing:", error)
+            item.reject(error)
+          } else {
+            item.reject(error)
           }
-          item.reject(error)
         }
       })
 
@@ -235,9 +361,10 @@ class BatchManager {
         this.handleRateLimit()
       } else if (this.isNetworkError(error)) {
         this.networkError = true
-        // Recheck network after a delay
-        setTimeout(() => this.performNetworkCheck(), 5000)
-        this.notifyListeners("error")
+        this.notifyListeners("network-error")
+
+        // Schedule a network check
+        setTimeout(() => this.performNetworkCheck(), 2000)
       } else if (this.isDatabaseError(error)) {
         // Handle database errors specially
         console.error("Database error in batch processing:", error)
@@ -276,6 +403,7 @@ class BatchManager {
 
     // Check for network error indicators
     if (error instanceof TypeError && error.message.includes("Failed to fetch")) return true
+    if (error instanceof DOMException && error.name === "AbortError") return true
     if (
       error.message &&
       (error.message.includes("network") ||
@@ -283,7 +411,10 @@ class BatchManager {
         error.message.includes("connection") ||
         error.message.includes("Connection") ||
         error.message.includes("offline") ||
-        error.message.includes("Offline"))
+        error.message.includes("Offline") ||
+        error.message.includes("Failed to fetch") ||
+        error.message.includes("timeout") ||
+        error.message.includes("Timeout"))
     )
       return true
 
@@ -350,8 +481,32 @@ class BatchManager {
     this.notifyListeners("idle")
   }
 
+  // Force a network check
+  public checkNetwork(): Promise<boolean> {
+    return new Promise((resolve) => {
+      const previousState = this.networkError
+
+      // Perform network check
+      this.performNetworkCheck()
+        .then(() => {
+          // Wait a bit to ensure the check completes
+          setTimeout(() => {
+            resolve(!this.networkError)
+          }, 1000)
+        })
+        .catch(() => {
+          resolve(false)
+        })
+    })
+  }
+
   // Clean up resources
   public dispose(): void {
+    if (typeof window !== "undefined") {
+      window.removeEventListener("online", this.handleOnline)
+      window.removeEventListener("offline", this.handleOffline)
+    }
+
     if (this.networkCheckTimer) {
       clearInterval(this.networkCheckTimer)
     }
@@ -410,7 +565,15 @@ function useBatchedSupabaseHook() {
 
   // Execute a function through the batch manager
   const executeBatched = useCallback(<T,>(fn: () => Promise<T>, options: BatchOptions = {}): Promise<T> => {
-    const { priority = "medium", category = "default", onSuccess, onError, bypassBatching = false } = options
+    const {
+      priority = "medium",
+      category = "default",
+      onSuccess,
+      onError,
+      bypassBatching = false,
+      retryOnNetworkError = false,
+      maxRetries = 3,
+    } = options
 
     // For auth operations or when bypassing batching, execute directly
     if (bypassBatching || category === "auth") {
@@ -455,6 +618,8 @@ function useBatchedSupabaseHook() {
         reject,
         priority,
         category,
+        retryOnNetworkError,
+        maxRetries,
       })
     })
   }, [])
@@ -496,6 +661,11 @@ function useBatchedSupabaseHook() {
     batchManager.setAuthOperationStatus(inProgress)
   }, [])
 
+  // Force a network check
+  const checkNetwork = useCallback(async (): Promise<boolean> => {
+    return batchManager.checkNetwork()
+  }, [])
+
   return {
     executeBatched,
     executeBatchedQuery,
@@ -503,6 +673,7 @@ function useBatchedSupabaseHook() {
     batcherStatus,
     clearQueue,
     setAuthOperationStatus,
+    checkNetwork,
   }
 }
 

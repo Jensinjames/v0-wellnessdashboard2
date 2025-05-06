@@ -7,14 +7,16 @@ import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
 // Import the named export
 import { useBatchedSupabase } from "@/hooks/use-batched-supabase"
-import { RefreshCw, XCircle, Wifi, WifiOff } from "lucide-react"
+import { RefreshCw, XCircle, Wifi, WifiOff, AlertTriangle } from "lucide-react"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle } from "lucide-react"
 
 export function RequestBatcherStatus() {
-  const { batcherStatus, status, clearQueue } = useBatchedSupabase()
+  const { batcherStatus, status, clearQueue, checkNetwork } = useBatchedSupabase()
   const [eventLog, setEventLog] = useState<Array<{ type: string; message: string; timestamp: number }>>([])
   const [showLog, setShowLog] = useState(false)
+  const [isCheckingNetwork, setIsCheckingNetwork] = useState(false)
+  const [lastNetworkCheck, setLastNetworkCheck] = useState<number | null>(null)
 
   // Add status changes to event log
   useEffect(() => {
@@ -44,6 +46,8 @@ export function RequestBatcherStatus() {
         return "Error processing batch"
       case "rate-limited":
         return "Rate limit detected, pausing requests for 60 seconds"
+      case "network-error":
+        return "Network error detected, connection lost"
       default:
         return `Status: ${status}`
     }
@@ -53,6 +57,52 @@ export function RequestBatcherStatus() {
   const formatTime = (timestamp: number): string => {
     const date = new Date(timestamp)
     return date.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+  }
+
+  // Handle manual network check
+  const handleCheckNetwork = async () => {
+    setIsCheckingNetwork(true)
+    setEventLog((prev) => [
+      {
+        type: "info",
+        message: "Manual network check initiated",
+        timestamp: Date.now(),
+      },
+      ...prev.slice(0, 19),
+    ])
+
+    try {
+      const isConnected = await checkNetwork()
+
+      setEventLog((prev) => [
+        {
+          type: isConnected ? "success" : "error",
+          message: isConnected
+            ? "Network check successful, connection restored"
+            : "Network check failed, still disconnected",
+          timestamp: Date.now(),
+        },
+        ...prev.slice(0, 19),
+      ])
+
+      setLastNetworkCheck(Date.now())
+    } catch (error) {
+      setEventLog((prev) => [
+        {
+          type: "error",
+          message: "Network check failed with error",
+          timestamp: Date.now(),
+        },
+        ...prev.slice(0, 19),
+      ])
+    } finally {
+      setIsCheckingNetwork(false)
+    }
+  }
+
+  // Handle page reload
+  const handleReload = () => {
+    window.location.reload()
   }
 
   return (
@@ -83,10 +133,36 @@ export function RequestBatcherStatus() {
             <WifiOff className="h-4 w-4" />
             <AlertTitle>Network Error</AlertTitle>
             <AlertDescription>
-              Unable to connect to the server. Check your internet connection.
-              <Button variant="outline" size="sm" className="mt-2" onClick={() => window.location.reload()}>
-                <Wifi className="mr-2 h-4 w-4" /> Reconnect
-              </Button>
+              <p className="mb-2">Unable to connect to the server. This could be due to:</p>
+              <ul className="list-disc pl-5 mb-2 text-sm">
+                <li>Your internet connection is offline</li>
+                <li>The server is temporarily unavailable</li>
+                <li>A firewall or network restriction is blocking access</li>
+                <li>CORS policy issues with the API endpoint</li>
+              </ul>
+              <div className="flex flex-wrap gap-2 mt-3">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleCheckNetwork}
+                  disabled={isCheckingNetwork}
+                  className="bg-white/10"
+                >
+                  {isCheckingNetwork ? (
+                    <>
+                      <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Checking...
+                    </>
+                  ) : (
+                    <>
+                      <Wifi className="mr-2 h-4 w-4" /> Check Connection
+                    </>
+                  )}
+                </Button>
+                <Button variant="outline" size="sm" onClick={handleReload} className="bg-white/10">
+                  <RefreshCw className="mr-2 h-4 w-4" /> Reload Page
+                </Button>
+              </div>
+              {lastNetworkCheck && <p className="text-xs mt-2">Last check: {formatTime(lastNetworkCheck)}</p>}
             </AlertDescription>
           </Alert>
         )}
@@ -97,6 +173,19 @@ export function RequestBatcherStatus() {
             <AlertTitle>Rate Limiting Detected</AlertTitle>
             <AlertDescription>
               The system has detected rate limiting. Requests are paused for 60 seconds to prevent further issues.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {!batcherStatus.networkError && !batcherStatus.rateLimited && navigator.onLine === false && (
+          <Alert className="bg-amber-50 text-amber-800 border-amber-200">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>Browser Offline</AlertTitle>
+            <AlertDescription>
+              Your browser reports that you're offline. Some features may be limited.
+              <Button variant="outline" size="sm" onClick={handleCheckNetwork} className="mt-2 bg-amber-100">
+                <Wifi className="mr-2 h-4 w-4" /> Check Connection
+              </Button>
             </AlertDescription>
           </Alert>
         )}
@@ -144,6 +233,11 @@ export function RequestBatcherStatus() {
 
         <div className="text-xs text-muted-foreground">
           <p>Request batching helps reduce API calls and prevent rate limiting.</p>
+          {navigator.onLine ? (
+            <p className="text-green-600 mt-1">Browser reports: Online</p>
+          ) : (
+            <p className="text-red-600 mt-1">Browser reports: Offline</p>
+          )}
         </div>
       </CardContent>
     </Card>
@@ -161,6 +255,10 @@ function getEventTypeColor(type: string): string {
       return "text-red-600"
     case "rate-limited":
       return "text-amber-600"
+    case "network-error":
+      return "text-red-600"
+    case "info":
+      return "text-blue-600"
     default:
       return "text-gray-600"
   }
