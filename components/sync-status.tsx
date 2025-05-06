@@ -2,96 +2,92 @@
 
 import { useSync } from "@/hooks/use-sync"
 import { Button } from "@/components/ui/button"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Cloud, CloudOff, RefreshCw, AlertCircle, Check, Clock } from "lucide-react"
-import { useState } from "react"
+import { Badge } from "@/components/ui/badge"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
+import { Cloud, CloudOff, RefreshCw } from "lucide-react"
 import { formatDistanceToNow } from "date-fns"
+import { useState, useEffect } from "react"
 
 export function SyncStatus() {
-  const { pendingCount, isSyncing, lastSyncTime, syncErrors, syncData, clearErrors } = useSync()
-  const [showDetails, setShowDetails] = useState(false)
+  const { syncData, isSyncing, lastSyncTime, pendingCount } = useSync()
+  const [isOnline, setIsOnline] = useState(navigator.onLine)
 
-  const handleSync = async () => {
-    await syncData()
-  }
+  // Listen for online/offline events
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true)
+    const handleOffline = () => setIsOnline(false)
 
-  if (syncErrors.length > 0) {
-    return (
-      <Alert variant="destructive" className="mb-4">
-        <AlertCircle className="h-4 w-4" />
-        <AlertTitle>Sync Error</AlertTitle>
-        <AlertDescription className="flex flex-col gap-2">
-          <p>There was an error syncing your data.</p>
-          {showDetails && (
-            <div className="mt-2 text-sm bg-destructive/10 p-2 rounded max-h-32 overflow-y-auto">
-              {syncErrors.map((error, index) => (
-                <p key={index}>{error}</p>
-              ))}
-            </div>
-          )}
-          <div className="flex gap-2 mt-2">
-            <Button size="sm" variant="outline" onClick={() => setShowDetails(!showDetails)}>
-              {showDetails ? "Hide Details" : "Show Details"}
-            </Button>
-            <Button size="sm" variant="outline" onClick={clearErrors}>
-              Dismiss
-            </Button>
-            <Button size="sm" onClick={handleSync}>
-              Retry
-            </Button>
-          </div>
-        </AlertDescription>
-      </Alert>
-    )
-  }
+    window.addEventListener("online", handleOnline)
+    window.addEventListener("offline", handleOffline)
 
-  if (pendingCount > 0) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        {isSyncing ? (
-          <>
-            <RefreshCw className="h-4 w-4 animate-spin" />
-            <span>
-              Syncing {pendingCount} {pendingCount === 1 ? "change" : "changes"}...
-            </span>
-          </>
-        ) : (
-          <>
-            <Clock className="h-4 w-4" />
-            <span>
-              {pendingCount} {pendingCount === 1 ? "change" : "changes"} pending
-            </span>
-            <Button size="sm" variant="ghost" className="h-8 px-2" onClick={handleSync}>
-              Sync Now
-            </Button>
-          </>
-        )}
-      </div>
-    )
-  }
+    return () => {
+      window.removeEventListener("online", handleOnline)
+      window.removeEventListener("offline", handleOffline)
+    }
+  }, [])
 
-  if (lastSyncTime) {
-    return (
-      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-        <Check className="h-4 w-4 text-green-500" />
-        <span>All changes synced {formatDistanceToNow(lastSyncTime, { addSuffix: true })}</span>
-      </div>
-    )
-  }
+  // Format the last sync time
+  const formattedLastSync = lastSyncTime ? formatDistanceToNow(lastSyncTime, { addSuffix: true }) : "Never"
 
   return (
-    <div className="flex items-center gap-2 text-sm text-muted-foreground">
-      {navigator.onLine ? (
-        <>
-          <Cloud className="h-4 w-4" />
-          <span>Connected</span>
-        </>
-      ) : (
-        <>
-          <CloudOff className="h-4 w-4" />
-          <span>Offline</span>
-        </>
+    <div className="flex items-center gap-2">
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div className="flex items-center gap-1">
+              {isOnline ? (
+                <Cloud className="h-4 w-4 text-green-500" />
+              ) : (
+                <CloudOff className="h-4 w-4 text-amber-500" />
+              )}
+              <span className="text-sm text-muted-foreground">{isOnline ? "Online" : "Offline"}</span>
+            </div>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>
+              {isOnline ? "Connected to the server" : "Working offline. Changes will sync when you're back online."}
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
+
+      {pendingCount > 0 && (
+        <TooltipProvider>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Badge variant="outline" className="gap-1 border-amber-200 bg-amber-50 text-amber-700">
+                <span>{pendingCount}</span>
+                <span className="sr-only">pending changes</span>
+              </Badge>
+            </TooltipTrigger>
+            <TooltipContent>
+              <p>{pendingCount} changes waiting to sync</p>
+            </TooltipContent>
+          </Tooltip>
+        </TooltipProvider>
       )}
+
+      <TooltipProvider>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8"
+              onClick={() => syncData()}
+              disabled={isSyncing || !isOnline}
+            >
+              <RefreshCw className={`h-4 w-4 ${isSyncing ? "animate-spin" : ""}`} />
+              <span className="sr-only">Sync now</span>
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>
+            <p>
+              {isSyncing ? "Syncing..." : isOnline ? `Last synced: ${formattedLastSync}` : "Cannot sync while offline"}
+            </p>
+          </TooltipContent>
+        </Tooltip>
+      </TooltipProvider>
     </div>
   )
 }

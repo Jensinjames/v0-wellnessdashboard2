@@ -50,8 +50,19 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
 
   // Check network status
   useEffect(() => {
-    const handleOnline = () => setIsOffline(false)
-    const handleOffline = () => setIsOffline(true)
+    const handleOnline = () => {
+      console.log("Network connection restored")
+      setIsOffline(false)
+      // Attempt to sync data when connection is restored
+      refreshData().catch((err) => {
+        console.error("Error refreshing data after coming online:", err)
+      })
+    }
+
+    const handleOffline = () => {
+      console.log("Network connection lost")
+      setIsOffline(true)
+    }
 
     window.addEventListener("online", handleOnline)
     window.addEventListener("offline", handleOffline)
@@ -118,7 +129,9 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
   // Fetch data from Supabase when user changes
   useEffect(() => {
     if (user) {
-      refreshData()
+      refreshData().catch((err) => {
+        console.error("Error in initial data refresh:", err)
+      })
     } else {
       // If no user, use default categories but empty goals and entries
       setCategories(DEFAULT_CATEGORIES)
@@ -127,6 +140,26 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(false)
     }
   }, [user])
+
+  // Helper function to fetch with timeout
+  const fetchWithTimeout = async (promise: Promise<any>, timeoutMs = 8000) => {
+    let timeoutId: NodeJS.Timeout
+
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => {
+        reject(new Error("Request timed out"))
+      }, timeoutMs)
+    })
+
+    try {
+      const result = await Promise.race([promise, timeoutPromise])
+      clearTimeout(timeoutId)
+      return result
+    } catch (error) {
+      clearTimeout(timeoutId)
+      throw error
+    }
+  }
 
   // Function to refresh data from Supabase
   const refreshData = async () => {
@@ -137,90 +170,205 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
 
     try {
       // Check if we're offline
-      if (isOffline) {
+      if (!navigator.onLine) {
         console.log("Operating in offline mode, using local data")
+        setIsOffline(true)
         setIsLoading(false)
         return
       }
 
       const supabase = getSupabaseClient()
+      let userCategories: WellnessCategory[] = []
 
-      // Fetch user categories
+      // Fetch user categories with timeout
       try {
-        const { data: categoriesData, error: categoriesError } = await supabase
-          .from("user_categories")
-          .select("*")
-          .eq("user_id", user.id)
+        console.log("Fetching categories...")
+        const categoriesPromise = supabase.from("user_categories").select("*").eq("user_id", user.id)
 
-        if (categoriesError) throw new Error(`Error fetching categories: ${categoriesError.message}`)
+        const { data: categoriesData, error: categoriesError } = await fetchWithTimeout(categoriesPromise)
+
+        if (categoriesError) {
+          throw new Error(`Error fetching categories: ${categoriesError.message}`)
+        }
 
         // If no categories found, use default categories
-        const userCategories =
+        userCategories =
           categoriesData && categoriesData.length > 0
             ? categoriesData.map(mapDbCategoryToWellnessCategory)
             : DEFAULT_CATEGORIES
 
-        // Fetch user metrics for each category
+        console.log("Categories fetched successfully:", userCategories.length)
+      } catch (categoryError) {
+        console.error("Error in category fetching:", categoryError)
+
+        // Check if it's a network error
+        if (
+          categoryError instanceof Error &&
+          (categoryError.message.includes("Failed to fetch") ||
+            categoryError.message.includes("Network Error") ||
+            categoryError.message.includes("timeout"))
+        ) {
+          setIsOffline(true)
+          console.log("Network error detected during category fetch, switching to offline mode")
+
+          // Fall back to local categories if available, otherwise use defaults
+          const savedCategories = localStorage.getItem("wellnessCategories")
+          if (savedCategories) {
+            userCategories = JSON.parse(savedCategories)
+          } else {
+            userCategories = DEFAULT_CATEGORIES
+          }
+        } else {
+          // For other errors, also fall back to local data
+          const savedCategories = localStorage.getItem("wellnessCategories")
+          if (savedCategories) {
+            userCategories = JSON.parse(savedCategories)
+          } else {
+            userCategories = DEFAULT_CATEGORIES
+          }
+        }
+      }
+
+      // Fetch user metrics for each category if we're still online
+      if (navigator.onLine && !isOffline) {
         for (const category of userCategories) {
           try {
-            const { data: metricsData, error: metricsError } = await supabase
-              .from("user_metrics")
-              .select("*")
-              .eq("category_id", category.id)
+            console.log(`Fetching metrics for category ${category.id}...`)
+            const metricsPromise = supabase.from("user_metrics").select("*").eq("category_id", category.id)
 
-            if (metricsError) throw new Error(`Error fetching metrics: ${metricsError.message}`)
+            const { data: metricsData, error: metricsError } = await fetchWithTimeout(metricsPromise, 5000)
+
+            if (metricsError) {
+              throw new Error(`Error fetching metrics: ${metricsError.message}`)
+            }
 
             category.metrics =
               metricsData && metricsData.length > 0
                 ? metricsData.map(mapDbMetricToWellnessMetric)
                 : category.metrics || []
+
+            console.log(`Metrics fetched successfully for category ${category.id}:`, category.metrics.length)
           } catch (metricError) {
-            console.error("Error fetching metrics:", metricError)
-            // Continue with other categories
+            console.error("Error fetching metrics for category", category.id, ":", metricError)
+
+            // If it's a network error, switch to offline mode
+            if (
+              metricError instanceof Error &&
+              (metricError.message.includes("Failed to fetch") ||
+                metricError.message.includes("Network Error") ||
+                metricError.message.includes("timeout"))
+            ) {
+              setIsOffline(true)
+              console.log("Network error detected during metrics fetch, switching to offline mode")
+              break // Stop trying to fetch more metrics
+            }
+
+            // Continue with other categories, but keep existing metrics if available
           }
         }
+      }
 
-        setCategories(userCategories)
-      } catch (categoryError) {
-        console.error("Error in category fetching:", categoryError)
-        // Fall back to default categories
-        setCategories(DEFAULT_CATEGORIES)
+      // Set the categories regardless of how we got them
+      setCategories(userCategories)
+
+      // If we're offline now, don't try to fetch goals and entries
+      if (isOffline || !navigator.onLine) {
+        console.log("Skipping goals and entries fetch due to offline status")
+        setIsLoading(false)
+        return
       }
 
       // Fetch user goals
       try {
-        const { data: goalsData, error: goalsError } = await supabase
-          .from("user_goals")
-          .select("*")
-          .eq("user_id", user.id)
+        console.log("Fetching goals...")
+        const goalsPromise = supabase.from("user_goals").select("*").eq("user_id", user.id)
 
-        if (goalsError) throw new Error(`Error fetching goals: ${goalsError.message}`)
+        const { data: goalsData, error: goalsError } = await fetchWithTimeout(goalsPromise)
+
+        if (goalsError) {
+          throw new Error(`Error fetching goals: ${goalsError.message}`)
+        }
 
         const userGoals = goalsData && goalsData.length > 0 ? goalsData.map(mapDbGoalToWellnessGoal) : []
 
         setGoals(userGoals)
+        console.log("Goals fetched successfully:", userGoals.length)
       } catch (goalError) {
         console.error("Error fetching goals:", goalError)
-        // Keep existing goals
+
+        // Check if it's a network error
+        if (
+          goalError instanceof Error &&
+          (goalError.message.includes("Failed to fetch") ||
+            goalError.message.includes("Network Error") ||
+            goalError.message.includes("timeout"))
+        ) {
+          setIsOffline(true)
+          console.log("Network error detected during goals fetch, switching to offline mode")
+        }
+
+        // Keep existing goals from localStorage
+        const savedGoals = localStorage.getItem("wellnessGoals")
+        if (savedGoals) {
+          setGoals(JSON.parse(savedGoals))
+        }
+      }
+
+      // If we're offline now, don't try to fetch entries
+      if (isOffline || !navigator.onLine) {
+        console.log("Skipping entries fetch due to offline status")
+        setIsLoading(false)
+        return
       }
 
       // Fetch user entries
       try {
-        const { data: entriesData, error: entriesError } = await supabase
+        console.log("Fetching entries...")
+        const entriesPromise = supabase
           .from("user_entries")
           .select("*, entry_metrics(*)")
           .eq("user_id", user.id)
           .order("entry_date", { ascending: false })
 
-        if (entriesError) throw new Error(`Error fetching entries: ${entriesError.message}`)
+        const { data: entriesData, error: entriesError } = await fetchWithTimeout(entriesPromise)
+
+        if (entriesError) {
+          throw new Error(`Error fetching entries: ${entriesError.message}`)
+        }
 
         const userEntries =
           entriesData && entriesData.length > 0 ? entriesData.map((entry) => mapDbEntryToWellnessEntry(entry)) : []
 
         setEntries(userEntries)
+        console.log("Entries fetched successfully:", userEntries.length)
       } catch (entryError) {
         console.error("Error fetching entries:", entryError)
-        // Keep existing entries
+
+        // Check if it's a network error
+        if (
+          entryError instanceof Error &&
+          (entryError.message.includes("Failed to fetch") ||
+            entryError.message.includes("Network Error") ||
+            entryError.message.includes("timeout"))
+        ) {
+          setIsOffline(true)
+          console.log("Network error detected during entries fetch, switching to offline mode")
+        }
+
+        // Keep existing entries from localStorage
+        const savedEntries = localStorage.getItem("wellnessEntries")
+        if (savedEntries) {
+          const parsedEntries = JSON.parse(savedEntries).map((entry: any) => ({
+            ...entry,
+            date: new Date(entry.date),
+          }))
+          setEntries(parsedEntries)
+        }
+      }
+
+      // If we got here without setting offline mode, we're online
+      if (!isOffline) {
+        setIsOffline(false)
       }
     } catch (err) {
       console.error("Error fetching wellness data:", err)
@@ -231,7 +379,8 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
         err instanceof Error &&
         (err.message.includes("Failed to fetch") ||
           err.message.includes("Network Error") ||
-          err.message.includes("network"))
+          err.message.includes("network") ||
+          err.message.includes("timeout"))
       ) {
         setIsOffline(true)
         console.log("Network error detected, switching to offline mode")
@@ -367,6 +516,13 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
       return { success: true }
     } catch (err) {
       console.error("Error adding category:", err)
+
+      // Check if it's a network error and set offline mode
+      if (err instanceof Error && (err.message.includes("Failed to fetch") || err.message.includes("Network Error"))) {
+        setIsOffline(true)
+        return { success: true, message: "Added locally, will sync when online" }
+      }
+
       return {
         success: false,
         message: err instanceof Error ? err.message : "Unknown error adding category",
@@ -489,6 +645,13 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
       return { success: true }
     } catch (err) {
       console.error("Error updating category:", err)
+
+      // Check if it's a network error and set offline mode
+      if (err instanceof Error && (err.message.includes("Failed to fetch") || err.message.includes("Network Error"))) {
+        setIsOffline(true)
+        return { success: true, message: "Updated locally, will sync when online" }
+      }
+
       return {
         success: false,
         message: err instanceof Error ? err.message : "Unknown error updating category",
@@ -518,7 +681,13 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error
     } catch (err) {
       console.error("Error removing category:", err)
-      setError(err instanceof Error ? err.message : "Unknown error removing category")
+
+      // Check if it's a network error and set offline mode
+      if (err instanceof Error && (err.message.includes("Failed to fetch") || err.message.includes("Network Error"))) {
+        setIsOffline(true)
+      } else {
+        setError(err instanceof Error ? err.message : "Unknown error removing category")
+      }
     }
   }
 
@@ -582,7 +751,13 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err) {
       console.error("Error setting goal:", err)
-      setError(err instanceof Error ? err.message : "Unknown error setting goal")
+
+      // Check if it's a network error and set offline mode
+      if (err instanceof Error && (err.message.includes("Failed to fetch") || err.message.includes("Network Error"))) {
+        setIsOffline(true)
+      } else {
+        setError(err instanceof Error ? err.message : "Unknown error setting goal")
+      }
     }
   }
 
@@ -618,7 +793,13 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (err) {
       console.error("Error updating goals:", err)
-      setError(err instanceof Error ? err.message : "Unknown error updating goals")
+
+      // Check if it's a network error and set offline mode
+      if (err instanceof Error && (err.message.includes("Failed to fetch") || err.message.includes("Network Error"))) {
+        setIsOffline(true)
+      } else {
+        setError(err instanceof Error ? err.message : "Unknown error updating goals")
+      }
     }
   }
 
@@ -718,7 +899,13 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
       await refreshData()
     } catch (err) {
       console.error("Error adding entry:", err)
-      setError(err instanceof Error ? err.message : "Unknown error adding entry")
+
+      // Check if it's a network error and set offline mode
+      if (err instanceof Error && (err.message.includes("Failed to fetch") || err.message.includes("Network Error"))) {
+        setIsOffline(true)
+      } else {
+        setError(err instanceof Error ? err.message : "Unknown error adding entry")
+      }
     }
   }
 
@@ -792,7 +979,13 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
       await refreshData()
     } catch (err) {
       console.error("Error updating entry:", err)
-      setError(err instanceof Error ? err.message : "Unknown error updating entry")
+
+      // Check if it's a network error and set offline mode
+      if (err instanceof Error && (err.message.includes("Failed to fetch") || err.message.includes("Network Error"))) {
+        setIsOffline(true)
+      } else {
+        setError(err instanceof Error ? err.message : "Unknown error updating entry")
+      }
     }
   }
 
@@ -817,7 +1010,13 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
       if (error) throw error
     } catch (err) {
       console.error("Error removing entry:", err)
-      setError(err instanceof Error ? err.message : "Unknown error removing entry")
+
+      // Check if it's a network error and set offline mode
+      if (err instanceof Error && (err.message.includes("Failed to fetch") || err.message.includes("Network Error"))) {
+        setIsOffline(true)
+      } else {
+        setError(err instanceof Error ? err.message : "Unknown error removing entry")
+      }
     }
   }
 

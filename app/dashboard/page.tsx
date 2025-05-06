@@ -15,6 +15,7 @@ import { SyncStatus } from "@/components/sync-status"
 import Link from "next/link"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useSync } from "@/hooks/use-sync"
+import { OfflineStatus } from "@/components/offline-status"
 
 export default function Dashboard() {
   const router = useRouter()
@@ -71,6 +72,7 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      <OfflineStatus />
       <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
