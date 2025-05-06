@@ -9,7 +9,6 @@ import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import type { WellnessCategory } from "@/types/supabase"
-import { logWellnessEntry } from "@/actions/wellness-actions"
 import { Loader2 } from "lucide-react"
 
 interface ActivityLogFormProps {
@@ -23,6 +22,7 @@ export function ActivityLogForm({ userId, categories }: ActivityLogFormProps) {
   const [notes, setNotes] = useState<string>("")
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [success, setSuccess] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -31,9 +31,27 @@ export function ActivityLogForm({ userId, categories }: ActivityLogFormProps) {
 
     setIsSubmitting(true)
     setSuccess(false)
+    setError(null)
 
     try {
-      const result = await logWellnessEntry(userId, categoryId, null, minutes, notes || null)
+      const response = await fetch("/api/wellness/log-entry", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          categoryId,
+          activityId: null,
+          minutes,
+          notes: notes || null,
+        }),
+      })
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to log activity")
+      }
 
       if (result.success) {
         setSuccess(true)
@@ -41,8 +59,9 @@ export function ActivityLogForm({ userId, categories }: ActivityLogFormProps) {
         setNotes("")
         // Don't reset category for better UX
       }
-    } catch (error) {
-      console.error("Error logging activity:", error)
+    } catch (err) {
+      console.error("Error logging activity:", err)
+      setError(err instanceof Error ? err.message : "An unknown error occurred")
     } finally {
       setIsSubmitting(false)
     }
@@ -100,6 +119,11 @@ export function ActivityLogForm({ userId, categories }: ActivityLogFormProps) {
           {success && (
             <div className="rounded-md bg-green-50 p-2 text-sm text-green-800 dark:bg-green-900 dark:text-green-50">
               Activity logged successfully!
+            </div>
+          )}
+          {error && (
+            <div className="rounded-md bg-red-50 p-2 text-sm text-red-800 dark:bg-red-900 dark:text-red-50">
+              {error}
             </div>
           )}
         </CardContent>

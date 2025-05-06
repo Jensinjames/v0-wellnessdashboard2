@@ -6,7 +6,6 @@ import { Slider } from "@/components/ui/slider"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import type { WellnessMetric } from "@/types/supabase"
-import { updateDailyMetrics } from "@/actions/wellness-actions"
 import { Loader2 } from "lucide-react"
 
 interface DailyMetricsCardProps {
@@ -19,17 +18,39 @@ export function DailyMetricsCard({ userId, metrics }: DailyMetricsCardProps) {
   const [sleepHours, setSleepHours] = useState<number>(metrics?.sleep_hours || 0)
   const [dailyScore, setDailyScore] = useState<number>(metrics?.daily_score || 0)
   const [isSubmitting, setIsSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState(false)
 
   const handleSubmit = async () => {
     setIsSubmitting(true)
+    setError(null)
+    setSuccess(false)
+
     try {
-      await updateDailyMetrics(userId, {
-        motivation_level: motivationLevel,
-        sleep_hours: sleepHours,
-        daily_score: dailyScore,
+      const response = await fetch("/api/wellness/update-metrics", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          motivation_level: motivationLevel,
+          sleep_hours: sleepHours,
+          daily_score: dailyScore,
+        }),
       })
-    } catch (error) {
-      console.error("Error updating metrics:", error)
+
+      const result = await response.json()
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to update metrics")
+      }
+
+      if (result.success) {
+        setSuccess(true)
+      }
+    } catch (err) {
+      console.error("Error updating metrics:", err)
+      setError(err instanceof Error ? err.message : "An unknown error occurred")
     } finally {
       setIsSubmitting(false)
     }
@@ -80,6 +101,14 @@ export function DailyMetricsCard({ userId, metrics }: DailyMetricsCardProps) {
           </div>
           <Slider value={[dailyScore]} min={0} max={100} step={1} onValueChange={(value) => setDailyScore(value[0])} />
         </div>
+        {success && (
+          <div className="rounded-md bg-green-50 p-2 text-sm text-green-800 dark:bg-green-900 dark:text-green-50">
+            Metrics updated successfully!
+          </div>
+        )}
+        {error && (
+          <div className="rounded-md bg-red-50 p-2 text-sm text-red-800 dark:bg-red-900 dark:text-red-50">{error}</div>
+        )}
       </CardContent>
       <CardFooter>
         <Button onClick={handleSubmit} disabled={isSubmitting} className="w-full">

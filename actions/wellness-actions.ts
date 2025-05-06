@@ -4,7 +4,13 @@ import { getSupabaseAdmin } from "@/lib/supabase-client"
 import type { WellnessCategory, WellnessEntry, WellnessGoal, WellnessMetric } from "@/types/supabase"
 import { revalidatePath } from "next/cache"
 
+// Ensure this is a server action
 export async function getWellnessData(userId: string) {
+  // Double-check we're on the server
+  if (typeof window !== "undefined") {
+    throw new Error("This function must be called on the server")
+  }
+
   try {
     const supabase = getSupabaseAdmin()
 
@@ -79,7 +85,13 @@ export async function getWellnessData(userId: string) {
   }
 }
 
+// Ensure this is a server action
 export async function createDefaultCategories(userId: string) {
+  // Double-check we're on the server
+  if (typeof window !== "undefined") {
+    throw new Error("This function must be called on the server")
+  }
+
   try {
     const supabase = getSupabaseAdmin()
 
@@ -194,6 +206,11 @@ export async function logWellnessEntry(
   minutes: number,
   notes: string | null = null,
 ) {
+  // Double-check we're on the server
+  if (typeof window !== "undefined") {
+    throw new Error("This function must be called on the server")
+  }
+
   try {
     const supabase = getSupabaseAdmin()
 
@@ -236,6 +253,11 @@ export async function updateDailyMetrics(
     notes?: string
   },
 ) {
+  // Double-check we're on the server
+  if (typeof window !== "undefined") {
+    throw new Error("This function must be called on the server")
+  }
+
   try {
     const supabase = getSupabaseAdmin()
 

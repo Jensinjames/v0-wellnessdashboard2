@@ -8,6 +8,9 @@ import { ActivityLogForm } from "@/components/activity-log-form"
 import { getWellnessData, createDefaultCategories } from "@/actions/wellness-actions"
 import { calculateDailySummary } from "@/utils/wellness-utils"
 
+// Mark this as a server component
+export const dynamic = "force-dynamic"
+
 export default async function Dashboard() {
   const supabase = getSupabaseClient()
 
@@ -23,10 +26,10 @@ export default async function Dashboard() {
 
   const userId = session.user.id
 
-  // Create default categories if needed
+  // Create default categories if needed (server action)
   await createDefaultCategories(userId)
 
-  // Get wellness data
+  // Get wellness data (server action)
   const { categories, entries, goals, metrics, recentEntries, success, error } = await getWellnessData(userId)
 
   // Calculate daily summary

@@ -13,9 +13,6 @@ export function TrackingHistoryCard({ entries, categories }: TrackingHistoryCard
     if (!acc[entry.entry_date]) {
       acc[entry.entry_date] = []
     }
-    \
-    acc[entry.entry_date].push(entry
-    acc[entry.entry_date] = []
     acc[entry.entry_date].push(entry)
     return acc
   }, {})
