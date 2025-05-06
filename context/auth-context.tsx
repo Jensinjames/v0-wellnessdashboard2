@@ -4,7 +4,7 @@ import type React from "react"
 import { createContext, useContext, useEffect, useState } from "react"
 import { getSupabaseClient } from "@/lib/supabase-client"
 import type { Session, User, AuthError } from "@supabase/supabase-js"
-import { UserService } from "@/services/user-service"
+import { createUserProfile, checkUserProfile } from "@/actions/user-actions"
 
 interface AuthContextType {
   user: User | null
@@ -85,9 +85,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(true)
       const supabase = getSupabaseClient()
 
-      // Ensure user_profiles table exists
-      await UserService.createUserProfilesTable()
-
       // 1. Create the auth user
       const { data, error } = await supabase.auth.signUp({
         email,
@@ -102,15 +99,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw new Error("User creation failed")
       }
 
-      // 2. Create the user profile in our database
-      const userProfile = await UserService.createUserProfile({
+      // 2. Create the user profile using server action
+      const result = await createUserProfile({
         auth_id: data.user.id,
         email: data.user.email!,
         display_name: userData?.name || email.split("@")[0],
       })
 
-      if (!userProfile) {
-        throw new Error("Database error saving new user")
+      if (!result.success) {
+        console.error("Profile creation error:", result.error)
+        throw new Error(result.message || "Failed to create user profile")
       }
 
       return {
@@ -146,17 +144,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         throw error
       }
 
-      // Check if we need to create a profile for this user
+      // Check if we need to create a profile for this user using server action
       if (data.user) {
-        const profile = await UserService.getUserProfileByAuthId(data.user.id)
+        const result = await checkUserProfile({
+          auth_id: data.user.id,
+          email: data.user.email!,
+        })
 
-        if (!profile) {
-          // Create profile if it doesn't exist
-          await UserService.createUserProfile({
-            auth_id: data.user.id,
-            email: data.user.email!,
-            display_name: data.user.email!.split("@")[0],
-          })
+        if (!result.success) {
+          console.warn("Failed to check/create user profile, but login succeeded:", result.error)
         }
       }
 

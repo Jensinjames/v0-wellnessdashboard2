@@ -1,54 +1,77 @@
-"use client"
+import { getSupabaseClient } from "@/lib/supabase-client"
+import { redirect } from "next/navigation"
+import { WellnessDistributionChart } from "@/components/wellness-distribution-chart"
+import { CategoryProgressCard } from "@/components/category-progress-card"
+import { DailyMetricsCard } from "@/components/daily-metrics-card"
+import { TrackingHistoryCard } from "@/components/tracking-history-card"
+import { ActivityLogForm } from "@/components/activity-log-form"
+import { getWellnessData, createDefaultCategories } from "@/actions/wellness-actions"
+import { calculateDailySummary } from "@/utils/wellness-utils"
 
-import { useAuth } from "@/context/auth-context"
-import { useRouter } from "next/navigation"
-import { useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Loader2 } from "lucide-react"
+export default async function Dashboard() {
+  const supabase = getSupabaseClient()
 
-export default function Dashboard() {
-  const { user, isLoading, signOut } = useAuth()
-  const router = useRouter()
+  // Get the current session
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
 
-  useEffect(() => {
-    if (!isLoading && !user) {
-      router.push("/auth/signin")
-    }
-  }, [user, isLoading, router])
-
-  const handleSignOut = async () => {
-    await signOut()
-    router.push("/auth/signin")
+  // Redirect to login if not authenticated
+  if (!session) {
+    redirect("/auth/signin")
   }
 
-  if (isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
-    )
-  }
+  const userId = session.user.id
 
-  if (!user) {
-    return null // Will redirect in the useEffect
-  }
+  // Create default categories if needed
+  await createDefaultCategories(userId)
+
+  // Get wellness data
+  const { categories, entries, goals, metrics, recentEntries, success, error } = await getWellnessData(userId)
+
+  // Calculate daily summary
+  const dailySummary = calculateDailySummary(categories, entries, goals)
 
   return (
-    <div className="container mx-auto py-10">
-      <Card>
-        <CardHeader>
-          <CardTitle>Welcome to your Dashboard</CardTitle>
-          <CardDescription>You are signed in as {user.email}</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <p>Your user ID: {user.id}</p>
-          <p>Email: {user.email}</p>
-        </CardContent>
-        <CardFooter>
-          <Button onClick={handleSignOut}>Sign Out</Button>
-        </CardFooter>
-      </Card>
+    <div className="container mx-auto p-4 py-8">
+      <h1 className="mb-8 text-3xl font-bold">Wellness Dashboard</h1>
+
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+        <div className="md:col-span-2">
+          <WellnessDistributionChart
+            data={dailySummary.categories}
+            totalMinutesSpent={dailySummary.totalMinutesSpent}
+            totalTargetMinutes={dailySummary.totalTargetMinutes}
+            percentComplete={dailySummary.percentComplete}
+          />
+        </div>
+
+        <div className="space-y-6">
+          <DailyMetricsCard userId={userId} metrics={metrics} />
+          <ActivityLogForm userId={userId} categories={categories} />
+        </div>
+
+        <div className="md:col-span-2 lg:col-span-3">
+          <h2 className="mb-4 text-xl font-semibold">Categories</h2>
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {dailySummary.categories.map((category) => (
+              <CategoryProgressCard
+                key={category.id}
+                name={category.name}
+                color={category.color}
+                icon={category.icon || "activity"}
+                minutesSpent={category.minutesSpent}
+                targetMinutes={category.targetMinutes}
+                percentComplete={category.percentComplete}
+              />
+            ))}
+          </div>
+        </div>
+
+        <div className="md:col-span-2">
+          <TrackingHistoryCard entries={recentEntries} categories={categories} />
+        </div>
+      </div>
     </div>
   )
 }

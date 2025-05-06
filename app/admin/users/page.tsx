@@ -1,44 +1,30 @@
-"use client"
-
-import { useEffect, useState } from "react"
 import { getSupabaseAdmin } from "@/lib/supabase-client"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { AlertCircle, Loader2 } from "lucide-react"
-import type { UserProfile } from "@/services/user-service"
+import { AlertCircle } from "lucide-react"
 
-export default function UsersPage() {
-  const [users, setUsers] = useState<UserProfile[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+export default async function UsersPage() {
+  let users: any[] = []
+  let error: string | null = null
 
-  useEffect(() => {
-    async function fetchUsers() {
-      try {
-        setLoading(true)
-        const supabase = getSupabaseAdmin()
+  try {
+    const supabase = getSupabaseAdmin()
 
-        const { data, error } = await supabase
-          .from("user_profiles")
-          .select("*")
-          .order("created_at", { ascending: false })
+    const { data, error: fetchError } = await supabase
+      .from("user_profiles")
+      .select("*")
+      .order("created_at", { ascending: false })
 
-        if (error) {
-          throw error
-        }
-
-        setUsers(data || [])
-      } catch (err) {
-        console.error("Error fetching users:", err)
-        setError("Failed to load users. Please try again later.")
-      } finally {
-        setLoading(false)
-      }
+    if (fetchError) {
+      throw fetchError
     }
 
-    fetchUsers()
-  }, [])
+    users = data || []
+  } catch (err) {
+    console.error("Error fetching users:", err)
+    error = "Failed to load users. Please try again later."
+  }
 
   return (
     <div className="container mx-auto py-10">
@@ -54,11 +40,7 @@ export default function UsersPage() {
             </Alert>
           )}
 
-          {loading ? (
-            <div className="flex justify-center py-10">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            </div>
-          ) : users.length === 0 ? (
+          {users.length === 0 ? (
             <p className="text-center py-10 text-muted-foreground">No users found</p>
           ) : (
             <Table>

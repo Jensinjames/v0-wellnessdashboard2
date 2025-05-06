@@ -1,9 +1,14 @@
 import { NextResponse } from "next/server"
-import { createUserProfilesTable } from "@/scripts/create-user-profiles-table"
+import { setupUserProfilesTable } from "@/actions/user-actions"
 
 export async function GET() {
   try {
-    await createUserProfilesTable()
+    const result = await setupUserProfilesTable()
+
+    if (!result.success) {
+      throw new Error(result.message || "Database setup failed")
+    }
+
     return NextResponse.json({ success: true, message: "Database setup completed successfully" })
   } catch (error) {
     console.error("Database setup error:", error)
