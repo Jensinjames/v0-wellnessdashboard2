@@ -11,43 +11,38 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "User ID and email are required" }, { status: 400 })
     }
 
+    console.log(`Creating profile for user ${userId} with email ${email}`)
+
     // Create a Supabase client with the service role key
-    // This bypasses RLS policies
     const supabase = createRouteHandlerClient<Database>({ cookies })
 
-    // Check if profile already exists
+    // First, check if profile already exists
     const { data: existingProfile, error: fetchError } = await supabase
       .from("profiles")
       .select("*")
       .eq("id", userId)
       .maybeSingle()
 
-    if (fetchError && fetchError.code !== "PGRST116") {
+    if (fetchError) {
       console.error("Error checking if profile exists:", fetchError)
-      return NextResponse.json({ error: "Error checking if profile exists" }, { status: 500 })
+      return NextResponse.json({ error: `Error checking if profile exists: ${fetchError.message}` }, { status: 500 })
     }
 
     // If profile already exists, return it
     if (existingProfile) {
+      console.log("Profile already exists, returning existing profile")
       return NextResponse.json({ profile: existingProfile })
     }
 
-    // First, let's get the actual table structure to avoid schema mismatches
-    const { data: tableInfo, error: tableError } = await supabase.from("profiles").select("*").limit(1)
-
-    if (tableError) {
-      console.error("Error fetching table structure:", tableError)
-      return NextResponse.json({ error: "Error fetching table structure" }, { status: 500 })
-    }
-
-    // Create new profile with only the essential fields
-    // This avoids schema mismatch issues
+    // Create minimal profile with only essential fields
     const newProfile = {
       id: userId,
-      email,
+      email: email,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }
+
+    console.log("Creating new profile with data:", newProfile)
 
     // Use upsert to handle potential race conditions
     const { data, error } = await supabase.from("profiles").upsert(newProfile).select().single()
@@ -55,12 +50,12 @@ export async function POST(request: Request) {
     if (error) {
       console.error("Error creating profile:", error)
 
-      // If we get a schema error, try a more minimal approach
-      if (error.message?.includes("column") && error.message?.includes("schema")) {
-        // Try with just the absolutely essential fields
+      // If we get a schema error, try with just id and email
+      if (error.message?.includes("column") || error.message?.includes("schema")) {
+        console.log("Trying with minimal profile data (id and email only)")
         const minimalProfile = {
           id: userId,
-          email,
+          email: email,
         }
 
         const { data: minimalData, error: minimalError } = await supabase
@@ -71,18 +66,19 @@ export async function POST(request: Request) {
 
         if (minimalError) {
           console.error("Error creating minimal profile:", minimalError)
-          return NextResponse.json({ error: "Error creating profile" }, { status: 500 })
+          return NextResponse.json({ error: `Error creating profile: ${minimalError.message}` }, { status: 500 })
         }
 
         return NextResponse.json({ profile: minimalData })
       }
 
-      return NextResponse.json({ error: "Error creating profile" }, { status: 500 })
+      return NextResponse.json({ error: `Error creating profile: ${error.message}` }, { status: 500 })
     }
 
+    console.log("Profile created successfully:", data)
     return NextResponse.json({ profile: data })
-  } catch (error) {
+  } catch (error: any) {
     console.error("Unexpected error in create-profile route:", error)
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
+    return NextResponse.json({ error: `Internal server error: ${error.message}` }, { status: 500 })
   }
 }

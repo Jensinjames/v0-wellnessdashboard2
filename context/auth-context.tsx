@@ -1,10 +1,16 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useEffect, useState } from "react"
+import { createContext, useContext, useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
 import type { Session, User } from "@supabase/supabase-js"
-import { getSupabaseClient, resetSupabaseClient } from "@/lib/supabase-client"
+import {
+  getSupabaseClient,
+  resetSupabaseClient,
+  getCurrentClient,
+  getClientDebugInfo,
+  cleanupOrphanedClients,
+} from "@/lib/supabase-client"
 import { handleAuthError } from "@/utils/auth-error-handler"
 import type { Database } from "@/types/database"
 
@@ -15,7 +21,7 @@ import { setCacheItem, getCacheItem, clearUserCache, CACHE_KEYS, CACHE_EXPIRY } 
 import { createProfileViaAPI } from "@/utils/profile-utils"
 
 // Debug mode flag
-let isDebugMode = false
+let isDebugMode = process.env.NODE_ENV === "development"
 
 // Enable/disable debug logging
 export function setAuthDebugMode(enabled: boolean): void {
@@ -46,6 +52,7 @@ interface AuthContextType {
   signOut: () => Promise<void>
   updatePassword: (passwords: { current_password: string; new_password: string }) => Promise<{ error: Error | null }>
   updateProfile: (profile: Partial<UserProfile>) => Promise<{ error: Error | null }>
+  getClientInfo: () => any
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -127,103 +134,196 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [rateLimited, setRateLimited] = useState(false)
   const router = useRouter()
 
+  // Use a ref to track if we've initialized auth
+  const hasInitializedAuth = useRef(false)
+
+  // Use a ref to track the auth subscription
+  const authSubscriptionRef = useRef<{ unsubscribe: () => void } | null>(null)
+
   // Initialize auth state
   useEffect(() => {
+    let isMounted = true
+
+    // Only initialize once
+    if (hasInitializedAuth.current) {
+      debugLog("Auth already initialized, skipping")
+      return
+    }
+
+    hasInitializedAuth.current = true
+    debugLog("Initializing auth")
+
     const initializeAuth = async () => {
       try {
         // Immediately set a timeout to ensure we don't block the UI for too long
         const timeoutId = setTimeout(() => {
-          if (isLoading) {
+          if (isMounted && isLoading) {
             debugLog("Auth initialization taking too long, using fallback")
             setIsLoading(false)
             setNetworkError(true)
           }
         }, 5000) // 5 second timeout
 
-        // Get the singleton instance
-        const supabase = getSupabaseClient()
-
-        // Get initial session
-        const { data, error } = await supabase.auth.getSession()
-
-        // Clear the timeout since we got a response
-        clearTimeout(timeoutId)
-
-        if (error) {
-          console.error("Error getting session:", error)
+        // Check if we're online first
+        if (typeof navigator !== "undefined" && !navigator.onLine) {
+          debugLog("Browser reports offline status, using fallback auth")
+          clearTimeout(timeoutId)
           setNetworkError(true)
           setIsLoading(false)
           return
         }
 
-        const { session } = data
-        setSession(session)
-        setUser(session?.user ?? null)
-        setIsAuthenticated(!!session?.user)
+        // Clean up any orphaned clients before initializing
+        cleanupOrphanedClients()
 
-        if (session?.user) {
-          // Check cache first for profile data
-          const cachedProfile = getCacheItem<UserProfile>(CACHE_KEYS.PROFILE(session.user.id))
+        try {
+          // Get the singleton instance - this returns a promise if initializing
+          const supabasePromise = getSupabaseClient()
 
-          if (cachedProfile) {
-            // Use cached profile data
-            debugLog("Using cached profile data")
-            setProfile(cachedProfile)
+          // Create a timeout promise for client initialization
+          const clientTimeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error("Supabase client initialization timed out")), 5000)
+          })
+
+          // Wait for the client to be ready with a timeout
+          const supabase = await Promise.race([Promise.resolve(supabasePromise), clientTimeoutPromise])
+
+          // Create a timeout promise for session fetch
+          const sessionTimeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error("Get session request timed out")), 8000)
+          })
+
+          // Get initial session with a timeout
+          const sessionResult = await Promise.race([supabase.auth.getSession(), sessionTimeoutPromise])
+
+          // Clear the timeout since we got a response
+          clearTimeout(timeoutId)
+
+          if (!isMounted) return
+
+          const { data, error } = sessionResult
+
+          if (error) {
+            console.error("Error getting session:", error)
+            setNetworkError(true)
             setIsLoading(false)
-          } else {
-            // No cache, fetch from API
-            setTimeout(() => {
-              fetchProfile(session.user.id).catch((err) => {
-                console.error("Error in fetchProfile:", err)
-                setProfile(createMockProfile(session.user.id, session.user.email))
-                setIsLoading(false)
-              })
-            }, 500)
+            return
           }
-        } else {
-          setIsLoading(false)
-        }
 
-        // Listen for auth changes
-        const {
-          data: { subscription },
-        } = supabase.auth.onAuthStateChange((event, session) => {
+          const { session } = data
           setSession(session)
           setUser(session?.user ?? null)
           setIsAuthenticated(!!session?.user)
 
           if (session?.user) {
-            // Use a timeout to avoid immediate fetch after auth change
-            setTimeout(() => {
-              fetchProfile(session.user.id).catch((err) => {
-                console.error("Error in fetchProfile during auth change:", err)
-                setProfile(createMockProfile(session.user.id, session.user.email))
-                setIsLoading(false)
-              })
-            }, 500)
+            // Check cache first for profile data
+            const cachedProfile = getCacheItem<UserProfile>(CACHE_KEYS.PROFILE(session.user.id))
+
+            if (cachedProfile) {
+              // Use cached profile data
+              debugLog("Using cached profile data")
+              setProfile(cachedProfile)
+              setIsLoading(false)
+            } else {
+              // No cache, fetch from API
+              setTimeout(() => {
+                if (isMounted) {
+                  fetchProfile(session.user.id).catch((err) => {
+                    if (isMounted) {
+                      console.error("Error in fetchProfile:", err)
+                      const mockProfile = createMockProfile(session.user.id, session.user.email)
+                      setProfile(mockProfile)
+                      // Still cache the mock profile to avoid repeated failures
+                      setCacheItem(CACHE_KEYS.PROFILE(session.user.id), mockProfile, CACHE_EXPIRY.PROFILE)
+                      setIsLoading(false)
+                    }
+                  })
+                }
+              }, 500)
+            }
           } else {
-            setProfile(null)
             setIsLoading(false)
           }
 
-          // Update server state
-          if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
-            router.refresh()
-          }
-        })
+          // Listen for auth changes - store the subscription in the ref
+          const {
+            data: { subscription },
+          } = supabase.auth.onAuthStateChange((event, session) => {
+            if (!isMounted) return
 
-        return () => {
-          subscription.unsubscribe()
+            debugLog(`Auth state change: ${event}`)
+            setSession(session)
+            setUser(session?.user ?? null)
+            setIsAuthenticated(!!session?.user)
+
+            if (session?.user) {
+              // Use a timeout to avoid immediate fetch after auth change
+              setTimeout(() => {
+                if (isMounted) {
+                  fetchProfile(session.user.id).catch((err) => {
+                    if (isMounted) {
+                      console.error("Error in fetchProfile during auth change:", err)
+                      const mockProfile = createMockProfile(session.user.id, session.user.email)
+                      setProfile(mockProfile)
+                      // Still cache the mock profile to avoid repeated failures
+                      setCacheItem(CACHE_KEYS.PROFILE(session.user.id), mockProfile, CACHE_EXPIRY.PROFILE)
+                      setIsLoading(false)
+                    }
+                  })
+                }
+              }, 500)
+            } else {
+              setProfile(null)
+              setIsLoading(false)
+            }
+
+            // Update server state
+            if (event === "SIGNED_IN" || event === "SIGNED_OUT") {
+              router.refresh()
+            }
+          })
+
+          // Store the subscription in the ref
+          authSubscriptionRef.current = subscription
+        } catch (error) {
+          // Clear the timeout since we got an error
+          clearTimeout(timeoutId)
+
+          if (!isMounted) return
+          console.error("Failed to initialize auth:", error)
+
+          // Check if this is a network error
+          if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
+            debugLog("Network error detected during auth initialization")
+            setNetworkError(true)
+          } else if (error.message?.includes("timed out")) {
+            debugLog("Timeout error during auth initialization")
+            setNetworkError(true)
+          }
+
+          setIsLoading(false)
         }
       } catch (error) {
-        console.error("Failed to initialize auth:", error)
+        if (!isMounted) return
+        console.error("Unexpected error in auth initialization:", error)
         setIsLoading(false)
         setNetworkError(true)
       }
     }
 
     initializeAuth()
-  }, [router, isLoading])
+
+    return () => {
+      isMounted = false
+
+      // Unsubscribe from auth changes
+      if (authSubscriptionRef.current) {
+        debugLog("Unsubscribing from auth changes")
+        authSubscriptionRef.current.unsubscribe()
+        authSubscriptionRef.current = null
+      }
+    }
+  }, [router])
 
   // Create a profile using the Supabase client
   const createProfile = async (userId: string, userEmail: string, retryCount = 0) => {
@@ -235,7 +335,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // If we've had network errors, use a mock profile
       if (networkError || databaseError || rateLimited) {
-        setProfile(createMockProfile(userId, userEmail))
+        const mockProfile = createMockProfile(userId, userEmail)
+        setProfile(mockProfile)
         return { error: null }
       }
 
@@ -245,155 +346,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       debugLog(`Waiting ${backoffTime}ms before creating profile (attempt ${retryCount + 1})`)
       await delay(backoffTime)
 
-      // Get a fresh Supabase client instance to ensure we have the latest auth state
-      const supabase = getSupabaseClient({ forceNew: true })
+      // Use the API route to create the profile
+      const { profile: createdProfile, error } = await createProfileViaAPI(userId, userEmail)
 
-      try {
-        // First, check if the profile already exists
-        debugLog(`Checking if profile exists for user ${userId}`)
-        const { data: existingProfile, error: fetchError } = await supabase
-          .from("profiles")
-          .select("*")
-          .eq("id", userId)
-          .maybeSingle()
+      if (error) {
+        console.error("Error creating profile via API:", error)
 
-        if (fetchError && fetchError.code !== "PGRST116") {
-          // PGRST116 means no rows returned, which is expected if profile doesn't exist
-          console.error("Error checking if profile exists:", fetchError)
-
-          // If we're rate limited, use a mock profile
-          if (isRateLimitError(fetchError)) {
-            debugLog("Rate limited during profile check")
-            setRateLimited(true)
-            setProfile(createMockProfile(userId, userEmail))
-            return { error: null }
-          }
-
-          // For other errors, retry or use mock profile
-          if (retryCount < 3) {
-            debugLog(`Retrying profile creation (attempt ${retryCount + 1})`)
-            return createProfile(userId, userEmail, retryCount + 1)
-          } else {
-            debugLog("Max retries reached, using mock profile")
-            setProfile(createMockProfile(userId, userEmail))
-            return { error: null }
-          }
-        }
-
-        // If profile already exists, use it
-        if (existingProfile) {
-          debugLog("Profile already exists, using existing profile")
-          setProfile(existingProfile)
-          return { error: null }
-        }
-
-        // Create new profile
-        debugLog(`Creating new profile for user ${userId}`)
-        const newProfile = {
-          id: userId,
-          email: userEmail,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-          first_name: null,
-          last_name: null,
-          avatar_url: null,
-        }
-
-        // Set a timeout to ensure we don't wait too long
-        const timeoutPromise = new Promise<{ data: null; error: Error }>((_, reject) => {
-          setTimeout(() => reject(new Error("Profile creation timed out")), 10000)
-        })
-
-        // Use a try-catch block specifically for the Supabase call
-        let profileResult
-        try {
-          // IMPORTANT: We're using upsert instead of insert to handle potential race conditions
-          // This will update the profile if it already exists, or create it if it doesn't
-          profileResult = await Promise.race([
-            supabase.from("profiles").upsert(newProfile).select().single(),
-            timeoutPromise,
-          ])
-        } catch (supabaseError) {
-          console.error("Error during Supabase profile creation:", supabaseError)
-
-          // Check if this is a JSON parsing error (rate limiting)
-          if (isJsonParsingError(supabaseError) || isRateLimitError(supabaseError)) {
-            debugLog("Rate limiting detected during profile creation")
-            setRateLimited(true)
-            setProfile(createMockProfile(userId, userEmail))
-            return { error: null }
-          }
-
-          // If we get here, it's a different kind of error
-          if (retryCount < 3) {
-            debugLog(`Retrying profile creation after error (attempt ${retryCount + 1})`)
-            return createProfile(userId, userEmail, retryCount + 1)
-          } else {
-            debugLog("Max retries reached, using mock profile")
-            setProfile(createMockProfile(userId, userEmail))
-            return { error: null }
-          }
-        }
-
-        const { data, error } = profileResult
-
-        if (error) {
-          // Check for rate limiting
-          if (isRateLimitError(error)) {
-            debugLog("Rate limited during profile creation")
-            setRateLimited(true)
-            setProfile(createMockProfile(userId, userEmail))
-            return { error: null }
-          }
-
-          console.error("Error creating profile:", error)
-
-          if (retryCount < 3) {
-            debugLog(`Retrying profile creation after database error (attempt ${retryCount + 1})`)
-            return createProfile(userId, userEmail, retryCount + 1)
-          } else {
-            debugLog("Max retries reached, using mock profile")
-            setDatabaseError(true)
-            setProfile(createMockProfile(userId, userEmail))
-            return { error: null }
-          }
-        }
-
-        if (data) {
-          debugLog("Profile created successfully:", data)
-          // Cache the profile data
-          setCacheItem(CACHE_KEYS.PROFILE(userId), data, CACHE_EXPIRY.PROFILE)
-          setProfile(data)
-          return { error: null }
-        } else {
-          debugLog("No profile data returned, using mock profile")
-          setProfile(createMockProfile(userId, userEmail))
-          return { error: null }
-        }
-      } catch (error: any) {
-        // Check if this is a rate limiting error or JSON parsing error
-        if (isJsonParsingError(error) || isRateLimitError(error)) {
-          debugLog("Rate limited during profile creation (caught exception)")
-          setRateLimited(true)
-          setProfile(createMockProfile(userId, userEmail))
-          return { error: null }
-        }
-
-        console.error("Error creating profile:", error)
-
-        if (retryCount < 3) {
-          debugLog(`Retrying profile creation after exception (attempt ${retryCount + 1})`)
+        if (retryCount < 2) {
+          debugLog(`Retrying profile creation via API (attempt ${retryCount + 1})`)
           return createProfile(userId, userEmail, retryCount + 1)
         } else {
           debugLog("Max retries reached, using mock profile")
-          setDatabaseError(true)
-          setProfile(createMockProfile(userId, userEmail))
+          const mockProfile = createMockProfile(userId, userEmail)
+          setProfile(mockProfile)
           return { error: null }
         }
       }
+
+      if (createdProfile) {
+        debugLog("Profile created successfully via API")
+        setProfile(createdProfile)
+        setCacheItem(CACHE_KEYS.PROFILE(userId), createdProfile, CACHE_EXPIRY.PROFILE)
+        return { error: null }
+      } else {
+        debugLog("No profile returned from API, using mock profile")
+        const mockProfile = createMockProfile(userId, userEmail)
+        setProfile(mockProfile)
+        return { error: null }
+      }
     } catch (error: any) {
       console.error("Unexpected error creating profile:", error)
-      setProfile(createMockProfile(userId, userEmail))
+      const mockProfile = createMockProfile(userId, userEmail)
+      setProfile(mockProfile)
       return { error }
     }
   }
@@ -421,7 +405,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // If we've already had network errors, use a mock profile
       if (networkError || databaseError || rateLimited) {
         debugLog("Using mock profile due to previous errors")
-        setProfile(createMockProfile(userId, user?.email))
+        const mockProfile = createMockProfile(userId, user?.email)
+        setProfile(mockProfile)
+        // Still cache the mock profile to avoid repeated failures
+        setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
         setIsLoading(false)
         return
       }
@@ -430,29 +417,97 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const timeoutId = setTimeout(() => {
         debugLog("Profile fetch timed out, using mock profile")
         setNetworkError(true)
-        setProfile(createMockProfile(userId, user?.email))
+        const mockProfile = createMockProfile(userId, user?.email)
+        setProfile(mockProfile)
+        // Still cache the mock profile to avoid repeated failures
+        setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
         setIsLoading(false)
       }, 8000) // 8 second timeout
 
       try {
-        // Get the singleton instance
-        const supabase = getSupabaseClient()
+        // Get the current client - don't create a new one
+        const supabase = getCurrentClient()
+
+        // If we don't have a client, create one
+        if (!supabase) {
+          debugLog("No client exists, creating one for profile fetch")
+          const clientPromise = getSupabaseClient()
+
+          // Wait for the client to be ready with a timeout
+          const clientTimeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error("Supabase client initialization timed out")), 5000)
+          })
+
+          try {
+            await Promise.race([Promise.resolve(clientPromise), clientTimeoutPromise])
+          } catch (clientError) {
+            // Clear the timeout since we got an error
+            clearTimeout(timeoutId)
+            console.error("Error initializing Supabase client:", clientError)
+            setNetworkError(true)
+            const mockProfile = createMockProfile(userId, user?.email)
+            setProfile(mockProfile)
+            // Still cache the mock profile to avoid repeated failures
+            setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
+            setIsLoading(false)
+            return
+          }
+        }
+
+        // Get the client again after initialization
+        const client = getCurrentClient()
+
+        if (!client) {
+          // Clear the timeout since we couldn't get a client
+          clearTimeout(timeoutId)
+          console.error("Failed to get Supabase client for profile fetch")
+          setNetworkError(true)
+          const mockProfile = createMockProfile(userId, user?.email)
+          setProfile(mockProfile)
+          // Still cache the mock profile to avoid repeated failures
+          setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
+          setIsLoading(false)
+          return
+        }
 
         // Use a try-catch block specifically for the Supabase call
         let profileResult
         try {
-          profileResult = await supabase.from("profiles").select("*").eq("id", userId).single()
+          // Add a fetch timeout for the profile query
+          const fetchTimeoutPromise = new Promise((_, reject) => {
+            setTimeout(() => reject(new Error("Profile fetch query timed out")), 10000)
+          })
+
+          profileResult = await Promise.race([
+            client.from("profiles").select("*").eq("id", userId).single(),
+            fetchTimeoutPromise,
+          ])
         } catch (supabaseError) {
           // Clear the timeout since we got an error
           clearTimeout(timeoutId)
 
           console.error("Error during Supabase profile fetch:", supabaseError)
 
+          // Check if this is a network error
+          if (supabaseError instanceof TypeError && supabaseError.message.includes("Failed to fetch")) {
+            debugLog("Network error detected, using mock profile")
+            setNetworkError(true)
+            const mockProfile = createMockProfile(userId, user?.email)
+            setProfile(mockProfile)
+            // Still cache the mock profile to avoid repeated failures
+            setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
+            setIsLoading(false)
+            return
+          }
+
           // Check if this is a JSON parsing error (likely rate limiting)
           if (isJsonParsingError(supabaseError)) {
             debugLog("JSON parsing error detected (likely rate limiting)")
             setRateLimited(true)
-            setProfile(createMockProfile(userId, user?.email))
+            const mockProfile = createMockProfile(userId, user?.email)
+            setProfile(mockProfile)
+            // Still cache the mock profile to avoid repeated failures
+            setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
             setIsLoading(false)
             return
           }
@@ -461,7 +516,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (isRateLimitError(supabaseError)) {
             debugLog("Rate limiting error detected")
             setRateLimited(true)
-            setProfile(createMockProfile(userId, user?.email))
+            const mockProfile = createMockProfile(userId, user?.email)
+            setProfile(mockProfile)
+            // Still cache the mock profile to avoid repeated failures
+            setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
             setIsLoading(false)
             return
           }
@@ -470,7 +528,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (retryCount < 2) {
             return fetchProfile(userId, retryCount + 1)
           } else {
-            setProfile(createMockProfile(userId, user?.email))
+            const mockProfile = createMockProfile(userId, user?.email)
+            setProfile(mockProfile)
+            // Still cache the mock profile to avoid repeated failures
+            setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
             setIsLoading(false)
             return
           }
@@ -488,7 +549,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (isRateLimitError(error)) {
             debugLog("Rate limited during profile fetch")
             setRateLimited(true)
-            setProfile(createMockProfile(userId, user?.email))
+            const mockProfile = createMockProfile(userId, user?.email)
+            setProfile(mockProfile)
+            // Still cache the mock profile to avoid repeated failures
+            setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
             setIsLoading(false)
             return
           }
@@ -499,14 +563,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             if (user?.email) {
               await createProfile(userId, user.email)
             } else {
-              setProfile(createMockProfile(userId, user?.email))
+              const mockProfile = createMockProfile(userId, user?.email)
+              setProfile(mockProfile)
+              // Still cache the mock profile to avoid repeated failures
+              setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
             }
+            setIsLoading(false)
             return
           }
 
           // For other errors, use a mock profile after too many retries
           if (retryCount >= 2) {
-            setProfile(createMockProfile(userId, user?.email))
+            const mockProfile = createMockProfile(userId, user?.email)
+            setProfile(mockProfile)
+            // Still cache the mock profile to avoid repeated failures
+            setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
           } else {
             return fetchProfile(userId, retryCount + 1)
           }
@@ -519,13 +590,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Cache the profile data
           setCacheItem(CACHE_KEYS.PROFILE(userId), data, CACHE_EXPIRY.PROFILE)
           setProfile(data)
+          setIsLoading(false)
         } else {
           // If no profile found, try to create one if we have user email
           if (user?.email) {
             await createProfile(userId, user.email)
           } else {
-            setProfile(createMockProfile(userId, user?.email))
+            const mockProfile = createMockProfile(userId, user?.email)
+            setProfile(mockProfile)
+            // Still cache the mock profile to avoid repeated failures
+            setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
           }
+          setIsLoading(false)
         }
       } catch (fetchError: any) {
         // Clear the timeout since we got an error
@@ -533,11 +609,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         console.error("Error fetching profile:", fetchError)
 
+        // Check if this is a network error
+        if (fetchError instanceof TypeError && fetchError.message.includes("Failed to fetch")) {
+          debugLog("Network error detected, using mock profile")
+          setNetworkError(true)
+          const mockProfile = createMockProfile(userId, user?.email)
+          setProfile(mockProfile)
+          // Still cache the mock profile to avoid repeated failures
+          setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
+          setIsLoading(false)
+          return
+        }
+
         // Check if this is a JSON parsing error (likely rate limiting)
         if (isJsonParsingError(fetchError)) {
           debugLog("JSON parsing error detected (likely rate limiting)")
           setRateLimited(true)
-          setProfile(createMockProfile(userId, user?.email))
+          const mockProfile = createMockProfile(userId, user?.email)
+          setProfile(mockProfile)
+          // Still cache the mock profile to avoid repeated failures
+          setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
           setIsLoading(false)
           return
         }
@@ -546,16 +637,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (isRateLimitError(fetchError)) {
           debugLog("Rate limiting error detected")
           setRateLimited(true)
-          setProfile(createMockProfile(userId, user?.email))
-          setIsLoading(false)
-          return
-        }
-
-        // Check if this is a network error
-        if (fetchError instanceof TypeError && fetchError.message.includes("Failed to fetch")) {
-          debugLog("Network error detected, using mock profile")
-          setNetworkError(true)
-          setProfile(createMockProfile(userId, user?.email))
+          const mockProfile = createMockProfile(userId, user?.email)
+          setProfile(mockProfile)
+          // Still cache the mock profile to avoid repeated failures
+          setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
           setIsLoading(false)
           return
         }
@@ -565,28 +650,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return fetchProfile(userId, retryCount + 1)
         } else {
           // After retries, use mock profile
-          setProfile(createMockProfile(userId, user?.email))
+          const mockProfile = createMockProfile(userId, user?.email)
+          setProfile(mockProfile)
+          // Still cache the mock profile to avoid repeated failures
+          setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
+          setIsLoading(false)
         }
       }
     } catch (error: any) {
       console.error("Unexpected error fetching profile:", error)
 
+      // Check if this is a network error
+      if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
+        debugLog("Network error detected in outer catch, using mock profile")
+        setNetworkError(true)
+        const mockProfile = createMockProfile(userId, user?.email)
+        setProfile(mockProfile)
+        // Still cache the mock profile to avoid repeated failures
+        setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
+        setIsLoading(false)
+        return
+      }
+
       // Check if this is a JSON parsing error (likely rate limiting)
       if (isJsonParsingError(error)) {
-        debugLog("JSON parsing error detected (likely rate limiting)")
+        debugLog("JSON parsing error detected in outer catch (likely rate limiting)")
         setRateLimited(true)
-        setProfile(createMockProfile(userId, user?.email))
+        const mockProfile = createMockProfile(userId, user?.email)
+        setProfile(mockProfile)
+        // Still cache the mock profile to avoid repeated failures
+        setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
         setIsLoading(false)
         return
       }
 
       // After several retries, use a mock profile
       if (retryCount >= 2) {
-        setProfile(createMockProfile(userId, user?.email))
+        const mockProfile = createMockProfile(userId, user?.email)
+        setProfile(mockProfile)
+        // Still cache the mock profile to avoid repeated failures
+        setCacheItem(CACHE_KEYS.PROFILE(userId), mockProfile, CACHE_EXPIRY.PROFILE)
       } else {
         return fetchProfile(userId, retryCount + 1)
       }
-    } finally {
       setIsLoading(false)
     }
   }
@@ -636,8 +742,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Reset the Supabase client to ensure we have a fresh connection
       resetSupabaseClient()
 
-      // Get a fresh Supabase client instance
-      const supabase = getSupabaseClient({ forceNew: true })
+      // Get a fresh Supabase client instance - this returns a promise if initializing
+      const supabasePromise = getSupabaseClient()
+
+      // Wait for the client to be ready
+      const supabase = await Promise.resolve(supabasePromise)
 
       // Set a timeout for the sign-up operation
       const timeoutPromise = new Promise<{ data: { user: null; session: null }; error: Error }>((_, reject) => {
@@ -879,8 +988,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null, mockSignIn: true }
       }
 
-      // Get the singleton instance
-      const supabase = getSupabaseClient()
+      // Get the current client - don't create a new one
+      let supabase = getCurrentClient()
+
+      // If we don't have a client, create one
+      if (!supabase) {
+        debugLog("No client exists, creating one for sign-in")
+        const clientPromise = getSupabaseClient()
+        supabase = await Promise.resolve(clientPromise)
+      }
 
       // Set a timeout for the sign-in operation
       const timeoutPromise = new Promise<{ data: { user: null; session: null }; error: Error }>((_, reject) => {
@@ -1082,8 +1198,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return
       }
 
-      // Get the singleton instance
-      const supabase = getSupabaseClient()
+      // Get the current client - don't create a new one
+      const supabase = getCurrentClient()
+
+      if (!supabase) {
+        debugLog("No client exists for sign-out, redirecting without sign-out")
+        router.push("/auth/sign-in")
+        return
+      }
 
       // Set a timeout for the sign-out operation
       const signOutPromise = supabase.auth.signOut()
@@ -1099,6 +1221,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       } catch (error) {
         console.error("Error or timeout during sign-out:", error)
       }
+
+      // Clean up any orphaned clients
+      cleanupOrphanedClients()
 
       router.push("/auth/sign-in")
     } catch (error) {
@@ -1119,8 +1244,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null }
       }
 
-      // Get the singleton instance
-      const supabase = getSupabaseClient()
+      // Get the current client - don't create a new one
+      const supabase = getCurrentClient()
+
+      if (!supabase) {
+        debugLog("No client exists for password update, returning error")
+        return { error: new Error("Authentication service unavailable") }
+      }
 
       // If we're resetting password (no current_password), just update
       if (!current_password) {
@@ -1233,8 +1363,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null }
       }
 
-      // Get the singleton instance
-      const supabase = getSupabaseClient()
+      // Get the current client - don't create a new one
+      const supabase = getCurrentClient()
+
+      if (!supabase) {
+        debugLog("No client exists for profile update, updating locally only")
+        // Update the local profile state
+        setProfile((prev) => (prev ? { ...prev, ...updatedProfile, updated_at: new Date().toISOString() } : null))
+        return { error: new Error("Database connection unavailable. Profile updated locally only.") }
+      }
 
       // Set a timeout for the profile update
       const timeoutPromise = new Promise<{ error: Error }>((_, reject) => {
@@ -1342,6 +1479,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Get client debug info
+  const getClientInfo = () => {
+    return getClientDebugInfo()
+  }
+
   const value = {
     user,
     profile,
@@ -1352,6 +1494,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signOut,
     updatePassword,
     updateProfile,
+    getClientInfo,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

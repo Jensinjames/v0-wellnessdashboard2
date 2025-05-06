@@ -1,68 +1,89 @@
-import { createServerClient } from "@supabase/ssr"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
+import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs"
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
+  const supabase = createMiddlewareClient({ req, res })
 
-  // Create supabase server client for middleware (this won't conflict with browser clients)
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || "",
-    {
-      cookies: {
-        get(name: string) {
-          return req.cookies.get(name)?.value
-        },
-        set(
-          name: string,
-          value: string,
-          options: {
-            path: string
-            maxAge: number
-            domain?: string
-            sameSite?: "lax" | "strict" | "none"
-            secure?: boolean
-          },
-        ) {
-          res.cookies.set({ name, value, ...options })
-        },
-        remove(name: string, options: { path: string; domain?: string }) {
-          res.cookies.set({ name, value: "", ...options, maxAge: 0 })
-        },
-      },
-    },
-  )
-
+  // Check if the user is authenticated
   const {
     data: { session },
   } = await supabase.auth.getSession()
 
-  // Check auth condition
-  const isAuthRoute = req.nextUrl.pathname.startsWith("/auth")
-  const isProfileCompletionRoute = req.nextUrl.pathname === "/profile/complete"
+  // Get the pathname from the URL
+  const { pathname } = req.nextUrl
 
-  // If accessing auth routes with a session, redirect to dashboard
-  if (isAuthRoute && session && req.nextUrl.pathname !== "/auth/callback") {
-    return NextResponse.redirect(new URL("/dashboard", req.url))
+  // Public routes that don't require authentication
+  const publicRoutes = [
+    "/auth/sign-in",
+    "/auth/sign-up",
+    "/auth/forgot-password",
+    "/auth/reset-password",
+    "/auth/verify-email",
+    "/auth/callback",
+  ]
+
+  // Routes that should bypass onboarding check
+  const bypassOnboardingCheck = [
+    "/onboarding",
+    "/api/",
+    "/_next/",
+    "/favicon.ico",
+    "/manifest.json",
+    "/robots.txt",
+    ...publicRoutes,
+  ]
+
+  // If the user is not authenticated and trying to access a protected route
+  if (!session && !publicRoutes.some((route) => pathname.startsWith(route))) {
+    const redirectUrl = new URL("/auth/sign-in", req.url)
+    redirectUrl.searchParams.set("redirectedFrom", pathname)
+    return NextResponse.redirect(redirectUrl)
   }
 
-  // If accessing protected routes without a session, redirect to sign in
-  if (!isAuthRoute && !session) {
-    return NextResponse.redirect(new URL("/auth/sign-in", req.url))
+  // If the user is authenticated, check if they've completed onboarding
+  if (session && !bypassOnboardingCheck.some((route) => pathname.startsWith(route))) {
+    // Check if the user has completed onboarding
+    // We'll use cookies for this check
+    const onboardingCompleted = req.cookies.get("onboarding-completed")?.value === "true"
+
+    // If onboarding is not completed, redirect to onboarding
+    if (!onboardingCompleted) {
+      // Get the user's profile to check if they've completed their profile
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("first_name, last_name")
+        .eq("id", session.user.id)
+        .single()
+
+      // If the user has a complete profile, mark onboarding as completed
+      if (profile?.first_name && profile?.last_name) {
+        const response = NextResponse.next()
+        response.cookies.set("onboarding-completed", "true", {
+          maxAge: 60 * 60 * 24 * 30, // 30 days
+          path: "/",
+        })
+        return response
+      }
+
+      // Otherwise redirect to onboarding
+      return NextResponse.redirect(new URL("/onboarding", req.url))
+    }
   }
 
   return res
 }
 
+// Only run middleware on specific paths
 export const config = {
   matcher: [
-    // Protected routes
-    "/dashboard/:path*",
-    "/profile/:path*",
-    "/categories/:path*",
-    "/goals/:path*",
-    // Auth routes
-    "/auth/:path*",
+    /*
+     * Match all request paths except for the ones starting with:
+     * - _next/static (static files)
+     * - _next/image (image optimization files)
+     * - favicon.ico (favicon file)
+     */
+    "/((?!_next/static|_next/image|favicon.ico).*)",
   ],
 }
