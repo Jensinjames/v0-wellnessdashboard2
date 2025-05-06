@@ -1,18 +1,12 @@
 "use server"
 
-import { cookies } from "next/headers"
-import { createClient } from "@/lib/supabase-server"
+import { createServerSupabaseClient } from "@/lib/supabase-server"
 import type { Database } from "@/types/database"
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"]
 
 export async function getProfile(userId: string): Promise<Profile | null> {
-  const cookieStore = cookies()
-
-  const supabase = createClient(
-    (name) => cookieStore.get(name)?.value,
-    (name, value, options) => cookieStore.set({ name, value, ...options }),
-  )
+  const supabase = createServerSupabaseClient()
 
   const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
 
@@ -28,12 +22,7 @@ export async function updateProfile(
   userId: string,
   profile: Partial<Profile>,
 ): Promise<{ success: boolean; error?: string }> {
-  const cookieStore = cookies()
-
-  const supabase = createClient(
-    (name) => cookieStore.get(name)?.value,
-    (name, value, options) => cookieStore.set({ name, value, ...options }),
-  )
+  const supabase = createServerSupabaseClient()
 
   const { error } = await supabase
     .from("profiles")

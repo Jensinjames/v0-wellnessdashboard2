@@ -1,6 +1,14 @@
 export function handleAuthError(error: any, operation: string): string {
   console.error(`Authentication error during ${operation}:`, error)
 
+  // Handle JSON parsing errors (often from rate limiting)
+  if (error instanceof SyntaxError && error.message.includes("Unexpected token")) {
+    if (error.message.includes("Too Many R") || error.message.includes("429")) {
+      return "Too many requests. Please try again in a moment."
+    }
+    return "Server returned an invalid response. Please try again later."
+  }
+
   // Handle authentication errors
   if (error.message?.includes("Invalid login credentials") || error.status === 400) {
     if (operation === "sign-in") {
@@ -17,6 +25,7 @@ export function handleAuthError(error: any, operation: string): string {
   if (
     error.status === 429 ||
     error.message?.includes("Too Many Requests") ||
+    error.message?.includes("Too Many R") ||
     error.message?.includes("429") ||
     (error instanceof SyntaxError && error.message.includes("Unexpected token"))
   ) {

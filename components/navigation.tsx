@@ -26,6 +26,18 @@ export function Navigation() {
               Dashboard
             </Link>
             <Link
+              href="/goals"
+              className={`text-sm ${pathname === "/goals" ? "font-medium text-primary" : "text-muted-foreground"}`}
+            >
+              Goals
+            </Link>
+            <Link
+              href="/categories"
+              className={`text-sm ${pathname === "/categories" ? "font-medium text-primary" : "text-muted-foreground"}`}
+            >
+              Categories
+            </Link>
+            <Link
               href="/profile"
               className={`text-sm ${pathname === "/profile" ? "font-medium text-primary" : "text-muted-foreground"}`}
             >

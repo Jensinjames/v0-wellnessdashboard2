@@ -18,28 +18,28 @@ const mockData = {
     {
       name: "Faith",
       value: 0.63, // 38 minutes
-      goal: 1.5, // 1.5 hours
+      goal_hours: 1.5, // 1.5 hours
       color: categoryColors.faith.primary,
       description: "Daily prayer, meditation, scripture study",
     },
     {
       name: "Life",
       value: 1.2, // 1.2 hours
-      goal: 4, // 4 hours
+      goal_hours: 4, // 4 hours
       color: categoryColors.life.primary,
       description: "Family time, social activities, hobbies",
     },
     {
       name: "Work",
       value: 2, // 2 hours
-      goal: 7, // 7 hours
+      goal_hours: 7, // 7 hours
       color: categoryColors.work.primary,
       description: "Professional development, career goals",
     },
     {
       name: "Health",
       value: 8.05, // 8.05 hours
-      goal: 19, // 19 hours
+      goal_hours: 19, // 19 hours
       color: categoryColors.health.primary,
       description: "Exercise, sleep, nutrition, mental health",
     },
@@ -77,16 +77,16 @@ const mockData = {
 export function WellnessDashboard() {
   const [chartType, setChartType] = useState<"radial" | "pie">("radial")
 
-  // Calculate percentages for each category
+  // Update the categories array to use goal_hours instead of goal
   const categoriesWithPercentage = mockData.categories.map((category) => ({
     ...category,
-    percentage: calculatePercentage(category.value, category.goal),
+    percentage: calculatePercentage(category.value, category.goal_hours),
   }))
 
   // Calculate total percentage
   const totalPercentage = calculatePercentage(
     mockData.totalHours,
-    mockData.categories.reduce((sum, cat) => sum + cat.goal, 0),
+    mockData.categories.reduce((sum, cat) => sum + cat.goal_hours, 0),
   )
 
   return (
@@ -130,7 +130,7 @@ export function WellnessDashboard() {
                 key={category.name}
                 title={category.name}
                 actual={category.value}
-                goal={category.goal}
+                goal={category.goal_hours}
                 percentage={category.percentage}
                 color={category.color}
                 description={category.description}
