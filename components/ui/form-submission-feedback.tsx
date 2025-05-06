@@ -1,35 +1,59 @@
-import { CheckCircle, AlertCircle, Loader2 } from "lucide-react"
+"use client"
+
 import { cn } from "@/lib/utils"
 
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { CheckCircle2, AlertCircle } from "lucide-react"
+import { useEffect, useRef } from "react"
+
 interface FormSubmissionFeedbackProps {
-  isSubmitting: boolean
-  isSuccess?: boolean
+  status: "success" | "error" | null
   message?: string
-  className?: string
+  title?: string
+  autoFocus?: boolean
+  id?: string
 }
 
-export function FormSubmissionFeedback({ isSubmitting, isSuccess, message, className }: FormSubmissionFeedbackProps) {
-  if (!isSubmitting && !message) {
-    return null
-  }
+export function FormSubmissionFeedback({
+  status,
+  message,
+  title,
+  autoFocus = true,
+  id = "form-submission-feedback",
+}: FormSubmissionFeedbackProps) {
+  const feedbackRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (autoFocus && feedbackRef.current && status) {
+      feedbackRef.current.focus()
+    }
+  }, [status, autoFocus])
+
+  if (!status) return null
+
+  const isSuccess = status === "success"
+  const defaultTitle = isSuccess ? "Success" : "Error"
+  const defaultMessage = isSuccess
+    ? "Your form has been submitted successfully."
+    : "There was a problem submitting your form. Please try again."
 
   return (
-    <div
-      className={cn(
-        "flex items-center p-3 rounded-md",
-        isSubmitting ? "bg-blue-50 text-blue-700" : isSuccess ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700",
-        className,
-      )}
-      role={isSubmitting ? "status" : "alert"}
+    <Alert
+      variant={isSuccess ? "default" : "destructive"}
+      ref={feedbackRef}
+      tabIndex={-1}
+      id={id}
+      role="alert"
+      aria-labelledby={`${id}-title`}
+      className={cn("mb-6", isSuccess ? "border-green-500 text-green-700 dark:text-green-300" : "")}
     >
-      {isSubmitting ? (
-        <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-      ) : isSuccess ? (
-        <CheckCircle className="h-5 w-5 mr-2" />
+      {isSuccess ? (
+        <CheckCircle2 className="h-4 w-4" aria-hidden="true" />
       ) : (
-        <AlertCircle className="h-5 w-5 mr-2" />
+        <AlertCircle className="h-4 w-4" aria-hidden="true" />
       )}
-      <span>{isSubmitting ? "Submitting..." : message}</span>
-    </div>
+      <AlertTitle id={`${id}-title`}>{title || defaultTitle}</AlertTitle>
+      <AlertDescription>{message || defaultMessage}</AlertDescription>
+    </Alert>
   )
 }

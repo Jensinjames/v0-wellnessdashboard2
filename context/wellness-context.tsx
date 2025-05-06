@@ -231,41 +231,101 @@ export function WellnessProvider({ children }: { children: React.ReactNode }) {
 
       // Fetch user metrics for each category if we're still online
       if (navigator.onLine && !isOffline) {
-        for (const category of userCategories) {
+        const fetchMetricsPromises = userCategories.map(async (category) => {
           try {
             console.log(`Fetching metrics for category ${category.id}...`)
             const metricsPromise = supabase.from("user_metrics").select("*").eq("category_id", category.id)
 
-            const { data: metricsData, error: metricsError } = await fetchWithTimeout(metricsPromise, 5000)
+            // Add timeout to the metrics fetch
+            const { data: metricsData, error: metricsError } = await Promise.race([
+              fetchWithTimeout(metricsPromise, 8000),
+              new Promise<any>((_, reject) =>
+                setTimeout(() => reject(new Error(`Timeout fetching metrics for ${category.id}`)), 8000),
+              ),
+            ])
 
             if (metricsError) {
               throw new Error(`Error fetching metrics: ${metricsError.message}`)
             }
 
-            category.metrics =
-              metricsData && metricsData.length > 0
-                ? metricsData.map(mapDbMetricToWellnessMetric)
-                : category.metrics || []
-
-            console.log(`Metrics fetched successfully for category ${category.id}:`, category.metrics.length)
+            // If we successfully fetched metrics, update the category
+            return {
+              categoryId: category.id,
+              metrics:
+                metricsData && metricsData.length > 0
+                  ? metricsData.map(mapDbMetricToWellnessMetric)
+                  : category.metrics || [],
+              success: true,
+            }
           } catch (metricError) {
-            console.error("Error fetching metrics for category", category.id, ":", metricError)
+            console.error(`Error fetching metrics for category ${category.id}:`, metricError)
 
-            // If it's a network error, switch to offline mode
-            if (
+            // Log detailed error for debugging
+            if (metricError instanceof Error) {
+              console.debug(`Detailed error for ${category.id}:`, {
+                message: metricError.message,
+                stack: metricError.stack,
+                category: category.id,
+              })
+            }
+
+            // For network errors, we'll handle them but continue processing other categories
+            const isNetworkError =
               metricError instanceof Error &&
               (metricError.message.includes("Failed to fetch") ||
                 metricError.message.includes("Network Error") ||
                 metricError.message.includes("timeout"))
-            ) {
-              setIsOffline(true)
-              console.log("Network error detected during metrics fetch, switching to offline mode")
-              break // Stop trying to fetch more metrics
+
+            if (isNetworkError) {
+              // Only set offline mode if we're seeing consistent network errors
+              if (!isOffline) {
+                console.log("Network error detected during metrics fetch, may switch to offline mode if persistent")
+              }
             }
 
-            // Continue with other categories, but keep existing metrics if available
+            // Return the category with existing metrics (if any)
+            return {
+              categoryId: category.id,
+              metrics: category.metrics || [],
+              success: false,
+              error: metricError instanceof Error ? metricError.message : "Unknown error",
+            }
           }
+        })
+
+        // Wait for all metrics fetches to complete (whether successful or not)
+        const metricsResults = await Promise.allSettled(fetchMetricsPromises)
+
+        // Count network errors to determine if we should go offline
+        const networkErrorCount = metricsResults.filter(
+          (result) =>
+            result.status === "fulfilled" &&
+            !result.value.success &&
+            result.value.error &&
+            (result.value.error.includes("Failed to fetch") ||
+              result.value.error.includes("Network Error") ||
+              result.value.error.includes("timeout")),
+        ).length
+
+        // If more than half of the requests failed with network errors, go offline
+        if (networkErrorCount > userCategories.length / 2) {
+          setIsOffline(true)
+          console.log("Multiple network errors detected, switching to offline mode")
         }
+
+        // Update categories with fetched metrics
+        metricsResults.forEach((result) => {
+          if (result.status === "fulfilled") {
+            const { categoryId, metrics, success } = result.value
+            const categoryIndex = userCategories.findIndex((c) => c.id === categoryId)
+            if (categoryIndex >= 0) {
+              userCategories[categoryIndex].metrics = metrics
+
+              // Add a flag to indicate if metrics were successfully fetched
+              userCategories[categoryIndex].metricsLoadedSuccessfully = success
+            }
+          }
+        })
       }
 
       // Set the categories regardless of how we got them

@@ -8,6 +8,7 @@ export interface WellnessCategory {
   color: string
   enabled: boolean
   metrics: WellnessMetric[]
+  metricsLoadedSuccessfully?: boolean
 }
 
 export interface WellnessMetric {

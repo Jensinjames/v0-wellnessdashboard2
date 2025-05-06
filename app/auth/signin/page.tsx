@@ -1,187 +1,196 @@
 "use client"
 
-import type React from "react"
-
-import { useState, useRef, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useState } from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { useAuth } from "@/context/auth-context"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { useForm } from "react-hook-form"
+import * as z from "zod"
+import { Eye, EyeOff, LogIn } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Loader2, AlertCircle } from "lucide-react"
+import { FormErrorSummary } from "@/components/ui/form-error-summary"
+import { FormSubmissionFeedback } from "@/components/ui/form-submission-feedback"
+import { useAuth } from "@/context/auth-context"
+import { useFormValidation } from "@/hooks/use-form-validation"
+
+// Form schema with descriptive error messages
+const formSchema = z.object({
+  email: z.string().min(1, { message: "Email is required" }).email({ message: "Please enter a valid email address" }),
+  password: z
+    .string()
+    .min(1, { message: "Password is required" })
+    .min(8, { message: "Password must be at least 8 characters" }),
+})
 
 export default function SignIn() {
   const router = useRouter()
-  const searchParams = useSearchParams()
-  const redirectTo = searchParams.get("redirect") || "/dashboard"
   const { signIn } = useAuth()
-
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
+  const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isLoading, setIsLoading] = useState(false)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
-  // Refs for focus management
-  const emailInputRef = useRef<HTMLInputElement>(null)
-  const errorRef = useRef<HTMLDivElement>(null)
+  // Initialize form with zod resolver
+  const form = useForm<z.infer<typeof formSchema>>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  })
 
-  // Set focus to email input on load
-  useEffect(() => {
-    if (emailInputRef.current) {
-      emailInputRef.current.focus()
-    }
-  }, [])
+  const { formState } = form
+  const { hasErrors } = useFormValidation({
+    errors: formState.errors,
+    isSubmitting,
+    isSubmitted: formState.isSubmitted,
+  })
 
-  // Move focus to error message when it appears
-  useEffect(() => {
-    if (error && errorRef.current) {
-      errorRef.current.focus()
-    }
-  }, [error])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
+  // Form submission handler
+  async function onSubmit(values: z.infer<typeof formSchema>) {
+    setIsSubmitting(true)
     setError(null)
-    setIsLoading(true)
 
     try {
-      const { error } = await signIn(email, password)
+      const { error } = await signIn(values.email, values.password)
 
       if (error) {
         setError(error.message)
-        return
+      } else {
+        router.push("/dashboard")
       }
-
-      // Announce successful login to screen readers
-      const announcement = document.createElement("div")
-      announcement.setAttribute("aria-live", "assertive")
-      announcement.setAttribute("role", "status")
-      announcement.className = "sr-only"
-      announcement.textContent = "Sign in successful. Redirecting to dashboard."
-      document.body.appendChild(announcement)
-
-      // Redirect to dashboard or the requested page
-      router.push(redirectTo)
     } catch (err) {
       setError("An unexpected error occurred. Please try again.")
-      console.error("Sign in error:", err)
+      console.error(err)
     } finally {
-      setIsLoading(false)
+      setIsSubmitting(false)
     }
   }
 
   return (
-    <main
-      id="main-content"
-      className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 sm:px-6 lg:px-8"
-    >
-      <Card className="w-full max-w-md" role="region" aria-labelledby="sign-in-title">
-        <CardHeader className="space-y-1">
-          <CardTitle id="sign-in-title" className="text-2xl font-bold">
-            Sign in
-          </CardTitle>
-          <CardDescription>Enter your email and password to access your wellness dashboard</CardDescription>
+    <div className="flex min-h-screen items-center justify-center px-4 py-12">
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>Sign In</CardTitle>
+          <CardDescription>Enter your credentials to access your account</CardDescription>
         </CardHeader>
-
         <CardContent>
           {error && (
-            <Alert
-              variant="destructive"
-              className="mb-4"
-              ref={errorRef}
-              tabIndex={-1}
-              role="alert"
-              aria-live="assertive"
-            >
-              <AlertCircle className="h-4 w-4" aria-hidden="true" />
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
+            <FormSubmissionFeedback status="error" message={error} title="Authentication Error" id="auth-error" />
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4" aria-label="Sign in form">
-            <div className="space-y-2">
-              <Label htmlFor="email" className="block">
-                Email
-              </Label>
-              <Input
-                id="email"
-                ref={emailInputRef}
-                type="email"
-                name="email"
-                autoComplete="email"
-                placeholder="name@example.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                disabled={isLoading}
-                aria-required="true"
-                aria-invalid={error ? "true" : "false"}
-              />
-            </div>
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6" aria-label="Sign in form">
+              <FormErrorSummary errors={form.formState.errors} title="Please correct the following errors:" />
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="password" className="block">
-                  Password
-                </Label>
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel htmlFor="email">
+                      Email{" "}
+                      <span aria-hidden="true" className="text-destructive">
+                        *
+                      </span>
+                      <span className="sr-only"> (required)</span>
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        id="email"
+                        type="email"
+                        placeholder="your.email@example.com"
+                        autoComplete="email"
+                        aria-required="true"
+                        {...field}
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="password"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel htmlFor="password">
+                      Password{" "}
+                      <span aria-hidden="true" className="text-destructive">
+                        *
+                      </span>
+                      <span className="sr-only"> (required)</span>
+                    </FormLabel>
+                    <FormControl>
+                      <div className="relative">
+                        <Input
+                          id="password"
+                          type={showPassword ? "text" : "password"}
+                          autoComplete="current-password"
+                          aria-required="true"
+                          {...field}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="sm"
+                          className="absolute right-0 top-0 h-full px-3"
+                          onClick={() => setShowPassword(!showPassword)}
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                          aria-pressed={showPassword}
+                        >
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" aria-hidden="true" />
+                          ) : (
+                            <Eye className="h-4 w-4" aria-hidden="true" />
+                          )}
+                        </Button>
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <div className="flex justify-end">
                 <Link
                   href="/auth/forgot-password"
-                  className="text-sm font-medium text-primary hover:underline focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
+                  className="text-sm text-primary hover:underline"
                   aria-label="Forgot password? Reset it here"
                 >
                   Forgot password?
                 </Link>
               </div>
-              <Input
-                id="password"
-                type="password"
-                name="password"
-                autoComplete="current-password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-                disabled={isLoading}
-                aria-required="true"
-                aria-invalid={error ? "true" : "false"}
-              />
-            </div>
 
-            <Button
-              type="submit"
-              className="w-full"
-              disabled={isLoading}
-              aria-busy={isLoading}
-              aria-disabled={isLoading}
-            >
-              {isLoading ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-                  <span>Signing in...</span>
-                  <span className="sr-only">Please wait while we sign you in</span>
-                </>
-              ) : (
-                "Sign in"
-              )}
-            </Button>
-          </form>
+              <Button type="submit" className="w-full" disabled={isSubmitting} aria-busy={isSubmitting}>
+                {isSubmitting ? (
+                  <>
+                    <span className="sr-only">Signing in, please wait</span>
+                    <span aria-hidden="true">Signing in...</span>
+                  </>
+                ) : (
+                  <>
+                    <LogIn className="mr-2 h-4 w-4" aria-hidden="true" />
+                    Sign In
+                  </>
+                )}
+              </Button>
+            </form>
+          </Form>
         </CardContent>
-
-        <CardFooter className="flex flex-col space-y-4">
-          <div className="text-center text-sm">
+        <CardFooter className="flex justify-center">
+          <p className="text-sm text-muted-foreground">
             Don't have an account?{" "}
-            <Link
-              href="/auth/signup"
-              className="font-medium text-primary hover:underline focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2"
-              aria-label="Sign up for a new account"
-            >
+            <Link href="/auth/signup" className="text-primary hover:underline" aria-label="Sign up for a new account">
               Sign up
             </Link>
-          </div>
+          </p>
         </CardFooter>
       </Card>
-    </main>
+    </div>
   )
 }

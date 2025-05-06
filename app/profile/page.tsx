@@ -15,6 +15,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useToast } from "@/hooks/use-toast"
 import { useRouter } from "next/navigation"
+import { SignOutButton } from "@/components/sign-out-button"
 
 export default function Profile() {
   const { user, signOut } = useAuth()
@@ -183,11 +184,6 @@ export default function Profile() {
     }
   }
 
-  const handleSignOut = async () => {
-    await signOut()
-    router.push("/auth/signin")
-  }
-
   if (!user) {
     return (
       <main id="main-content" className="container mx-auto py-10">
@@ -315,7 +311,14 @@ export default function Profile() {
             <CardContent>
               <form onSubmit={updatePassword} className="space-y-4" aria-label="Update password form">
                 {passwordError && (
-                  <Alert variant="destructive" ref={passwordErrorRef} tabIndex={-1} role="alert" aria-live="assertive">
+                  <Alert
+                    variant="destructive"
+                    ref={passwordErrorRef}
+                    tabIndex={-1}
+                    role="alert"
+                    aria-live="assertive"
+                    id="password-error"
+                  >
                     <AlertCircle className="h-4 w-4" aria-hidden="true" />
                     <AlertDescription>{passwordError}</AlertDescription>
                   </Alert>
@@ -343,6 +346,7 @@ export default function Profile() {
                     required
                     aria-required="true"
                     aria-invalid={passwordError ? "true" : "false"}
+                    aria-describedby={passwordError ? "password-error" : undefined}
                   />
                 </div>
                 <div className="space-y-2">
@@ -375,9 +379,7 @@ export default function Profile() {
       </Tabs>
 
       <div className="mt-8">
-        <Button variant="destructive" onClick={handleSignOut} aria-label="Sign out of your account">
-          Sign out
-        </Button>
+        <SignOutButton />
       </div>
     </main>
   )
