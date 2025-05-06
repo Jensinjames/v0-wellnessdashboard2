@@ -9,6 +9,9 @@ import { getSupabaseClient } from "@/lib/supabase-client"
 import { handleAuthError } from "@/utils/auth-error-handler"
 import type { Database } from "@/types/database"
 
+// Import the cache utilities at the top of the file
+import { setCacheItem, getCacheItem, clearUserCache, CACHE_KEYS, CACHE_EXPIRY } from "@/lib/cache-utils"
+
 type UserProfile = Database["public"]["Tables"]["profiles"]["Row"]
 
 interface AuthContextType {
@@ -138,14 +141,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setIsAuthenticated(!!session?.user)
 
         if (session?.user) {
-          // Use a timeout to avoid immediate fetch after page load
-          setTimeout(() => {
-            fetchProfile(session.user.id).catch((err) => {
-              console.error("Error in fetchProfile:", err)
-              setProfile(createMockProfile(session.user.id, session.user.email))
-              setIsLoading(false)
-            })
-          }, 500)
+          // Check cache first for profile data
+          const cachedProfile = getCacheItem<UserProfile>(CACHE_KEYS.PROFILE(session.user.id))
+
+          if (cachedProfile) {
+            // Use cached profile data
+            console.log("Using cached profile data")
+            setProfile(cachedProfile)
+            setIsLoading(false)
+          } else {
+            // No cache, fetch from API
+            setTimeout(() => {
+              fetchProfile(session.user.id).catch((err) => {
+                console.error("Error in fetchProfile:", err)
+                setProfile(createMockProfile(session.user.id, session.user.email))
+                setIsLoading(false)
+              })
+            }, 500)
+          }
         } else {
           setIsLoading(false)
         }
@@ -257,7 +270,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return
         }
 
-        setProfile(data)
+        if (data) {
+          // Cache the profile data
+          setCacheItem(CACHE_KEYS.PROFILE(userId), data, CACHE_EXPIRY.PROFILE)
+          setProfile(data)
+        }
       } catch (error: any) {
         // Check if this is a rate limiting error or JSON parsing error
         if (isJsonParsingError(error) || isRateLimitError(error)) {
@@ -280,6 +297,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Fetch user profile with retry logic and better error handling
   const fetchProfile = async (userId: string, retryCount = 0) => {
     try {
+      // Check cache first
+      const cachedProfile = getCacheItem<UserProfile>(CACHE_KEYS.PROFILE(userId))
+
+      if (cachedProfile) {
+        console.log("Using cached profile data")
+        setProfile(cachedProfile)
+        setIsLoading(false)
+        return
+      }
+
       // Add a delay before fetching to avoid rate limiting
       // Use exponential backoff for retries
       const backoffTime = retryCount === 0 ? 500 : Math.min(1000 * Math.pow(2, retryCount), 10000)
@@ -380,11 +407,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return
         }
 
-        if (!data) {
+        if (data) {
+          // Cache the profile data
+          setCacheItem(CACHE_KEYS.PROFILE(userId), data, CACHE_EXPIRY.PROFILE)
+          setProfile(data)
+        } else {
           // If no profile found, try to create one
           await createProfile(userId)
-        } else {
-          setProfile(data)
         }
       } catch (fetchError: any) {
         // Clear the timeout since we got an error
@@ -818,6 +847,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Sign out
   const signOut = async () => {
     try {
+      // Clear user cache when signing out
+      if (user) {
+        clearUserCache(user.id)
+      }
+
       // Clear local state
       setUser(null)
       setProfile(null)
@@ -1021,7 +1055,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
 
         // Update local state
-        setProfile((prev) => (prev ? { ...prev, ...updatedProfile, updated_at: new Date().toISOString() } : null))
+        const updatedProfileData = {
+          ...(profile || {}),
+          ...updatedProfile,
+          updated_at: new Date().toISOString(),
+        } as UserProfile
+
+        setProfile(updatedProfileData)
+
+        // Update cache with the new profile data
+        setCacheItem(CACHE_KEYS.PROFILE(user.id), updatedProfileData, CACHE_EXPIRY.PROFILE)
 
         return { error: null }
       } catch (supabaseError) {

@@ -2,6 +2,7 @@ import { Navigation } from "@/components/navigation"
 import { CategoryList } from "@/components/categories/category-list"
 import { getCategories } from "@/app/actions/categories"
 import { createServerSupabaseClient } from "@/lib/supabase-server"
+import { CACHE_KEYS } from "@/lib/cache-utils"
 
 export default async function CategoriesPage() {
   // Get the current user
@@ -16,6 +17,7 @@ export default async function CategoriesPage() {
   let categories = []
   if (userId) {
     try {
+      // Server-side fetch (will be cached on the client)
       categories = await getCategories(userId)
     } catch (error) {
       console.error("Error fetching categories:", error)
@@ -36,7 +38,7 @@ export default async function CategoriesPage() {
     <>
       <Navigation />
       <div className="container mx-auto py-8">
-        <CategoryList categories={categories} />
+        <CategoryList categories={categories} cacheKey={userId ? CACHE_KEYS.CATEGORIES(userId) : undefined} />
       </div>
     </>
   )

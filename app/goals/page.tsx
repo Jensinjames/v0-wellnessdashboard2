@@ -3,6 +3,7 @@ import { GoalForm } from "@/components/goals/goal-form"
 import { getGoals } from "@/app/actions/goals"
 import { createServerSupabaseClient } from "@/lib/supabase-server"
 import { defaultGoals } from "@/types/wellness"
+import { CACHE_KEYS } from "@/lib/cache-utils"
 
 export default async function GoalsPage() {
   // Get the current user
@@ -34,7 +35,7 @@ export default async function GoalsPage() {
     <>
       <Navigation />
       <div className="container mx-auto py-8">
-        <GoalForm initialGoals={goals} />
+        <GoalForm initialGoals={goals} cacheKey={userId ? CACHE_KEYS.GOALS(userId) : undefined} />
       </div>
     </>
   )

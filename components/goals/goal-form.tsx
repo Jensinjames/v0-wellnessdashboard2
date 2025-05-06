@@ -13,28 +13,47 @@ import { Info, Check, AlertCircle } from "lucide-react"
 import { type CategoryGoal, defaultGoals, type CategoryType } from "@/types/wellness"
 import { updateGoal } from "@/app/actions/goals"
 import { categoryColors } from "@/utils/chart-utils"
+import { setCacheItem, getCacheItem, CACHE_EXPIRY } from "@/lib/cache-utils"
 
 interface GoalFormProps {
   initialGoals?: CategoryGoal[]
+  cacheKey?: string
 }
 
-export function GoalForm({ initialGoals }: GoalFormProps) {
+export function GoalForm({ initialGoals, cacheKey }: GoalFormProps) {
   const { user, profile } = useAuth()
   const [goals, setGoals] = useState<CategoryGoal[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
   const [demoMode, setDemoMode] = useState(false)
+  const [isCached, setIsCached] = useState(false)
 
   // Initialize goals from props or defaults
   useEffect(() => {
+    // Check cache first if we have a cache key
+    if (cacheKey) {
+      const cachedGoals = getCacheItem<CategoryGoal[]>(cacheKey)
+      if (cachedGoals) {
+        setGoals(cachedGoals)
+        setIsCached(true)
+        return
+      }
+    }
+
+    // If no cached data, use initialGoals or defaults
     if (initialGoals && initialGoals.length > 0) {
       setGoals(initialGoals)
+
+      // Cache the initial data if we have a cache key
+      if (cacheKey) {
+        setCacheItem(cacheKey, initialGoals, CACHE_EXPIRY.GOALS)
+      }
     } else {
       // If no goals provided, use defaults
       setGoals(defaultGoals)
     }
-  }, [initialGoals])
+  }, [initialGoals, cacheKey])
 
   // Check if we're in demo mode
   useEffect(() => {
@@ -54,7 +73,13 @@ export function GoalForm({ initialGoals }: GoalFormProps) {
     try {
       // If in demo mode, just update the state
       if (demoMode) {
-        setGoals((prevGoals) => prevGoals.map((goal) => (goal.id === updatedGoal.id ? updatedGoal : goal)))
+        const updatedGoals = goals.map((goal) => (goal.id === updatedGoal.id ? updatedGoal : goal))
+        setGoals(updatedGoals)
+
+        // Update cache if we have a cache key
+        if (cacheKey) {
+          setCacheItem(cacheKey, updatedGoals, CACHE_EXPIRY.GOALS)
+        }
 
         // Simulate API delay
         await new Promise((resolve) => setTimeout(resolve, 500))
@@ -73,7 +98,13 @@ export function GoalForm({ initialGoals }: GoalFormProps) {
       }
 
       // Update local state
-      setGoals((prevGoals) => prevGoals.map((goal) => (goal.id === updatedGoal.id ? updatedGoal : goal)))
+      const updatedGoals = goals.map((goal) => (goal.id === updatedGoal.id ? updatedGoal : goal))
+      setGoals(updatedGoals)
+
+      // Update cache if we have a cache key
+      if (cacheKey) {
+        setCacheItem(cacheKey, updatedGoals, CACHE_EXPIRY.GOALS)
+      }
 
       setSuccess(`${updatedGoal.name} goal updated successfully`)
     } catch (err: any) {
@@ -127,6 +158,14 @@ export function GoalForm({ initialGoals }: GoalFormProps) {
               <Info className="h-4 w-4" />
               <AlertTitle>Demo Mode</AlertTitle>
               <AlertDescription>You're in demo mode. Goal changes will not be saved to the database.</AlertDescription>
+            </Alert>
+          )}
+
+          {isCached && (
+            <Alert className="mb-4 bg-blue-50 text-blue-800 border-blue-200">
+              <Info className="h-4 w-4" />
+              <AlertTitle>Cached Data</AlertTitle>
+              <AlertDescription>You're viewing cached data for better performance.</AlertDescription>
             </Alert>
           )}
 

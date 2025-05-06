@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { RadialChart } from "./radial-chart"
@@ -9,6 +9,10 @@ import { CategoryCard } from "./category-card"
 import { DailyMetrics } from "./daily-metrics"
 import { TrackingHistory } from "./tracking-history"
 import { categoryColors, calculatePercentage } from "@/utils/chart-utils"
+import { useAuth } from "@/context/auth-context"
+import { setCacheItem, getCacheItem, CACHE_KEYS, CACHE_EXPIRY } from "@/lib/cache-utils"
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Info } from "lucide-react"
 
 // Mock data for the dashboard
 const mockData = {
@@ -76,21 +80,48 @@ const mockData = {
 
 export function WellnessDashboard() {
   const [chartType, setChartType] = useState<"radial" | "pie">("radial")
+  const [dashboardData, setDashboardData] = useState(mockData)
+  const [isCached, setIsCached] = useState(false)
+  const { user } = useAuth()
+
+  // Load cached dashboard data on mount
+  useEffect(() => {
+    if (user) {
+      const cacheKey = CACHE_KEYS.DASHBOARD_DATA(user.id)
+      const cachedData = getCacheItem<typeof mockData>(cacheKey)
+
+      if (cachedData) {
+        setDashboardData(cachedData)
+        setIsCached(true)
+      } else {
+        // Cache the initial mock data
+        setCacheItem(cacheKey, mockData, CACHE_EXPIRY.SHORT)
+      }
+    }
+  }, [user])
 
   // Update the categories array to use goal_hours instead of goal
-  const categoriesWithPercentage = mockData.categories.map((category) => ({
+  const categoriesWithPercentage = dashboardData.categories.map((category) => ({
     ...category,
     percentage: calculatePercentage(category.value, category.goal_hours),
   }))
 
   // Calculate total percentage
   const totalPercentage = calculatePercentage(
-    mockData.totalHours,
-    mockData.categories.reduce((sum, cat) => sum + cat.goal_hours, 0),
+    dashboardData.totalHours,
+    dashboardData.categories.reduce((sum, cat) => sum + cat.goal_hours, 0),
   )
 
   return (
     <div className="space-y-4">
+      {isCached && (
+        <Alert className="mb-4 bg-blue-50 text-blue-800 border-blue-200">
+          <Info className="h-4 w-4" />
+          <AlertTitle>Cached Data</AlertTitle>
+          <AlertDescription>You're viewing cached dashboard data for better performance.</AlertDescription>
+        </Alert>
+      )}
+
       <Card>
         <CardHeader>
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
@@ -111,17 +142,17 @@ export function WellnessDashboard() {
         <CardContent>
           <div className="mb-4 text-center text-sm text-muted-foreground">
             <p>
-              {mockData.totalHours} hours logged today
-              {mockData.totalHours > mockData.dailyCap && (
-                <span className="ml-1 text-amber-500">(exceeds daily cap of {mockData.dailyCap} hours)</span>
+              {dashboardData.totalHours} hours logged today
+              {dashboardData.totalHours > dashboardData.dailyCap && (
+                <span className="ml-1 text-amber-500">(exceeds daily cap of {dashboardData.dailyCap} hours)</span>
               )}
             </p>
           </div>
 
           {chartType === "radial" ? (
-            <RadialChart data={mockData.categories} size={280} />
+            <RadialChart data={dashboardData.categories} size={280} />
           ) : (
-            <PieChart data={mockData.categories} size={280} />
+            <PieChart data={dashboardData.categories} size={280} />
           )}
 
           <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -142,11 +173,11 @@ export function WellnessDashboard() {
 
       <div className="grid gap-4 md:grid-cols-2">
         <DailyMetrics
-          score={mockData.dailyMetrics.score}
-          motivation={mockData.dailyMetrics.motivation}
-          sleep={mockData.dailyMetrics.sleep}
+          score={dashboardData.dailyMetrics.score}
+          motivation={dashboardData.dailyMetrics.motivation}
+          sleep={dashboardData.dailyMetrics.sleep}
         />
-        <TrackingHistory entries={mockData.trackingHistory} />
+        <TrackingHistory entries={dashboardData.trackingHistory} />
       </div>
     </div>
   )

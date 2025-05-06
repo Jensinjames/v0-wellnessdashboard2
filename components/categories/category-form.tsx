@@ -18,10 +18,15 @@ import {
 } from "@/components/ui/dialog"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 
+// Import the hook
+import { useBatchedSupabase } from "@/hooks/use-batched-supabase"
+
 interface CategoryFormProps {
   onClose: () => void
   mode: "create" | "edit"
   category?: WellnessCategory
+  onSuccess?: (category: WellnessCategory) => void
+  useBatching?: boolean
 }
 
 // Predefined colors for the color picker
@@ -43,8 +48,9 @@ const colorOptions = [
   "#64748b", // Slate
 ]
 
-export function CategoryForm({ onClose, mode, category }: CategoryFormProps) {
+export function CategoryForm({ onClose, mode, category, onSuccess, useBatching = false }: CategoryFormProps) {
   const { user } = useAuth()
+  const batchedSupabase = useBatchedSupabase()
   const [name, setName] = useState(category?.name || "")
   const [color, setColor] = useState(category?.color || "#8b5cf6")
   const [isSubmitting, setIsSubmitting] = useState(false)
@@ -77,37 +83,160 @@ export function CategoryForm({ onClose, mode, category }: CategoryFormProps) {
       if (demoMode) {
         // Simulate API delay
         await new Promise((resolve) => setTimeout(resolve, 500))
+
+        // Create a mock category result
+        const mockCategory: WellnessCategory = {
+          id: mode === "create" ? `mock-${Math.random().toString(36).substring(2, 9)}` : category?.id || "",
+          name,
+          color,
+          user_id: user.id,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        }
+
         setSuccess(`Category ${mode === "create" ? "created" : "updated"} successfully (Demo Mode)`)
+
+        // Call onSuccess callback with the mock category
+        if (onSuccess) {
+          onSuccess(mockCategory)
+        }
+
         setTimeout(() => {
           onClose()
         }, 1500)
         return
       }
 
-      let result
+      let updatedCategory: WellnessCategory | null = null
 
-      if (mode === "create") {
-        result = await createCategory(user.id, {
-          name,
-          color,
-          user_id: user.id,
-        })
-      } else if (category) {
-        result = await updateCategory(user.id, category.id, {
-          name,
-          color,
-        })
+      if (useBatching && batchedSupabase) {
+        // Use batched requests with bypassBatching for critical operations
+        if (mode === "create") {
+          try {
+            const createResult = await batchedSupabase.executeBatchedQuery(
+              async () => {
+                const result = await createCategory(user.id, {
+                  name,
+                  color,
+                  user_id: user.id,
+                })
+                return { data: result, error: result.success ? null : new Error(result.error) }
+              },
+              {
+                priority: "high",
+                category: "categories",
+                bypassBatching: true, // Bypass batching for critical operations
+                onError: (err) => {
+                  setError(err.message || "Failed to create category")
+                },
+              },
+            )
+
+            if (createResult.success && createResult.id) {
+              updatedCategory = {
+                id: createResult.id,
+                name,
+                color,
+                user_id: user.id,
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString(),
+              }
+            }
+          } catch (err: any) {
+            setError(err.message || "Failed to create category")
+            setIsSubmitting(false)
+            return
+          }
+        } else if (category) {
+          try {
+            const updateResult = await batchedSupabase.executeBatchedQuery(
+              async () => {
+                const result = await updateCategory(user.id, category.id, {
+                  name,
+                  color,
+                })
+                return { data: result, error: result.success ? null : new Error(result.error) }
+              },
+              {
+                priority: "high",
+                category: "categories",
+                bypassBatching: true, // Bypass batching for critical operations
+                onError: (err) => {
+                  setError(err.message || "Failed to update category")
+                },
+              },
+            )
+
+            if (updateResult.success) {
+              updatedCategory = {
+                ...category,
+                name,
+                color,
+                updated_at: new Date().toISOString(),
+              }
+            }
+          } catch (err: any) {
+            setError(err.message || "Failed to update category")
+            setIsSubmitting(false)
+            return
+          }
+        }
+      } else {
+        // Use regular requests
+        let result
+        if (mode === "create") {
+          result = await createCategory(user.id, {
+            name,
+            color,
+            user_id: user.id,
+          })
+
+          if (result.success && result.id) {
+            updatedCategory = {
+              id: result.id,
+              name,
+              color,
+              user_id: user.id,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            }
+          }
+        } else if (category) {
+          result = await updateCategory(user.id, category.id, {
+            name,
+            color,
+          })
+
+          if (result.success) {
+            updatedCategory = {
+              ...category,
+              name,
+              color,
+              updated_at: new Date().toISOString(),
+            }
+          }
+        }
+
+        if (!result?.success) {
+          setError(result?.error || "Failed to save category")
+          setIsSubmitting(false)
+          return
+        }
       }
 
-      if (!result?.success) {
-        setError(result?.error || "Failed to save category")
-        return
-      }
+      // If we have an updated category, it means the operation was successful
+      if (updatedCategory) {
+        setSuccess(`Category ${mode === "create" ? "created" : "updated"} successfully`)
 
-      setSuccess(`Category ${mode === "create" ? "created" : "updated"} successfully`)
-      setTimeout(() => {
-        onClose()
-      }, 1500)
+        // Call onSuccess callback with the updated category
+        if (onSuccess) {
+          onSuccess(updatedCategory)
+        }
+
+        setTimeout(() => {
+          onClose()
+        }, 1500)
+      }
     } catch (err: any) {
       setError(err.message || "An unexpected error occurred")
     } finally {

@@ -1,6 +1,7 @@
 import type React from "react"
 import { AuthProvider } from "@/context/auth-context"
 import { ThemeProvider } from "@/components/theme-provider"
+import { RequestBatcherStatus } from "@/components/request-batcher-status"
 import "./globals.css"
 
 export const metadata = {
@@ -18,7 +19,10 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <AuthProvider>{children}</AuthProvider>
+          <AuthProvider>
+            {children}
+            <RequestBatcherStatus />
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
