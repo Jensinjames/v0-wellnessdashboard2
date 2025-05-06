@@ -7,3 +7,15 @@ export interface ProfileFormData {
   last_name: string
   avatar_url?: string | null
 }
+
+export interface ProfileCompletionStatus {
+  isComplete: boolean
+  missingFields: string[]
+  completionPercentage: number
+}
+
+export interface AuthError {
+  code: string
+  message: string
+  status?: number
+}

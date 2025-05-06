@@ -44,11 +44,38 @@ export async function POST(request: Request) {
 
     console.log("Creating new profile with data:", newProfile)
 
-    // Use upsert to handle potential race conditions
-    const { data, error } = await supabase.from("profiles").upsert(newProfile).select().single()
+    console.log("Attempting upsert with conflict handling on id column:", newProfile)
+
+    // Use upsert with explicit conflict handling on the id column
+    const { data, error } = await supabase
+      .from("profiles")
+      .upsert(newProfile, {
+        onConflict: "id",
+        ignoreDuplicates: false, // Update if exists
+        returning: "representation", // Return the updated/inserted row
+      })
+      .select()
+      .single()
 
     if (error) {
       console.error("Error creating profile:", error)
+
+      if (error.code === "23505") {
+        // PostgreSQL unique violation code
+        console.log("Conflict detected, attempting to fetch existing profile")
+
+        // If conflict, try to fetch the existing profile
+        const { data: existingData, error: fetchError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", userId)
+          .single()
+
+        if (!fetchError && existingData) {
+          console.log("Successfully retrieved existing profile after conflict")
+          return NextResponse.json({ profile: existingData })
+        }
+      }
 
       // If we get a schema error, try with just id and email
       if (error.message?.includes("column") || error.message?.includes("schema")) {
@@ -60,7 +87,11 @@ export async function POST(request: Request) {
 
         const { data: minimalData, error: minimalError } = await supabase
           .from("profiles")
-          .upsert(minimalProfile)
+          .upsert(minimalProfile, {
+            onConflict: "id",
+            ignoreDuplicates: false,
+            returning: "representation",
+          })
           .select()
           .single()
 

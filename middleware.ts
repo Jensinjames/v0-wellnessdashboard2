@@ -24,16 +24,23 @@ export async function middleware(req: NextRequest) {
     "/auth/callback",
   ]
 
-  // Routes that should bypass onboarding check
-  const bypassOnboardingCheck = [
-    "/onboarding",
-    "/api/",
-    "/_next/",
+  // Routes that should bypass all checks
+  const bypassAllChecks = [
+    "/api/", // All API routes
+    "/api/create-profile", // Explicitly allow profile creation API
+    "/api/auth/", // All auth-related APIs
+    "/api/health-check", // Health check endpoint
+    "/_next/", // Next.js assets
     "/favicon.ico",
     "/manifest.json",
     "/robots.txt",
     ...publicRoutes,
   ]
+
+  // Skip middleware completely for bypass routes
+  if (bypassAllChecks.some((route) => pathname.startsWith(route))) {
+    return NextResponse.next()
+  }
 
   // If the user is not authenticated and trying to access a protected route
   if (!session && !publicRoutes.some((route) => pathname.startsWith(route))) {
@@ -41,6 +48,9 @@ export async function middleware(req: NextRequest) {
     redirectUrl.searchParams.set("redirectedFrom", pathname)
     return NextResponse.redirect(redirectUrl)
   }
+
+  // Routes that should bypass onboarding check
+  const bypassOnboardingCheck = ["/onboarding", ...bypassAllChecks]
 
   // If the user is authenticated, check if they've completed onboarding
   if (session && !bypassOnboardingCheck.some((route) => pathname.startsWith(route))) {
@@ -75,15 +85,14 @@ export async function middleware(req: NextRequest) {
   return res
 }
 
-// Only run middleware on specific paths
+// Only run middleware on specific paths, excluding API routes
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico (favicon file)
-     */
-    "/((?!_next/static|_next/image|favicon.ico).*)",
+    // Match all request paths except for the ones starting with:
+    // - _next/static (static files)
+    // - _next/image (image optimization files)
+    // - favicon.ico (favicon file)
+    // - api/ (API routes)
+    "/((?!_next/static|_next/image|favicon.ico|api/).*)",
   ],
 }
