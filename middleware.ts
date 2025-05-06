@@ -40,6 +40,7 @@ export async function middleware(req: NextRequest) {
 
   // Check auth condition
   const isAuthRoute = req.nextUrl.pathname.startsWith("/auth")
+  const isProfileCompletionRoute = req.nextUrl.pathname === "/profile/complete"
 
   // If accessing auth routes with a session, redirect to dashboard
   if (isAuthRoute && session && req.nextUrl.pathname !== "/auth/callback") {

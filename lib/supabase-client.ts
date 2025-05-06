@@ -1,11 +1,11 @@
-import { createBrowserClient } from "@supabase/ssr"
+import { createClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 
 // Global flag to track initialization
 let isInitializing = false
 
 // Singleton pattern for browser client
-let supabaseClient: ReturnType<typeof createBrowserClient<Database>> | null = null
+let supabaseClient: ReturnType<typeof createClient<Database>> | null = null
 
 // Connection health tracking
 let lastSuccessfulConnection = 0
@@ -14,6 +14,18 @@ const MAX_CONNECTION_ATTEMPTS = 5
 const CONNECTION_BACKOFF_BASE = 1000 // ms
 const CONNECTION_HEALTH_THRESHOLD = 30000 // 30 seconds
 
+// Debug mode flag
+let debugMode = false
+
+// Enable/disable debug logging
+export function setDebugMode(enabled: boolean): void {
+  debugMode = enabled
+  if (typeof window !== "undefined") {
+    localStorage.setItem("supabase_debug", enabled ? "true" : "false")
+  }
+  console.log(`Supabase client debug mode ${enabled ? "enabled" : "disabled"}`)
+}
+
 // Create a single instance of the Supabase client
 export function getSupabaseClient(
   options: {
@@ -21,7 +33,7 @@ export function getSupabaseClient(
     retryOnError?: boolean
     timeout?: number
   } = {},
-): ReturnType<typeof createBrowserClient<Database>> {
+): ReturnType<typeof createClient<Database>> {
   if (typeof window === "undefined") {
     throw new Error("This client should only be used in the browser")
   }
@@ -62,7 +74,7 @@ export function getSupabaseClient(
         options.timeout ||
         (connectionAttempts > 1 ? Math.min(CONNECTION_BACKOFF_BASE * Math.pow(2, connectionAttempts - 1), 10000) : 6000)
 
-      supabaseClient = createBrowserClient<Database>(
+      supabaseClient = createClient<Database>(
         process.env.NEXT_PUBLIC_SUPABASE_URL,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
         {
@@ -252,5 +264,6 @@ export function getConnectionHealth() {
     lastSuccessfulConnection,
     connectionAttempts,
     isHealthy: Date.now() - lastSuccessfulConnection < CONNECTION_HEALTH_THRESHOLD,
+    isInitialized: !!supabaseClient,
   }
 }

@@ -1,27 +1,26 @@
 import type React from "react"
-import { AuthProvider } from "@/context/auth-context"
-import { ThemeProvider } from "@/components/theme-provider"
-import { RequestBatcherStatus } from "@/components/request-batcher-status"
 import "./globals.css"
+import type { Metadata } from "next"
+import { Inter } from "next/font/google"
+import { ThemeProvider } from "@/components/theme-provider"
+import { AuthProvider } from "@/context/auth-context"
+import { ProfileCompletionProvider } from "@/context/profile-completion-context"
 
-export const metadata = {
+const inter = Inter({ subsets: ["latin"] })
+
+export const metadata: Metadata = {
   title: "Wellness Dashboard",
-  description: "Track and visualize your wellness activities",
+  description: "Track and manage your wellness activities",
     generator: 'v0.dev'
 }
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
-        <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <body className={inter.className}>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
           <AuthProvider>
-            {children}
-            <RequestBatcherStatus />
+            <ProfileCompletionProvider>{children}</ProfileCompletionProvider>
           </AuthProvider>
         </ThemeProvider>
       </body>

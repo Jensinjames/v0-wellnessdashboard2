@@ -7,8 +7,9 @@ export interface Database {
         Row: {
           id: string
           email: string
-          created_at: string
-          updated_at: string
+          created_at?: string
+          updated_at?: string
+          // Make all non-essential fields optional to avoid schema mismatches
           first_name?: string | null
           last_name?: string | null
           avatar_url?: string | null

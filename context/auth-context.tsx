@@ -1,16 +1,34 @@
 "use client"
 
 import type React from "react"
-
 import { createContext, useContext, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import type { Session, User } from "@supabase/supabase-js"
-import { getSupabaseClient } from "@/lib/supabase-client"
+import { getSupabaseClient, resetSupabaseClient } from "@/lib/supabase-client"
 import { handleAuthError } from "@/utils/auth-error-handler"
 import type { Database } from "@/types/database"
 
-// Import the cache utilities at the top of the file
+// Import the cache utilities
 import { setCacheItem, getCacheItem, clearUserCache, CACHE_KEYS, CACHE_EXPIRY } from "@/lib/cache-utils"
+
+// Add this import at the top of the file
+import { createProfileViaAPI } from "@/utils/profile-utils"
+
+// Debug mode flag
+let isDebugMode = false
+
+// Enable/disable debug logging
+export function setAuthDebugMode(enabled: boolean): void {
+  isDebugMode = enabled
+  debugLog(`Auth context debug mode ${enabled ? "enabled" : "disabled"}`)
+}
+
+// Internal debug logging function
+function debugLog(...args: any[]): void {
+  if (isDebugMode) {
+    console.log("[Auth Context]", ...args)
+  }
+}
 
 type UserProfile = Database["public"]["Tables"]["profiles"]["Row"]
 
@@ -19,7 +37,11 @@ interface AuthContextType {
   profile: UserProfile | null
   session: Session | null
   isLoading: boolean
-  signUp: (credentials: { email: string; password: string }) => Promise<{ error: Error | null; mockSignUp?: boolean }>
+  signUp: (credentials: { email: string; password: string }) => Promise<{
+    error: Error | null
+    mockSignUp?: boolean
+    networkIssue?: boolean
+  }>
   signIn: (credentials: { email: string; password: string }) => Promise<{ error: Error | null; mockSignIn?: boolean }>
   signOut: () => Promise<void>
   updatePassword: (passwords: { current_password: string; new_password: string }) => Promise<{ error: Error | null }>
@@ -33,15 +55,14 @@ const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 // Create a mock profile when we can't fetch the real one
 const createMockProfile = (userId: string, email?: string): UserProfile => {
+  // Create a minimal profile with only the essential fields
+  // This avoids schema mismatch issues
   return {
     id: userId,
     email: email || "user@example.com",
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
-    first_name: null,
-    last_name: null,
-    avatar_url: null,
-  }
+  } as UserProfile
 }
 
 // Generate a mock user ID
@@ -113,7 +134,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Immediately set a timeout to ensure we don't block the UI for too long
         const timeoutId = setTimeout(() => {
           if (isLoading) {
-            console.log("Auth initialization taking too long, using fallback")
+            debugLog("Auth initialization taking too long, using fallback")
             setIsLoading(false)
             setNetworkError(true)
           }
@@ -146,7 +167,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           if (cachedProfile) {
             // Use cached profile data
-            console.log("Using cached profile data")
+            debugLog("Using cached profile data")
             setProfile(cachedProfile)
             setIsLoading(false)
           } else {
@@ -205,43 +226,91 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [router, isLoading])
 
   // Create a profile using the Supabase client
-  const createProfile = async (userId: string) => {
+  const createProfile = async (userId: string, userEmail: string, retryCount = 0) => {
     try {
-      if (!user?.email) {
-        console.log("Cannot create profile: user email is missing")
-        return
+      if (!userId || !userEmail) {
+        debugLog("Cannot create profile: user ID or email is missing")
+        return { error: new Error("User ID or email is missing") }
       }
 
       // If we've had network errors, use a mock profile
       if (networkError || databaseError || rateLimited) {
-        setProfile(createMockProfile(userId, user.email))
-        return
+        setProfile(createMockProfile(userId, userEmail))
+        return { error: null }
       }
 
-      // Get the singleton instance
-      const supabase = getSupabaseClient()
+      // Add a delay before creating profile to ensure auth is fully processed
+      // Use exponential backoff for retries
+      const backoffTime = retryCount === 0 ? 2000 : Math.min(2000 * Math.pow(2, retryCount), 10000)
+      debugLog(`Waiting ${backoffTime}ms before creating profile (attempt ${retryCount + 1})`)
+      await delay(backoffTime)
+
+      // Get a fresh Supabase client instance to ensure we have the latest auth state
+      const supabase = getSupabaseClient({ forceNew: true })
 
       try {
-        // Create new profile
-        const newProfile = {
-          id: userId,
-          email: user.email,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
+        // First, check if the profile already exists
+        debugLog(`Checking if profile exists for user ${userId}`)
+        const { data: existingProfile, error: fetchError } = await supabase
+          .from("profiles")
+          .select("*")
+          .eq("id", userId)
+          .maybeSingle()
+
+        if (fetchError && fetchError.code !== "PGRST116") {
+          // PGRST116 means no rows returned, which is expected if profile doesn't exist
+          console.error("Error checking if profile exists:", fetchError)
+
+          // If we're rate limited, use a mock profile
+          if (isRateLimitError(fetchError)) {
+            debugLog("Rate limited during profile check")
+            setRateLimited(true)
+            setProfile(createMockProfile(userId, userEmail))
+            return { error: null }
+          }
+
+          // For other errors, retry or use mock profile
+          if (retryCount < 3) {
+            debugLog(`Retrying profile creation (attempt ${retryCount + 1})`)
+            return createProfile(userId, userEmail, retryCount + 1)
+          } else {
+            debugLog("Max retries reached, using mock profile")
+            setProfile(createMockProfile(userId, userEmail))
+            return { error: null }
+          }
         }
 
-        console.log(`Attempting to create profile for user ${userId}`)
+        // If profile already exists, use it
+        if (existingProfile) {
+          debugLog("Profile already exists, using existing profile")
+          setProfile(existingProfile)
+          return { error: null }
+        }
+
+        // Create new profile
+        debugLog(`Creating new profile for user ${userId}`)
+        const newProfile = {
+          id: userId,
+          email: userEmail,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          first_name: null,
+          last_name: null,
+          avatar_url: null,
+        }
 
         // Set a timeout to ensure we don't wait too long
         const timeoutPromise = new Promise<{ data: null; error: Error }>((_, reject) => {
-          setTimeout(() => reject(new Error("Profile creation timed out")), 8000) // Increased timeout
+          setTimeout(() => reject(new Error("Profile creation timed out")), 10000)
         })
 
         // Use a try-catch block specifically for the Supabase call
         let profileResult
         try {
+          // IMPORTANT: We're using upsert instead of insert to handle potential race conditions
+          // This will update the profile if it already exists, or create it if it doesn't
           profileResult = await Promise.race([
-            supabase.from("profiles").insert(newProfile).select().single(),
+            supabase.from("profiles").upsert(newProfile).select().single(),
             timeoutPromise,
           ])
         } catch (supabaseError) {
@@ -249,16 +318,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           // Check if this is a JSON parsing error (rate limiting)
           if (isJsonParsingError(supabaseError) || isRateLimitError(supabaseError)) {
-            console.log("Rate limiting detected during profile creation")
+            debugLog("Rate limiting detected during profile creation")
             setRateLimited(true)
-            setProfile(createMockProfile(userId, user.email))
-            return
+            setProfile(createMockProfile(userId, userEmail))
+            return { error: null }
           }
 
           // If we get here, it's a different kind of error
-          console.log("Using mock profile due to profile creation error")
-          setProfile(createMockProfile(userId, user.email))
-          return
+          if (retryCount < 3) {
+            debugLog(`Retrying profile creation after error (attempt ${retryCount + 1})`)
+            return createProfile(userId, userEmail, retryCount + 1)
+          } else {
+            debugLog("Max retries reached, using mock profile")
+            setProfile(createMockProfile(userId, userEmail))
+            return { error: null }
+          }
         }
 
         const { data, error } = profileResult
@@ -266,50 +340,61 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error) {
           // Check for rate limiting
           if (isRateLimitError(error)) {
-            console.log("Rate limited during profile creation")
+            debugLog("Rate limited during profile creation")
             setRateLimited(true)
-            setProfile(createMockProfile(userId, user.email))
-            return
-          }
-
-          // Check for duplicate key violation (profile might already exist)
-          if (error.code === "23505") {
-            console.log("Profile already exists, fetching instead of creating")
-            await fetchProfile(userId)
-            return
+            setProfile(createMockProfile(userId, userEmail))
+            return { error: null }
           }
 
           console.error("Error creating profile:", error)
-          setDatabaseError(true)
-          setProfile(createMockProfile(userId, user.email))
-          return
+
+          if (retryCount < 3) {
+            debugLog(`Retrying profile creation after database error (attempt ${retryCount + 1})`)
+            return createProfile(userId, userEmail, retryCount + 1)
+          } else {
+            debugLog("Max retries reached, using mock profile")
+            setDatabaseError(true)
+            setProfile(createMockProfile(userId, userEmail))
+            return { error: null }
+          }
         }
 
         if (data) {
-          console.log("Profile created successfully:", data)
+          debugLog("Profile created successfully:", data)
           // Cache the profile data
           setCacheItem(CACHE_KEYS.PROFILE(userId), data, CACHE_EXPIRY.PROFILE)
           setProfile(data)
+          return { error: null }
         } else {
-          console.log("No profile data returned, using mock profile")
-          setProfile(createMockProfile(userId, user.email))
+          debugLog("No profile data returned, using mock profile")
+          setProfile(createMockProfile(userId, userEmail))
+          return { error: null }
         }
       } catch (error: any) {
         // Check if this is a rate limiting error or JSON parsing error
         if (isJsonParsingError(error) || isRateLimitError(error)) {
-          console.log("Rate limited during profile creation (caught exception)")
+          debugLog("Rate limited during profile creation (caught exception)")
           setRateLimited(true)
-          setProfile(createMockProfile(userId, user.email))
-          return
+          setProfile(createMockProfile(userId, userEmail))
+          return { error: null }
         }
 
         console.error("Error creating profile:", error)
-        setDatabaseError(true)
-        setProfile(createMockProfile(userId, user.email))
+
+        if (retryCount < 3) {
+          debugLog(`Retrying profile creation after exception (attempt ${retryCount + 1})`)
+          return createProfile(userId, userEmail, retryCount + 1)
+        } else {
+          debugLog("Max retries reached, using mock profile")
+          setDatabaseError(true)
+          setProfile(createMockProfile(userId, userEmail))
+          return { error: null }
+        }
       }
     } catch (error: any) {
       console.error("Unexpected error creating profile:", error)
-      setProfile(createMockProfile(userId, user?.email))
+      setProfile(createMockProfile(userId, userEmail))
+      return { error }
     }
   }
 
@@ -320,7 +405,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const cachedProfile = getCacheItem<UserProfile>(CACHE_KEYS.PROFILE(userId))
 
       if (cachedProfile) {
-        console.log("Using cached profile data")
+        debugLog("Using cached profile data")
         setProfile(cachedProfile)
         setIsLoading(false)
         return
@@ -331,11 +416,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const backoffTime = retryCount === 0 ? 500 : Math.min(1000 * Math.pow(2, retryCount), 10000)
       await delay(backoffTime)
 
-      console.log(`Fetching profile for user ${userId}, attempt ${retryCount + 1}`)
+      debugLog(`Fetching profile for user ${userId}, attempt ${retryCount + 1}`)
 
       // If we've already had network errors, use a mock profile
       if (networkError || databaseError || rateLimited) {
-        console.log("Using mock profile due to previous errors")
+        debugLog("Using mock profile due to previous errors")
         setProfile(createMockProfile(userId, user?.email))
         setIsLoading(false)
         return
@@ -343,7 +428,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Set a timeout to ensure we don't wait too long
       const timeoutId = setTimeout(() => {
-        console.log("Profile fetch timed out, using mock profile")
+        debugLog("Profile fetch timed out, using mock profile")
         setNetworkError(true)
         setProfile(createMockProfile(userId, user?.email))
         setIsLoading(false)
@@ -365,7 +450,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           // Check if this is a JSON parsing error (likely rate limiting)
           if (isJsonParsingError(supabaseError)) {
-            console.log("JSON parsing error detected (likely rate limiting)")
+            debugLog("JSON parsing error detected (likely rate limiting)")
             setRateLimited(true)
             setProfile(createMockProfile(userId, user?.email))
             setIsLoading(false)
@@ -374,7 +459,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           // Check if this is a rate limiting error
           if (isRateLimitError(supabaseError)) {
-            console.log("Rate limiting error detected")
+            debugLog("Rate limiting error detected")
             setRateLimited(true)
             setProfile(createMockProfile(userId, user?.email))
             setIsLoading(false)
@@ -401,7 +486,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           // Check for rate limiting
           if (isRateLimitError(error)) {
-            console.log("Rate limited during profile fetch")
+            debugLog("Rate limited during profile fetch")
             setRateLimited(true)
             setProfile(createMockProfile(userId, user?.email))
             setIsLoading(false)
@@ -410,8 +495,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           // If we get a 404, the profile might not exist yet
           if (error.code === "PGRST116") {
-            // Try to create the profile
-            await createProfile(userId)
+            // Try to create the profile if we have user email
+            if (user?.email) {
+              await createProfile(userId, user.email)
+            } else {
+              setProfile(createMockProfile(userId, user?.email))
+            }
             return
           }
 
@@ -431,8 +520,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setCacheItem(CACHE_KEYS.PROFILE(userId), data, CACHE_EXPIRY.PROFILE)
           setProfile(data)
         } else {
-          // If no profile found, try to create one
-          await createProfile(userId)
+          // If no profile found, try to create one if we have user email
+          if (user?.email) {
+            await createProfile(userId, user.email)
+          } else {
+            setProfile(createMockProfile(userId, user?.email))
+          }
         }
       } catch (fetchError: any) {
         // Clear the timeout since we got an error
@@ -442,7 +535,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Check if this is a JSON parsing error (likely rate limiting)
         if (isJsonParsingError(fetchError)) {
-          console.log("JSON parsing error detected (likely rate limiting)")
+          debugLog("JSON parsing error detected (likely rate limiting)")
           setRateLimited(true)
           setProfile(createMockProfile(userId, user?.email))
           setIsLoading(false)
@@ -451,7 +544,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Check if this is a rate limiting error
         if (isRateLimitError(fetchError)) {
-          console.log("Rate limiting error detected")
+          debugLog("Rate limiting error detected")
           setRateLimited(true)
           setProfile(createMockProfile(userId, user?.email))
           setIsLoading(false)
@@ -460,7 +553,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Check if this is a network error
         if (fetchError instanceof TypeError && fetchError.message.includes("Failed to fetch")) {
-          console.log("Network error detected, using mock profile")
+          debugLog("Network error detected, using mock profile")
           setNetworkError(true)
           setProfile(createMockProfile(userId, user?.email))
           setIsLoading(false)
@@ -480,7 +573,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Check if this is a JSON parsing error (likely rate limiting)
       if (isJsonParsingError(error)) {
-        console.log("JSON parsing error detected (likely rate limiting)")
+        debugLog("JSON parsing error detected (likely rate limiting)")
         setRateLimited(true)
         setProfile(createMockProfile(userId, user?.email))
         setIsLoading(false)
@@ -504,7 +597,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Check network connectivity first
       const isOnline = navigator.onLine
       if (!isOnline) {
-        console.log("Browser reports offline status, using mock sign-up")
+        debugLog("Browser reports offline status, using mock sign-up")
 
         // Create a mock user and session
         const mockUserId = generateMockUserId()
@@ -523,7 +616,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // If we've already had database errors, use mock sign-up
       if (databaseError || networkError || rateLimited) {
-        console.log("Using mock sign-up due to previous errors")
+        debugLog("Using mock sign-up due to previous errors")
 
         // Create a mock user and session
         const mockUserId = generateMockUserId()
@@ -540,8 +633,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null, mockSignUp: true }
       }
 
-      // Get the singleton instance
-      const supabase = getSupabaseClient()
+      // Reset the Supabase client to ensure we have a fresh connection
+      resetSupabaseClient()
+
+      // Get a fresh Supabase client instance
+      const supabase = getSupabaseClient({ forceNew: true })
 
       // Set a timeout for the sign-up operation
       const timeoutPromise = new Promise<{ data: { user: null; session: null }; error: Error }>((_, reject) => {
@@ -551,7 +647,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Use a try-catch block specifically for the Supabase call
       let signUpResult
       try {
-        console.log("Attempting to sign up with Supabase...")
+        debugLog("Attempting to sign up with Supabase...")
 
         // First, check if we can reach Supabase
         try {
@@ -561,7 +657,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             cache: "no-store",
             credentials: "omit",
           })
-          console.log("Supabase connectivity test successful")
+          debugLog("Supabase connectivity test successful")
         } catch (connectError) {
           console.error("Failed to connect to Supabase:", connectError)
           throw new Error("Failed to connect to authentication service")
@@ -578,13 +674,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           timeoutPromise,
         ])
 
-        console.log("Sign-up response received:", signUpResult.error ? "Error" : "Success")
+        debugLog("Sign-up response received:", signUpResult.error ? "Error" : "Success")
       } catch (supabaseError) {
         console.error("Error during Supabase sign-up:", supabaseError)
 
         // Check if this is a network error
         if (supabaseError instanceof TypeError && supabaseError.message.includes("Failed to fetch")) {
-          console.log("Network error detected during sign-up")
+          debugLog("Network error detected during sign-up")
           setNetworkError(true)
 
           // Create a mock user and session
@@ -604,7 +700,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Check if this is a JSON parsing error (rate limiting)
         if (isJsonParsingError(supabaseError) || isRateLimitError(supabaseError)) {
-          console.log("Rate limiting detected during sign-up")
+          debugLog("Rate limiting detected during sign-up")
           setRateLimited(true)
 
           // Create a mock user and session
@@ -671,25 +767,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: new Error(handleAuthError(error, "sign-up")) }
       }
 
-      // Create user profile
+      // User created successfully
       if (data.user) {
-        try {
-          console.log("User created successfully, now creating profile")
-          // Add a small delay before creating the profile to ensure auth is fully processed
-          await new Promise((resolve) => setTimeout(resolve, 500))
-          await createProfile(data.user.id)
-        } catch (profileError) {
-          console.error("Error creating profile after sign-up:", profileError)
-          // Don't throw an error here, as the user was created successfully
-          // The profile will be created on next login if it fails here
-        }
+        // CRITICAL CHANGE: We're NOT attempting to create a profile at all during sign-up
+        // Just set the user state and return success
+        setUser(data.user)
+
+        // We'll create a temporary mock profile just for the current session
+        // This won't be saved to the database
+        const tempProfile = createMockProfile(data.user.id, email)
+        setProfile(tempProfile)
+
+        // Cache the temporary profile
+        setCacheItem(CACHE_KEYS.PROFILE(data.user.id), tempProfile, CACHE_EXPIRY.PROFILE)
+
+        return { error: null }
       }
 
       return { error: null }
     } catch (error: any) {
       // Check if this is a JSON parsing error (likely rate limiting)
       if (isJsonParsingError(error)) {
-        console.log("JSON parsing error detected during sign-up (likely rate limiting)")
+        debugLog("JSON parsing error detected during sign-up (likely rate limiting)")
         setRateLimited(true)
 
         // Create a mock user and session
@@ -761,7 +860,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       // If we've already had auth errors, use mock sign-in
       if (authError || networkError || databaseError || rateLimited) {
-        console.log("Using mock sign-in due to previous errors")
+        debugLog("Using mock sign-in due to previous errors")
 
         // Create a mock user, session, and profile
         const mockUserId = generateMockUserId()
@@ -803,7 +902,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Check if this is a JSON parsing error (rate limiting)
         if (isJsonParsingError(supabaseError) || isRateLimitError(supabaseError)) {
-          console.log("Rate limiting detected during sign-in")
+          debugLog("Rate limiting detected during sign-in")
           setRateLimited(true)
 
           // Create a mock user, session, and profile
@@ -876,11 +975,43 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: new Error(handleAuthError(error, "sign-in")) }
       }
 
+      // If sign-in is successful, try to create the profile if it doesn't exist
+      // But don't block the sign-in process if profile creation fails
+      if (data.user) {
+        try {
+          // We'll attempt to create the profile in the background
+          // This won't block the sign-in process
+          setTimeout(async () => {
+            try {
+              // Use the server-side API to create the profile
+              // This bypasses RLS policies
+              const { profile, error } = await createProfileViaAPI(data.user.id, data.user.email || email)
+
+              if (profile) {
+                // Update the profile state and cache
+                setProfile(profile)
+                setCacheItem(CACHE_KEYS.PROFILE(data.user.id), profile, CACHE_EXPIRY.PROFILE)
+                console.log("Profile created successfully via API")
+              } else if (error) {
+                console.error("Error creating profile via API:", error)
+                // Don't throw, just log the error
+              }
+            } catch (error) {
+              console.error("Exception creating profile via API:", error)
+              // Don't throw, just log the error
+            }
+          }, 3000) // Wait 3 seconds before attempting profile creation
+        } catch (profileError) {
+          console.error("Error setting up profile creation:", profileError)
+          // Don't throw an error here, as the user was signed in successfully
+        }
+      }
+
       return { error: null }
     } catch (error: any) {
       // Check if this is a JSON parsing error (likely rate limiting)
       if (isJsonParsingError(error)) {
-        console.log("JSON parsing error detected during sign-in (likely rate limiting)")
+        debugLog("JSON parsing error detected during sign-in (likely rate limiting)")
         setRateLimited(true)
 
         // Create a mock user, session, and profile
@@ -1009,7 +1140,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
           // Check if this is a JSON parsing error (rate limiting)
           if (isJsonParsingError(supabaseError) || isRateLimitError(supabaseError)) {
-            console.log("Rate limiting detected during password update")
+            debugLog("Rate limiting detected during password update")
             return { error: null }
           }
 
@@ -1037,7 +1168,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Check if this is a JSON parsing error (rate limiting)
         if (isJsonParsingError(signInError) || isRateLimitError(signInError)) {
-          console.log("Rate limiting detected during password verification")
+          debugLog("Rate limiting detected during password verification")
           return { error: null }
         }
 
@@ -1060,7 +1191,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Check if this is a JSON parsing error (rate limiting)
         if (isJsonParsingError(updateError) || isRateLimitError(updateError)) {
-          console.log("Rate limiting detected during password update")
+          debugLog("Rate limiting detected during password update")
           return { error: null }
         }
 
@@ -1069,7 +1200,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error: any) {
       // Check if this is a JSON parsing error (likely rate limiting)
       if (isJsonParsingError(error)) {
-        console.log("JSON parsing error detected during password update")
+        debugLog("JSON parsing error detected during password update")
         return { error: null }
       }
 
@@ -1126,7 +1257,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error) {
           // Check if this is a rate limiting error
           if (isRateLimitError(error)) {
-            console.log("Rate limited during profile update")
+            debugLog("Rate limited during profile update")
             setRateLimited(true)
 
             // Still update the local state to improve UX
@@ -1157,7 +1288,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Check if this is a JSON parsing error (rate limiting)
         if (isJsonParsingError(supabaseError) || isRateLimitError(supabaseError)) {
-          console.log("Rate limiting detected during profile update")
+          debugLog("Rate limiting detected during profile update")
           setRateLimited(true)
 
           // Still update the local state to improve UX
@@ -1182,7 +1313,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } catch (error: any) {
       // Check if this is a JSON parsing error (likely rate limiting)
       if (isJsonParsingError(error)) {
-        console.log("JSON parsing error detected during profile update")
+        debugLog("JSON parsing error detected during profile update")
         setRateLimited(true)
 
         // Still update the local state to improve UX

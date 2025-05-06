@@ -21,6 +21,8 @@ export function SignUpForm() {
   const [mockSignUp, setMockSignUp] = useState(false)
   const [networkError, setNetworkError] = useState(false)
   const [isCheckingNetwork, setIsCheckingNetwork] = useState(false)
+  const [databaseError, setDatabaseError] = useState(false)
+  const [signUpSuccess, setSignUpSuccess] = useState(false)
   const { signUp } = useAuth()
   const router = useRouter()
 
@@ -107,6 +109,8 @@ export function SignUpForm() {
     setIsLoading(true)
     setError(null)
     setMockSignUp(false)
+    setDatabaseError(false)
+    setSignUpSuccess(false)
 
     if (password !== confirmPassword) {
       setError("Passwords do not match")
@@ -141,8 +145,11 @@ export function SignUpForm() {
         // Check if it's a database error
         else if (error.message?.includes("Database error")) {
           console.log("Database error detected, proceeding with mock sign-up")
-          // For database errors, we'll proceed with mock sign-up
+          setDatabaseError(true)
+          setError("Database error detected. You'll be signed up in demo mode.")
           setMockSignUp(true)
+
+          // Wait a moment before redirecting to simulate the sign-up process
           setTimeout(() => {
             router.push("/dashboard")
           }, 3000)
@@ -175,7 +182,14 @@ export function SignUpForm() {
         return
       }
 
-      router.push("/auth/verify-email")
+      // If we get here, the sign-up was successful
+      setSignUpSuccess(true)
+
+      // Show success message for a moment before redirecting
+      setTimeout(() => {
+        // Redirect to the verification page
+        router.push("/auth/verify-email")
+      }, 1500)
     } catch (err: any) {
       // Check if it's a network error
       if (
@@ -188,6 +202,19 @@ export function SignUpForm() {
         setError(
           "Network error: Unable to connect to the authentication service. Please check your internet connection.",
         )
+      }
+      // Check if it's a database error
+      else if (err.message?.includes("Database error")) {
+        console.log("Database error caught in form handler, proceeding with mock sign-up")
+        setDatabaseError(true)
+        setError("Database error detected. You'll be signed up in demo mode.")
+        setMockSignUp(true)
+
+        // Wait a moment before redirecting to simulate the sign-up process
+        setTimeout(() => {
+          router.push("/dashboard")
+        }, 3000)
+        return
       } else {
         setError(err.message || "An unexpected error occurred")
       }
@@ -198,7 +225,7 @@ export function SignUpForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {error && !networkError && (
+      {error && !networkError && !databaseError && (
         <Alert className="rounded-md bg-red-50 p-4 text-sm text-red-700">
           <AlertTriangle className="h-4 w-4 mr-2" />
           {error}
@@ -244,6 +271,17 @@ export function SignUpForm() {
         </Alert>
       )}
 
+      {databaseError && (
+        <Alert className="rounded-md bg-amber-50 p-4 text-sm text-amber-700">
+          <AlertTriangle className="h-4 w-4" />
+          <AlertTitle>Database Issue</AlertTitle>
+          <AlertDescription>
+            <p className="mb-2">{error || "Unable to save user data to the database."}</p>
+            <p>You'll be signed up in demo mode and redirected shortly.</p>
+          </AlertDescription>
+        </Alert>
+      )}
+
       {mockSignUp && (
         <Alert className="mb-4">
           <Info className="h-4 w-4" />
@@ -251,6 +289,16 @@ export function SignUpForm() {
           <AlertDescription>
             You're being signed up in demo mode due to {networkError ? "network connectivity" : "database connectivity"}{" "}
             issues. You'll be redirected to the dashboard shortly.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {signUpSuccess && (
+        <Alert className="mb-4 bg-green-50">
+          <Info className="h-4 w-4" />
+          <AlertTitle>Sign-up Successful</AlertTitle>
+          <AlertDescription>
+            Your account has been created successfully. You'll be redirected to the verification page.
           </AlertDescription>
         </Alert>
       )}
@@ -263,7 +311,7 @@ export function SignUpForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          disabled={isLoading || mockSignUp}
+          disabled={isLoading || mockSignUp || signUpSuccess}
         />
       </div>
 
@@ -275,7 +323,7 @@ export function SignUpForm() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          disabled={isLoading || mockSignUp}
+          disabled={isLoading || mockSignUp || signUpSuccess}
         />
       </div>
 
@@ -287,16 +335,16 @@ export function SignUpForm() {
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
           required
-          disabled={isLoading || mockSignUp}
+          disabled={isLoading || mockSignUp || signUpSuccess}
         />
       </div>
 
       <Button
         type="submit"
         className="w-full"
-        disabled={isLoading || mockSignUp || (networkError && !navigator.onLine)}
+        disabled={isLoading || mockSignUp || signUpSuccess || (networkError && !navigator.onLine)}
       >
-        {isLoading ? "Signing up..." : mockSignUp ? "Redirecting..." : "Sign up"}
+        {isLoading ? "Signing up..." : mockSignUp ? "Redirecting..." : signUpSuccess ? "Success!" : "Sign up"}
       </Button>
 
       <div className="text-center text-sm">
