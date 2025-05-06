@@ -2,66 +2,82 @@
 
 import type React from "react"
 import { createContext, useContext, useState, useEffect } from "react"
-import { useRouter, usePathname } from "next/navigation"
-import { useAuth } from "./auth-context"
-import { isProfileComplete } from "@/utils/profile-utils"
+import { useAuth } from "@/context/auth-context" // Changed from auth-context-fixed
 
 interface ProfileCompletionContextType {
   isComplete: boolean
   isSkipped: boolean
   markAsComplete: () => void
   skipCompletion: () => void
+  resetCompletion: () => void
 }
 
 const ProfileCompletionContext = createContext<ProfileCompletionContextType | undefined>(undefined)
 
+const STORAGE_KEY = "profile_completion_status"
+
 export function ProfileCompletionProvider({ children }: { children: React.ReactNode }) {
-  const { profile, user } = useAuth()
+  const { user } = useAuth()
   const [isComplete, setIsComplete] = useState(false)
   const [isSkipped, setIsSkipped] = useState(false)
-  const router = useRouter()
-  const pathname = usePathname()
 
-  // Check if profile is complete
+  // Load completion status from localStorage on mount
   useEffect(() => {
-    if (profile) {
-      const complete = isProfileComplete(profile)
-      setIsComplete(complete)
+    if (typeof window !== "undefined" && user?.id) {
+      const userKey = `${STORAGE_KEY}_${user.id}`
+      const savedStatus = localStorage.getItem(userKey)
 
-      // Check if user has skipped profile completion
-      const skipped = localStorage.getItem(`profile-completion-skipped-${profile.id}`) === "true"
-      setIsSkipped(skipped)
-
-      // If not complete and not skipped, and not already on the completion page,
-      // redirect to profile completion
-      if (!complete && !skipped && user && pathname !== "/profile/complete") {
-        // Don't redirect if on auth pages
-        if (!pathname?.startsWith("/auth/")) {
-          router.push("/profile/complete")
+      if (savedStatus) {
+        try {
+          const { isComplete: savedIsComplete, isSkipped: savedIsSkipped } = JSON.parse(savedStatus)
+          setIsComplete(savedIsComplete)
+          setIsSkipped(savedIsSkipped)
+        } catch (error) {
+          console.error("Error parsing profile completion status:", error)
+          // Reset if there's an error
+          localStorage.removeItem(userKey)
         }
       }
     }
-  }, [profile, user, router, pathname])
+  }, [user?.id])
 
-  // Mark profile as complete
+  // Save completion status to localStorage when it changes
+  useEffect(() => {
+    if (typeof window !== "undefined" && user?.id) {
+      const userKey = `${STORAGE_KEY}_${user.id}`
+      localStorage.setItem(userKey, JSON.stringify({ isComplete, isSkipped }))
+    }
+  }, [isComplete, isSkipped, user?.id])
+
   const markAsComplete = () => {
     setIsComplete(true)
-    if (profile) {
-      localStorage.removeItem(`profile-completion-skipped-${profile.id}`)
-    }
+    setIsSkipped(false)
   }
 
-  // Skip profile completion
   const skipCompletion = () => {
     setIsSkipped(true)
-    if (profile) {
-      localStorage.setItem(`profile-completion-skipped-${profile.id}`, "true")
+  }
+
+  const resetCompletion = () => {
+    setIsComplete(false)
+    setIsSkipped(false)
+
+    if (typeof window !== "undefined" && user?.id) {
+      const userKey = `${STORAGE_KEY}_${user.id}`
+      localStorage.removeItem(userKey)
     }
-    router.push("/dashboard")
   }
 
   return (
-    <ProfileCompletionContext.Provider value={{ isComplete, isSkipped, markAsComplete, skipCompletion }}>
+    <ProfileCompletionContext.Provider
+      value={{
+        isComplete,
+        isSkipped,
+        markAsComplete,
+        skipCompletion,
+        resetCompletion,
+      }}
+    >
       {children}
     </ProfileCompletionContext.Provider>
   )

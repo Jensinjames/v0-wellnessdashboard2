@@ -52,8 +52,14 @@ export function getSupabaseClient(
 
   // If we already have a client and aren't forcing a new one, return it
   if (supabaseClient && !options.forceNew) {
-    debugLog("Returning existing Supabase client instance")
-    return supabaseClient
+    // Check if the auth object exists and has the expected methods
+    if (!supabaseClient.auth || typeof supabaseClient.auth.resetPasswordForEmail !== "function") {
+      debugLog("Existing client is invalid, creating a new one")
+      resetSupabaseClient()
+    } else {
+      debugLog("Returning existing Supabase client instance")
+      return supabaseClient
+    }
   }
 
   // If we're already initializing, return the promise

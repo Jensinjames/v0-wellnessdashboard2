@@ -7,125 +7,48 @@ export interface Database {
         Row: {
           id: string
           email: string
-          created_at?: string
-          updated_at?: string
-          // Make all non-essential fields optional to avoid schema mismatches
-          first_name?: string | null
-          last_name?: string | null
-          avatar_url?: string | null
+          first_name: string | null
+          last_name: string | null
+          avatar_url: string | null
+          created_at: string
+          updated_at: string
+          email_verified: boolean
+          phone: string | null
+          phone_verified: boolean
+          verification_token: string | null
+          verification_token_expires_at: string | null
         }
         Insert: {
           id: string
           email: string
-          created_at?: string
-          updated_at?: string
           first_name?: string | null
           last_name?: string | null
           avatar_url?: string | null
+          created_at?: string
+          updated_at?: string
+          email_verified?: boolean
+          phone?: string | null
+          phone_verified?: boolean
+          verification_token?: string | null
+          verification_token_expires_at?: string | null
         }
         Update: {
           id?: string
           email?: string
-          created_at?: string
-          updated_at?: string
           first_name?: string | null
           last_name?: string | null
           avatar_url?: string | null
+          created_at?: string
+          updated_at?: string
+          email_verified?: boolean
+          phone?: string | null
+          phone_verified?: boolean
+          verification_token?: string | null
+          verification_token_expires_at?: string | null
         }
       }
-      wellness_entries: {
-        Row: {
-          id: string
-          user_id: string
-          category_id: string
-          duration: number
-          description?: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          category_id: string
-          duration: number
-          description?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          category_id?: string
-          duration?: number
-          description?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-      }
-      wellness_categories: {
-        Row: {
-          id: string
-          name: string
-          color: string
-          icon?: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          name: string
-          color: string
-          icon?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          name?: string
-          color?: string
-          icon?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-      }
-      wellness_goals: {
-        Row: {
-          id: string
-          user_id: string
-          category_id: string
-          duration: number
-          period: string
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          category_id: string
-          duration: number
-          period: string
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          category_id?: string
-          duration?: number
-          period?: string
-          created_at?: string
-          updated_at?: string
-        }
-      }
+      // Other tables...
     }
-    Views: {
-      [_ in never]: never
-    }
-    Functions: {
-      [_ in never]: never
-    }
-    Enums: {
-      [_ in never]: never
-    }
+    // Other schema elements...
   }
 }

@@ -18,6 +18,7 @@ export function SignUpForm() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
   const [mockSignUp, setMockSignUp] = useState(false)
   const [networkError, setNetworkError] = useState(false)
   const [isCheckingNetwork, setIsCheckingNetwork] = useState(false)
@@ -25,6 +26,14 @@ export function SignUpForm() {
   const [signUpSuccess, setSignUpSuccess] = useState(false)
   const { signUp } = useAuth()
   const router = useRouter()
+
+  // Clear errors when inputs change
+  useEffect(() => {
+    if (error || Object.keys(fieldErrors).length > 0) {
+      setError(null)
+      setFieldErrors({})
+    }
+  }, [email, password, confirmPassword, error, fieldErrors])
 
   // Check browser's online status
   useEffect(() => {
@@ -41,7 +50,7 @@ export function SignUpForm() {
     }
 
     // Set initial state
-    if (!navigator.onLine) {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
       setNetworkError(true)
       setError("You appear to be offline. Please check your internet connection.")
     }
@@ -108,18 +117,21 @@ export function SignUpForm() {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
+    setFieldErrors({})
     setMockSignUp(false)
     setDatabaseError(false)
     setSignUpSuccess(false)
 
+    // Custom validation for password confirmation
     if (password !== confirmPassword) {
       setError("Passwords do not match")
+      setFieldErrors({ password: "Passwords do not match" })
       setIsLoading(false)
       return
     }
 
     // Check if we're online before attempting sign-up
-    if (!navigator.onLine) {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
       setNetworkError(true)
       setError("You appear to be offline. Sign-up requires an internet connection.")
       setIsLoading(false)
@@ -128,22 +140,21 @@ export function SignUpForm() {
 
     try {
       // Pass credentials as a single object with the correct structure
-      const {
-        error,
-        mockSignUp: isMockSignUp,
-        networkIssue,
-      } = await signUp({
-        email,
-        password,
-      })
+      const result = await signUp({ email, password })
 
-      if (error) {
+      if (result.fieldErrors) {
+        setFieldErrors(result.fieldErrors)
+        setIsLoading(false)
+        return
+      }
+
+      if (result.error) {
         // Check if it's a network error
         if (
-          error.message?.includes("Failed to fetch") ||
-          error.message?.includes("Network") ||
-          error.message?.includes("network") ||
-          error.message?.includes("connect")
+          result.error.message?.includes("Failed to fetch") ||
+          result.error.message?.includes("Network") ||
+          result.error.message?.includes("network") ||
+          result.error.message?.includes("connect")
         ) {
           setNetworkError(true)
           setError(
@@ -151,7 +162,7 @@ export function SignUpForm() {
           )
         }
         // Check if it's a database error
-        else if (error.message?.includes("Database error")) {
+        else if (result.error.message?.includes("Database error")) {
           console.log("Database error detected, proceeding with mock sign-up")
           setDatabaseError(true)
           setError("Database error detected. You'll be signed up in demo mode.")
@@ -163,13 +174,13 @@ export function SignUpForm() {
           }, 3000)
           return
         } else {
-          setError(error.message)
+          setError(result.error.message)
         }
         setIsLoading(false)
         return
       }
 
-      if (networkIssue) {
+      if (result.networkIssue) {
         setNetworkError(true)
         setError("Network issue detected. You've been signed up in offline mode.")
         setMockSignUp(true)
@@ -181,7 +192,7 @@ export function SignUpForm() {
         return
       }
 
-      if (isMockSignUp) {
+      if (result.mockSignUp) {
         setMockSignUp(true)
         // Wait a moment before redirecting to simulate the sign-up process
         setTimeout(() => {
@@ -334,7 +345,15 @@ export function SignUpForm() {
           aria-labelledby="email-label"
           aria-required="true"
           autoComplete="email"
+          aria-invalid={!!fieldErrors.email}
+          aria-errormessage={fieldErrors.email ? "email-error" : undefined}
+          className={fieldErrors.email ? "border-red-500" : ""}
         />
+        {fieldErrors.email && (
+          <p id="email-error" className="mt-1 text-sm text-red-600">
+            {fieldErrors.email}
+          </p>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -352,10 +371,18 @@ export function SignUpForm() {
           aria-required="true"
           autoComplete="new-password"
           aria-describedby="password-requirements"
+          aria-invalid={!!fieldErrors.password}
+          aria-errormessage={fieldErrors.password ? "password-error" : undefined}
+          className={fieldErrors.password ? "border-red-500" : ""}
         />
         <p id="password-requirements" className="text-xs text-gray-500">
           Password should be at least 8 characters long
         </p>
+        {fieldErrors.password && (
+          <p id="password-error" className="mt-1 text-sm text-red-600">
+            {fieldErrors.password}
+          </p>
+        )}
       </div>
 
       <div className="space-y-2">

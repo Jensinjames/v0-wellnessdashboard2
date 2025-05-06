@@ -6,6 +6,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertCircle, Info, Wifi, WifiOff } from "lucide-react"
 import { WellnessDashboard } from "./wellness-dashboard"
 import { Button } from "@/components/ui/button"
+import { VerificationReminder } from "@/components/profile/verification-reminder"
 
 export function DashboardContent() {
   const { user, profile, isLoading } = useAuth()
@@ -99,6 +100,7 @@ export function DashboardContent() {
 
   return (
     <>
+      <VerificationReminder />
       {networkStatus === "offline" && (
         <Alert variant="destructive" className="mb-4">
           <WifiOff className="h-4 w-4" />

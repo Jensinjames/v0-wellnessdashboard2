@@ -51,6 +51,14 @@ export function Navigation() {
             >
               Profile
             </Link>
+            <Link
+              href="/profile/verification"
+              className={`text-sm ${pathname === "/profile/verification" ? "font-medium text-primary" : "text-muted-foreground"}`}
+              role="menuitem"
+              aria-current={pathname === "/profile/verification" ? "page" : undefined}
+            >
+              Verification
+            </Link>
           </div>
         </div>
         <Button variant="ghost" onClick={() => signOut()} aria-label="Sign Out">

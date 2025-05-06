@@ -223,3 +223,34 @@ export function useProfileManager() {
     completionStatus,
   }
 }
+
+export function validateProfile(profile: Partial<UserProfile> | null): ProfileCompletionStatus {
+  if (!profile) {
+    return {
+      isComplete: false,
+      missingFields: ["first_name", "last_name"],
+      completionPercentage: 0,
+    }
+  }
+
+  const requiredFields = ["first_name", "last_name"]
+  const verificationFields = ["email_verified"]
+
+  const missingRequired = requiredFields.filter((field) => !profile[field as keyof typeof profile])
+
+  const missingVerification = verificationFields.filter((field) => !profile[field as keyof typeof profile])
+
+  // Calculate completion percentage (required fields + verification)
+  const totalFields = requiredFields.length + verificationFields.length
+  const completedFields = totalFields - (missingRequired.length + missingVerification.length)
+  const completionPercentage = Math.round((completedFields / totalFields) * 100)
+
+  return {
+    isComplete: missingRequired.length === 0 && missingVerification.length === 0,
+    missingFields: [
+      ...missingRequired,
+      ...missingVerification.map((field) => (field === "email_verified" ? "email_verification" : field)),
+    ],
+    completionPercentage,
+  }
+}

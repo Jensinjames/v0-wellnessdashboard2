@@ -1,8 +1,9 @@
 "use client"
 
-import type React from "react"
+import { useRef } from "react"
 
-import { createContext, useContext, useEffect, useState, useRef, useCallback } from "react"
+import type React from "react"
+import { createContext, useContext, useEffect, useState, useCallback } from "react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useRouter } from "next/navigation"
 import type { User, Session } from "@supabase/supabase-js"
@@ -194,7 +195,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [supabase, router])
 
-  // Update profile function
+  // Update profile function that uses server action instead of direct database access
   const updateProfile = async (data: ProfileFormData): Promise<{ success: boolean; error: Error | null }> => {
     if (!user) {
       return { success: false, error: new Error("User not authenticated") }
@@ -203,42 +204,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       debugLog("Updating profile for user", user.id, data)
 
-      // Direct database update approach
-      const { data: updatedProfile, error } = await supabase
-        .from("profiles")
-        .update({
-          // Map the ProfileFormData to the actual database column names
-          // This is where we need to ensure the column names match
-          full_name: `${data.first_name} ${data.last_name}`, // If your DB uses full_name instead of first_name/last_name
-          display_name: data.first_name, // If your DB uses display_name instead of first_name
-          avatar_url: data.avatar_url,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id)
-        .select()
-        .single()
+      // Use the server action to update the profile
+      const result = await fetch("/api/update-profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          profile: data,
+        }),
+      })
 
-      if (error) {
-        debugLog("Error updating profile:", error)
+      const responseData = await result.json()
+
+      if (!result.ok) {
+        debugLog("Error updating profile:", responseData.error)
         return {
           success: false,
-          error: new Error(error.message || "Failed to update profile"),
+          error: new Error(responseData.error || "Failed to update profile"),
         }
       }
 
       // Update local profile state with the new data
-      if (updatedProfile) {
-        const mergedProfile = {
+      if (profile) {
+        const updatedProfile = {
           ...profile,
-          ...updatedProfile,
-          // Ensure our client-side model has the expected properties
-          first_name: data.first_name,
-          last_name: data.last_name,
-        } as UserProfile
-
-        setProfile(mergedProfile)
+          ...data,
+          updated_at: new Date().toISOString(),
+        }
+        setProfile(updatedProfile)
         // Update cache
-        setCacheItem(CACHE_KEYS.PROFILE(user.id), mergedProfile)
+        setCacheItem(CACHE_KEYS.PROFILE(user.id), updatedProfile)
       }
 
       return { success: true, error: null }

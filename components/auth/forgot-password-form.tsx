@@ -22,7 +22,19 @@ export function ForgotPasswordForm() {
     setError(null)
 
     try {
-      const supabase = getSupabaseClient()
+      // Get the Supabase client - this might return a Promise
+      const supabaseClientOrPromise = getSupabaseClient()
+
+      // Ensure we have a resolved client
+      const supabase =
+        supabaseClientOrPromise instanceof Promise ? await supabaseClientOrPromise : supabaseClientOrPromise
+
+      // Check if the client and auth are properly initialized
+      if (!supabase || !supabase.auth) {
+        setError("Authentication service is not available. Please try again later.")
+        return
+      }
+
       const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/reset-password`,
       })

@@ -1,4 +1,5 @@
 import { ProfileCompletionForm } from "@/components/profile/profile-completion-form"
+import { AuthDebugger } from "@/components/debug/auth-debugger"
 
 export default function ProfileCompletionPage() {
   return (
@@ -6,6 +7,7 @@ export default function ProfileCompletionPage() {
       <div className="w-full max-w-md">
         <h1 className="text-center text-3xl font-bold mb-8 text-primary">Wellness Dashboard</h1>
         <ProfileCompletionForm />
+        {process.env.NODE_ENV === "development" && <AuthDebugger />}
       </div>
     </div>
   )

@@ -9,11 +9,13 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { ProfileCompletionIndicator } from "@/components/profile/profile-completion-indicator"
 import { useProfileManager } from "@/hooks/use-profile-validation"
-import { Loader2, CheckCircle2 } from "lucide-react"
+import { VerificationBadge } from "@/components/profile/verification-badge"
+import { Loader2, CheckCircle2, ArrowRight } from "lucide-react"
 import { useEffect } from "react"
+import Link from "next/link"
 
 export function ProfileForm() {
-  const { updateProfile } = useAuth()
+  const { updateProfile, profile } = useAuth()
 
   const {
     formData,
@@ -99,16 +101,41 @@ export function ProfileForm() {
           {getFieldError("last_name") && <p className="text-sm text-red-500">{getFieldError("last_name")}</p>}
         </div>
 
-        <Button type="submit" disabled={!isValid || isSubmitting} className="w-full">
-          {isSubmitting ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Saving...
-            </>
-          ) : (
-            "Save Profile"
-          )}
-        </Button>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>Email Address</Label>
+            {profile && <VerificationBadge verified={profile.email_verified || false} type="email" />}
+          </div>
+          <Input value={profile?.email || ""} disabled className="bg-gray-50" />
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label>Phone Number</Label>
+            {profile?.phone && <VerificationBadge verified={profile.phone_verified || false} type="phone" />}
+          </div>
+          <Input value={profile?.phone || "Not set"} disabled className="bg-gray-50" />
+        </div>
+
+        <div className="flex flex-col gap-4 pt-2">
+          <Button type="submit" disabled={!isValid || isSubmitting}>
+            {isSubmitting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Saving...
+              </>
+            ) : (
+              "Save Profile"
+            )}
+          </Button>
+
+          <Button variant="outline" asChild>
+            <Link href="/profile/verification">
+              Manage Verification
+              <ArrowRight className="ml-2 h-4 w-4" />
+            </Link>
+          </Button>
+        </div>
       </form>
     </div>
   )

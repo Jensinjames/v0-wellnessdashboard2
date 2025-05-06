@@ -1,6 +1,14 @@
 export function handleAuthError(error: any, operation: string): string {
   console.error(`Authentication error during ${operation}:`, error)
 
+  // Handle undefined client or methods
+  if (error.message?.includes("Cannot read properties of undefined")) {
+    if (error.message.includes("resetPasswordForEmail")) {
+      return "Authentication service is temporarily unavailable. Please try again in a moment."
+    }
+    return "Authentication service error. Please try again later."
+  }
+
   // Handle JSON parsing errors (often from rate limiting)
   if (error instanceof SyntaxError && error.message.includes("Unexpected token")) {
     if (error.message.includes("Too Many R") || error.message.includes("429")) {

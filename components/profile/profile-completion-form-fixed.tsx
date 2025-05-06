@@ -2,9 +2,9 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useRouter } from "next/navigation"
-import { useAuth } from "@/context/auth-context"
+import { useAuth } from "@/context/auth-context" // Changed from auth-context-fixed
 import { useProfileCompletion } from "@/context/profile-completion-context"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -28,17 +28,6 @@ export function ProfileCompletionForm() {
   const [success, setSuccess] = useState(false)
   const router = useRouter()
 
-  // Update form data when profile changes
-  useEffect(() => {
-    if (profile) {
-      setFormData({
-        first_name: profile.first_name || "",
-        last_name: profile.last_name || "",
-        avatar_url: profile.avatar_url || null,
-      })
-    }
-  }, [profile])
-
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target
     setFormData((prev) => ({ ...prev, [name]: value }))
@@ -58,16 +47,12 @@ export function ProfileCompletionForm() {
         return
       }
 
-      console.log("Submitting profile data:", formData)
-
       // Update profile
-      const { success, error } = await updateProfile(formData)
+      const { error } = await updateProfile(formData)
 
       if (error) {
-        console.error("Profile update error:", error)
         setError(error.message)
-      } else if (success) {
-        console.log("Profile updated successfully")
+      } else {
         setSuccess(true)
         markAsComplete()
 
@@ -77,7 +62,6 @@ export function ProfileCompletionForm() {
         }, 1500)
       }
     } catch (err: any) {
-      console.error("Unexpected error in form submission:", err)
       setError(err.message || "An unexpected error occurred")
     } finally {
       setIsSubmitting(false)
@@ -86,7 +70,6 @@ export function ProfileCompletionForm() {
 
   const handleSkip = () => {
     skipCompletion()
-    router.push("/dashboard")
   }
 
   return (

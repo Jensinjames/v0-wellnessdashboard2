@@ -1,6 +1,6 @@
 import { Progress } from "@/components/ui/progress"
 import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert"
-import { CheckCircle2, AlertCircle, ChevronRight } from "lucide-react"
+import { CheckCircle2, AlertCircle, ChevronRight, CheckCircle } from "lucide-react"
 import type { UserProfile } from "@/types/auth"
 import { useProfileCompletion } from "@/hooks/use-profile-validation"
 import { Button } from "@/components/ui/button"
@@ -49,6 +49,18 @@ export function ProfileCompletionIndicator({
         <Progress value={completionPercentage} className="h-2" />
       </div>
 
+      {profile?.email_verified ? (
+        <div className="flex items-center mt-2 text-sm text-green-600">
+          <CheckCircle className="h-4 w-4 mr-1" />
+          <span>Email verified</span>
+        </div>
+      ) : (
+        <div className="flex items-center mt-2 text-sm text-amber-600">
+          <AlertCircle className="h-4 w-4 mr-1" />
+          <span>Email not verified</span>
+        </div>
+      )}
+
       {showDetails && missingFields.length > 0 && (
         <div className="rounded-md bg-amber-50 p-3 text-sm">
           <p className="font-medium text-amber-800 mb-2">Missing information:</p>
@@ -61,7 +73,9 @@ export function ProfileCompletionIndicator({
                     ? "Last name"
                     : field === "avatar_url"
                       ? "Profile picture"
-                      : field}
+                      : field === "email_verification"
+                        ? "Verify your email address"
+                        : field}
               </li>
             ))}
           </ul>
