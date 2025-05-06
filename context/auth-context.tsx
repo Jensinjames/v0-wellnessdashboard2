@@ -161,6 +161,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (email: string, password: string) => {
     try {
+      // Fix: Ensure email and password are strings and properly formatted
+      if (typeof email !== "string" || typeof password !== "string") {
+        return {
+          error: new Error("Email and password must be strings"),
+        }
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(email)) {
+        return {
+          error: new Error("Invalid email format"),
+        }
+      }
+
       if (email === "demo@example.com" && password === "demo123") {
         // Mock sign-in for demo user
         setUser({
@@ -176,16 +191,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile({
           id: "mock-" + Math.random().toString(36).substring(2, 15),
           email: "demo@example.com",
-        })
+          first_name: "Demo",
+          last_name: "User",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        } as UserProfile)
         setSession({
           access_token: "mock-token",
           token_type: "bearer",
           expires_in: 3600,
           refresh_token: "mock-refresh-token",
-        } as any)
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          user: {
+            id: "mock-" + Math.random().toString(36).substring(2, 15),
+            email: "demo@example.com",
+            app_metadata: {},
+            user_metadata: {},
+            aud: "authenticated",
+            created_at: new Date().toISOString(),
+          },
+        } as Session)
         return { error: null, mockSignIn: true }
       } else {
-        const { error } = await supabase.auth.signInWithPassword({ email, password })
+        // Fix: Use a properly structured object for signInWithPassword
+        const { error } = await supabase.auth.signInWithPassword({
+          email: email.trim(),
+          password,
+        })
 
         if (error?.message?.includes("Network request failed")) {
           return { error: error ? new Error(error.message) : null, mockSignIn: false, networkIssue: true }
@@ -194,12 +226,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: error ? new Error(error.message) : null, mockSignIn: false }
       }
     } catch (error: any) {
+      console.error("Sign in error:", error)
       return { error: error instanceof Error ? error : new Error(String(error)) }
     }
   }
 
   const signUp = async (email: string, password: string) => {
     try {
+      // Fix: Ensure email and password are strings and properly formatted
+      if (typeof email !== "string" || typeof password !== "string") {
+        return {
+          error: new Error("Email and password must be strings"),
+        }
+      }
+
+      // Validate email format
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+      if (!emailRegex.test(email)) {
+        return {
+          error: new Error("Invalid email format"),
+        }
+      }
+
       if (email === "demo@example.com") {
         // Mock sign-up for demo user
         setUser({
@@ -215,16 +263,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setProfile({
           id: "mock-" + Math.random().toString(36).substring(2, 15),
           email: "demo@example.com",
-        })
+          first_name: "Demo",
+          last_name: "User",
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        } as UserProfile)
         setSession({
           access_token: "mock-token",
           token_type: "bearer",
           expires_in: 3600,
           refresh_token: "mock-refresh-token",
-        } as any)
+          expires_at: Math.floor(Date.now() / 1000) + 3600,
+          user: {
+            id: "mock-" + Math.random().toString(36).substring(2, 15),
+            email: "demo@example.com",
+            app_metadata: {},
+            user_metadata: {},
+            aud: "authenticated",
+            created_at: new Date().toISOString(),
+          },
+        } as Session)
         return { error: null, mockSignUp: true }
       } else {
-        const { error } = await supabase.auth.signUp({ email, password })
+        // Fix: Use a properly structured object for signUp
+        const { error } = await supabase.auth.signUp({
+          email: email.trim(),
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
+          },
+        })
 
         if (error?.message?.includes("Network request failed")) {
           return { error: error ? new Error(error.message) : null, mockSignUp: false, networkIssue: true }
@@ -233,6 +301,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: error ? new Error(error.message) : null, mockSignUp: false }
       }
     } catch (error: any) {
+      console.error("Sign up error:", error)
       return { error: error instanceof Error ? error : new Error(String(error)) }
     }
   }
@@ -242,7 +311,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     router.push("/auth/sign-in")
   }
 
-  const updateProfile = async (profileData: any) => {
+  const updateProfile = async (profileData: Partial<UserProfile>) => {
     if (!user) return { error: new Error("Not authenticated") }
 
     try {
