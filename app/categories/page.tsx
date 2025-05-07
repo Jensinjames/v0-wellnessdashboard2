@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, Suspense } from "react"
 import { useAuth } from "@/context/auth-context"
 import { Navigation } from "@/components/navigation"
 import { Button } from "@/components/ui/button"
@@ -9,6 +9,15 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { BackButton } from "@/components/ui/back-button"
 import { CategoryList } from "@/components/categories/category-list"
 import { CategoryForm } from "@/components/categories/category-form"
+
+// Loading fallback component
+function LoadingFallback() {
+  return (
+    <div className="w-full p-4 flex justify-center">
+      <div className="animate-pulse text-muted-foreground">Loading...</div>
+    </div>
+  )
+}
 
 export default function CategoriesPage() {
   const { user, isLoading } = useAuth()
@@ -63,7 +72,15 @@ export default function CategoriesPage() {
         <div className="flex justify-between items-center mb-6">
           <h1 className="text-2xl font-bold">Categories</h1>
           <div className="flex gap-2">
-            <BackButton />
+            <Suspense
+              fallback={
+                <Button variant="outline" disabled>
+                  Back
+                </Button>
+              }
+            >
+              <BackButton />
+            </Suspense>
             <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
               <DialogTrigger asChild>
                 <Button className="flex items-center gap-2">
@@ -81,7 +98,9 @@ export default function CategoriesPage() {
           </div>
         </div>
 
-        <CategoryList key={refreshKey} />
+        <Suspense fallback={<LoadingFallback />}>
+          <CategoryList key={refreshKey} />
+        </Suspense>
       </main>
     </div>
   )
