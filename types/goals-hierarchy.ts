@@ -7,9 +7,8 @@ export interface GoalCategory {
   user_id: string
   created_at: string
   updated_at: string
-  daily_time_allocation: number // in hours
+  daily_time_allocation: number
   subcategories?: GoalSubcategory[]
-  total_progress?: number // calculated field
 }
 
 export interface GoalSubcategory {
@@ -20,22 +19,21 @@ export interface GoalSubcategory {
   user_id: string
   created_at: string
   updated_at: string
-  daily_time_allocation: number // in hours
+  daily_time_allocation: number
   goals?: Goal[]
-  total_progress?: number // calculated field
 }
 
 export interface Goal {
   id: string
   name: string
   description?: string
-  notes?: string // private notes not shown in graphs
+  notes?: string
   subcategory_id: string
   user_id: string
   created_at: string
   updated_at: string
-  daily_time_allocation: number // in hours
-  progress: number // 0-100
+  daily_time_allocation: number
+  progress: number
   status: "not_started" | "in_progress" | "completed" | "on_hold"
   priority: "low" | "medium" | "high"
   due_date?: string
@@ -45,17 +43,18 @@ export interface TimeEntry {
   id: string
   goal_id: string
   user_id: string
-  duration: number // in hours
+  duration: number
   date: string
   notes?: string
   created_at: string
 }
 
-// For the drag and drop functionality
-export type DraggableItemType = "category" | "subcategory" | "goal"
-
-export interface DraggableItem {
-  id: string
-  type: DraggableItemType
-  parentId?: string
+export interface GoalHierarchy {
+  categories: GoalCategory[]
+  subcategories: GoalSubcategory[]
+  goals: Goal[]
+  timeEntries: TimeEntry[]
 }
+
+export type Category = GoalCategory
+export type Subcategory = GoalSubcategory

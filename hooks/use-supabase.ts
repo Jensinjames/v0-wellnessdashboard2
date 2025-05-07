@@ -25,6 +25,7 @@ interface UseSupabaseOptions {
   offlineMode?: boolean
 }
 
+// Define interface for query options to improve type safety
 interface QueryOptions<T> {
   retries?: number
   retryDelay?: number
@@ -369,7 +370,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
     } finally {
       setIsRefreshing(false)
     }
-  }, [user, debug, tokenManagerRef, setConsecutiveErrors])
+  }, [user, debug, tokenManagerRef, setIsRefreshing])
 
   // Function to check if token is valid
   const isTokenValid = useCallback(() => {
@@ -379,7 +380,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
 
   // Wrap Supabase queries with error handling and token validation
   const query = useCallback(
-    async <T>(
+    async <T>(\
       queryFn: (client: SupabaseClient<Database>) => Promise<T>,
       options: QueryOptions<T> = {}
     ): Promise<T> => {
@@ -464,7 +465,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   throw lastError
 }
 ,
-    [isOnline, debug, tokenManagerRef, clientRef, setLastActivity, setIsOnline]
+    [isOnline, debug, clientRef, setLastActivity, setIsOnline, tokenManagerRef]
   )
 
 // Get detailed token status
@@ -506,7 +507,7 @@ const resetAuthState = useCallback(() => {
   if (isOnline && tokenManagerRef.current) {
     tokenManagerRef.current.forceRefresh()
   }
-}, [debug, debugMode, isOnline, clientRef, setConsecutiveErrors])
+}, [debug, debugMode, isOnline, clientRef, tokenManagerRef])
 
 return {
     supabase: clientRef.current,

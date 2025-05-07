@@ -28,7 +28,7 @@ export default function SignInPage() {
 
   return (
     <AuthLayout title="Sign In" description="Enter your credentials to access your account">
-      <Suspense fallback={<div>Loading...</div>}>
+      <Suspense fallback={<div className="p-4 text-center">Loading sign-in form...</div>}>
         <SignInForm />
       </Suspense>
     </AuthLayout>
