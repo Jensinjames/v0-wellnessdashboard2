@@ -1,4 +1,4 @@
-import { isDebugMode } from "@/lib/env-utils"
+import { isDebugMode } from "@/lib/env-utils-secure"
 
 // Debug settings object
 interface DebugSettings {
@@ -84,6 +84,24 @@ export function initializeDebugSettings(): void {
       setDebugMode(true, "all")
     }
   }
+}
+
+// Monitor GoTrueClient instances in the console
+export function monitorGoTrueClientInstances(): void {
+  if (typeof window === "undefined" || !isDebugMode()) {
+    return
+  }
+  // Add a global helper function to check for GoTrueClient instances
+  ;(window as any).__checkGoTrueClients = () => {
+    const instances = Array.from(document.querySelectorAll("*"))
+      .filter((el) => (el as any)._goTrueClient)
+      .map((el) => (el as any)._goTrueClient)
+
+    console.log(`Found ${instances.length} GoTrueClient instances`)
+    return instances
+  }
+
+  console.log("GoTrueClient monitor installed. Run window.__checkGoTrueClients() to check for instances.")
 }
 
 // Call this function when your app initializes

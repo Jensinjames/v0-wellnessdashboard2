@@ -1,12 +1,12 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useAuth } from "@/context/auth-context"
 import { useToast } from "@/hooks/use-toast"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 import { getTokenManager, TOKEN_EVENTS, resetTokenManager } from "@/lib/token-manager"
-import { getSupabaseClient } from "@/lib/supabase-singleton"
 
 // Network status detection
 const NETWORK_DETECTION_INTERVAL = 10000 // 10 seconds
@@ -58,7 +58,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   const clientRef = useRef<SupabaseClient<Database> | null>(null)
   const tokenManagerRef = useRef<ReturnType<typeof getTokenManager> | null>(null)
   const networkCheckTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const activityTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const activityTimerRef = useRef(false)
   const pingInProgressRef = useRef(false)
 
   // Debug logging
@@ -88,8 +88,25 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         // Ignore storage errors
       }
 
-      // Use the singleton client
-      clientRef.current = getSupabaseClient()
+      // Create client with enhanced options
+      clientRef.current = createClientComponentClient<Database>({
+        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+        supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        options: {
+          auth: {
+            persistSession,
+            autoRefreshToken,
+            storageKey: "supabase-auth-token-v2",
+            flowType: "pkce",
+            debug: debugMode,
+          },
+          global: {
+            headers: {
+              "x-client-info": `useSupabase-hook/${process.env.NEXT_PUBLIC_APP_VERSION || "1.0.0"}`,
+            },
+          },
+        },
+      })
 
       // Initialize token manager
       if (clientRef.current) {
@@ -286,7 +303,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         networkCheckTimerRef.current = null
       }
     }
-  }, [isInitialized, monitorNetwork, debug, isOnline, toast, user, tokenManagerRef])
+  }, [isInitialized, monitorNetwork, debug, isOnline, toast, user, tokenManagerRef, debugMode])
 
   // Set up activity tracking
   useEffect(() => {
@@ -304,7 +321,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
     window.addEventListener("mousemove", trackActivity)
 
     // Check for inactivity every minute
-    activityTimerRef.current = setInterval(() => {
+    const activityCheck = () => {
       const inactiveTime = Date.now() - lastActivity
       debug(`User inactive for ${Math.round(inactiveTime / 1000)} seconds`)
 
@@ -313,7 +330,9 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         debug("User inactive for 30 minutes, refreshing token")
         tokenManagerRef.current.forceRefresh()
       }
-    }, 60 * 1000)
+    }
+
+    activityTimerRef.current = setInterval(activityCheck, 60 * 1000)
 
     return () => {
       window.removeEventListener("click", trackActivity)
@@ -325,7 +344,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         clearInterval(activityTimerRef.current)
       }
     }
-  }, [isInitialized, lastActivity, user, debug, tokenManagerRef])
+  }, [isInitialized, lastActivity, user, debug, tokenManagerRef, setConsecutiveErrors])
 
   // Function to refresh the auth token directly
   const refreshToken = useCallback(async () => {
@@ -353,7 +372,45 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
     } finally {
       setIsRefreshing(false)
     }
-  }, [user, debug, tokenManagerRef, setIsRefreshing])
+  }, [user, debug, tokenManagerRef, setIsRefreshing, setConsecutiveErrors])
+
+  // Function to verify user during sign-in or sign-up
+  const verifyUser = useCallback(
+    async (email: string, action: "verify-signup" | "validate-user" | "get-verification-status", userId?: string) => {
+      debug(`Verifying user with action: ${action}`)
+
+      try {
+        // Check for offline mode
+        if (!isOnline) {
+          debug("Cannot verify user while offline")
+          return { error: "Cannot verify user while offline" }
+        }
+
+        // Make the call to our edge function
+        const response = await fetch("/api/auth/user-verification", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ email, action, userId }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          debug(`User verification error: ${errorData.error}`)
+          return { error: errorData.error || "User verification failed" }
+        }
+
+        const data = await response.json()
+        debug(`User verification successful: ${JSON.stringify(data)}`)
+        return { data, error: null }
+      } catch (error: any) {
+        debug(`User verification exception: ${error.message}`)
+        return { data: null, error: error.message || "Unknown error during user verification" }
+      }
+    },
+    [isOnline, debug],
+  )
 
   // Function to check if token is valid
   const isTokenValid = useCallback(() => {
@@ -490,17 +547,88 @@ const resetAuthState = useCallback(() => {
   if (isOnline && tokenManagerRef.current) {
     tokenManagerRef.current.forceRefresh()
   }
-}, [debug, debugMode, isOnline, clientRef, tokenManagerRef])
+}, [debug, debugMode, isOnline, clientRef, tokenManagerRef, setConsecutiveErrors])
+
+// Optimized user profile query with caching and offline support
+const getUserProfile = useCallback(
+  async (userId: string, options: { force?: boolean; cacheTime?: number } = {}) => {
+    const { force = false, cacheTime = 5 * 60 * 1000 } = options
+
+    // Check cache first
+    if (!force && typeof window !== "undefined") {
+      try {
+        const cachedProfile = localStorage.getItem(`user_profile:${userId}`)
+        const cacheTimestamp = localStorage.getItem(`user_profile_time:${userId}`)
+
+        if (cachedProfile && cacheTimestamp) {
+          const timestamp = Number.parseInt(cacheTimestamp, 10)
+          const now = Date.now()
+
+          // If cache is fresh enough, use it
+          if (now - timestamp < cacheTime) {
+            debug("Using cached user profile")
+            return { data: JSON.parse(cachedProfile), error: null, source: "cache" }
+          }
+        }
+      } catch (e) {
+        // Ignore cache errors
+        debug("Error reading profile cache:", e)
+      }
+    }
+
+    // If we're offline, return cached data or error
+    if (!isOnline) {
+      try {
+        const cachedProfile = localStorage.getItem(`user_profile:${userId}`)
+        if (cachedProfile) {
+          debug("Offline: using cached profile data")
+          return { data: JSON.parse(cachedProfile), error: null, source: "cache-offline" }
+        }
+      } catch (e) {
+        // Ignore cache errors
+      }
+
+      return { data: null, error: "Cannot fetch profile while offline", source: "error-offline" }
+    }
+
+    // Get fresh data, using our validation edge function
+    try {
+      const result = await verifyUser("", "validate-user", userId)
+
+      if (result.error) {
+        return { data: null, error: result.error, source: "api" }
+      }
+
+      // Cache the result
+      if (typeof window !== "undefined" && result.data?.profile) {
+        try {
+          localStorage.setItem(`user_profile:${userId}`, JSON.stringify(result.data.profile))
+          localStorage.setItem(`user_profile_time:${userId}`, Date.now().toString())
+        } catch (e) {
+          // Ignore cache errors
+        }
+      }
+
+      return { data: result.data?.profile, error: null, source: "api" }
+    } catch (error: any) {
+      debug(`Error fetching user profile: ${error.message}`)
+      return { data: null, error: error.message || "Failed to fetch user profile", source: "error" }
+    }
+  },
+  [isOnline, debug, verifyUser],
+)
 
 return {
-    supabase: clientRef.current,
-    isInitialized,
-    isOnline,
-    refreshToken,
-    isTokenValid,
-    query,
-    getTokenStatus,
-    resetAuthState,
-    tokenStatus,
-  }
+  supabase: clientRef.current,
+  isInitialized,
+  isOnline,
+  refreshToken,
+  isTokenValid,
+  query,
+  getTokenStatus,
+  resetAuthState,
+  tokenStatus,
+  verifyUser,    // Add this line
+  getUserProfile // Add this line
+}
 }

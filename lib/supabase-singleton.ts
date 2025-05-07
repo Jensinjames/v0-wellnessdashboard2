@@ -1,96 +1,70 @@
-"use client"
-
+/**
+ * Enhanced Supabase singleton client implementation
+ * This ensures only one Supabase client is created and shared across the application
+ */
 import { createClient } from "@supabase/supabase-js"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 
-// For debugging
-export let instanceCount = 0
-
-// Global variables for singleton pattern
-let supabaseClient: SupabaseClient<Database> | null = null
+// Global singleton variables
+let instance: SupabaseClient<Database> | null = null
+let isInitializing = false
+let initPromise: Promise<SupabaseClient<Database>> | null = null
 
 /**
- * Creates a Supabase client singleton
- * This ensures only one client instance is used across the application
+ * Get the Supabase client instance (singleton pattern)
  */
-export function getSupabaseClient(): SupabaseClient<Database> {
-  // If we already have a client, return it
-  if (supabaseClient) {
-    return supabaseClient
+export function getSupabaseClient(
+  options = {} as { forceNew?: boolean },
+): SupabaseClient<Database> | Promise<SupabaseClient<Database>> {
+  // Early return if we already have an instance
+  if (instance && !options.forceNew) {
+    return instance
   }
 
-  // Check for required environment variables
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    throw new Error("SSR client supabaseUrl and supabaseKey are required!")
+  // If we're already initializing, return the promise
+  if (isInitializing && initPromise && !options.forceNew) {
+    return initPromise
   }
 
-  // Create a new client
-  instanceCount++
+  // Set initializing flag
+  isInitializing = true
 
-  console.log(`[Supabase Singleton] Creating new Supabase client instance (${instanceCount})`)
-
-  supabaseClient = createClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-    {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: false,
-        flowType: "pkce",
-        storageKey: "wellness-dashboard-auth-token",
-      },
-      global: {
-        headers: {
-          "x-application-name": "wellness-dashboard",
-          "x-client-instance": `singleton-${instanceCount}`,
-        },
-      },
-    },
-  )
-
-  return supabaseClient
-}
-
-// Alias for getSupabaseClient to maintain compatibility with existing code
-export const createSupabaseSingleton = getSupabaseClient
-
-// Track instances of GoTrue clients
-const goTrueClients = new Set<any>()
-
-// Monitor for multiple GoTrue client instances
-export function startGoTrueMonitoring(intervalMs = 60000): () => void {
-  if (typeof window === "undefined") return () => {}
-
-  // Function to check for multiple instances
-  const checkForMultipleInstances = () => {
-    if (supabaseClient) {
-      const goTrueClient = (supabaseClient.auth as any)?._goTrueClient
-
-      if (goTrueClient) {
-        goTrueClients.add(goTrueClient)
-
-        if (goTrueClients.size > 1) {
-          console.warn(
-            `[CRITICAL] Multiple GoTrueClient instances detected (${goTrueClients.size}). ` +
-              `This may lead to authentication issues. Please ensure only the singleton pattern is used.`,
-          )
-
-          // Clean up - keep only the current one
-          goTrueClients.clear()
-          goTrueClients.add(goTrueClient)
-        }
+  // Create initialization promise
+  initPromise = new Promise((resolve, reject) => {
+    try {
+      // Check required environment variables
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        throw new Error("Missing required Supabase environment variables")
       }
+
+      // Create the client
+      const client = createClient<Database>(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        {
+          auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true,
+            flowType: "pkce",
+          },
+        },
+      )
+
+      // Store the client in our singleton
+      instance = client
+
+      // Reset state and resolve
+      isInitializing = false
+      resolve(client)
+    } catch (error) {
+      // Reset state and reject
+      isInitializing = false
+      initPromise = null
+      reject(error)
     }
-  }
+  })
 
-  // Initial check
-  checkForMultipleInstances()
-
-  // Set up interval to periodically check
-  const intervalId = setInterval(checkForMultipleInstances, intervalMs)
-
-  // Return function to stop monitoring
-  return () => clearInterval(intervalId)
+  return initPromise
 }

@@ -11,6 +11,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Info, AlertTriangle, Mail } from "lucide-react"
+import { toast } from "sonner"
+import { useSupabase } from "@/context/supabase-context"
 
 export function SignInForm() {
   const [email, setEmail] = useState("")
@@ -21,9 +23,12 @@ export function SignInForm() {
   const [mockSignIn, setMockSignIn] = useState(false)
   const [isEmailVerificationError, setIsEmailVerificationError] = useState(false)
   const [redirectPath, setRedirectPath] = useState("/dashboard")
+  const [verificationNeeded, setVerificationNeeded] = useState(false)
+  const [verificationEmail, setVerificationEmail] = useState("")
   const { signIn } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
+  const { supabase, verifyUser } = useSupabase()
 
   // Use effect to safely access search params after mount
   useEffect(() => {
@@ -51,9 +56,10 @@ export function SignInForm() {
     setFieldErrors({})
     setMockSignIn(false)
     setIsEmailVerificationError(false)
+    setVerificationNeeded(false)
+    setVerificationEmail("")
 
     try {
-      // Pass credentials as a single object with the correct structure
       const result = await signIn({ email, password })
 
       if (result.fieldErrors) {
@@ -96,6 +102,53 @@ export function SignInForm() {
     }
   }
 
+  const handleSignIn = async (formData: FormData) => {
+    setIsLoading(true)
+
+    try {
+      const email = formData.get("email") as string
+      const password = formData.get("password") as string
+
+      // Check if the user exists and verification status
+      const { exists, verified, error: verifyError } = await verifyUser(email, "verify-signup")
+
+      if (verifyError) {
+        console.error("Error verifying user:", verifyError)
+        // Continue with sign-in anyway since this is a secondary check
+      } else if (exists && !verified) {
+        // User exists but is not verified - we can show a special message
+        setVerificationNeeded(true)
+        setVerificationEmail(email)
+      }
+
+      // Proceed with normal sign-in flow
+      const { error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      if (error) {
+        setError(error.message)
+        return
+      }
+
+      // If sign-in succeeded but verification is needed, we can handle that specially
+      if (exists && !verified) {
+        toast({
+          title: "Email verification needed",
+          description: "Please verify your email address to access all features",
+          variant: "warning",
+        })
+      }
+
+      router.push("/dashboard")
+    } catch (error: any) {
+      setError(error.message || "An unexpected error occurred")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4" aria-labelledby="sign-in-heading">
       <h2 id="sign-in-heading" className="sr-only">
@@ -126,6 +179,34 @@ export function SignInForm() {
                 onClick={() => {
                   // Here you would implement resending the verification email
                   alert("Verification email resend functionality would go here")
+                }}
+              >
+                request a new verification email
+              </Button>
+              .
+            </p>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {verificationNeeded && (
+        <Alert className="rounded-md bg-yellow-50 p-4 text-sm text-yellow-700" role="alert" aria-live="assertive">
+          <Mail className="h-4 w-4" aria-hidden="true" />
+          <AlertTitle>Email Verification Needed</AlertTitle>
+          <AlertDescription>
+            <p className="mb-2">
+              Please verify your email address before signing in. Check your inbox (including spam) for a verification
+              link.
+            </p>
+            <p>
+              If you didn't receive the email, you can{" "}
+              <Button
+                type="button"
+                variant="link"
+                className="p-0 h-auto text-yellow-800 underline"
+                onClick={() => {
+                  // Here you would implement resending the verification email
+                  alert("Verification email resend functionality would go here for " + verificationEmail)
                 }}
               >
                 request a new verification email

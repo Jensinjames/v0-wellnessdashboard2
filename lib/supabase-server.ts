@@ -2,7 +2,6 @@ import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import type { CookieOptions } from "@supabase/ssr"
 import type { Database } from "@/types/database"
-import { SERVER_ENV, validateServerEnv } from "./env-config"
 
 // Connection health tracking for server
 let lastServerConnectionAttempt = 0
@@ -18,10 +17,8 @@ export function createServerSupabaseClient(
 ) {
   const cookieStore = cookies()
 
-  // Validate environment variables
-  const validation = validateServerEnv()
-  if (!validation.valid) {
-    throw new Error(`Missing required server environment variables: ${validation.missing.join(", ")}`)
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+    throw new Error("Supabase URL and anon key are required")
   }
 
   // Calculate timeout with exponential backoff if we've had failed attempts recently
@@ -45,7 +42,7 @@ export function createServerSupabaseClient(
       ? Math.min(SERVER_CONNECTION_BACKOFF_BASE * Math.pow(2, serverConnectionAttempts - 1), 15000)
       : 10000)
 
-  return createServerClient<Database>(SERVER_ENV.SUPABASE_URL!, SERVER_ENV.SUPABASE_ANON_KEY!, {
+  return createServerClient<Database>(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
     cookies: {
       get(name: string) {
         return cookieStore.get(name)?.value
@@ -170,16 +167,14 @@ export function createClient(
     timeout?: number
   } = {},
 ) {
-  // Validate environment variables
-  const validation = validateServerEnv()
-  if (!validation.valid) {
-    throw new Error(`Missing required server environment variables: ${validation.missing.join(", ")}`)
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+    throw new Error("Supabase URL and anon key are required")
   }
 
   // Calculate timeout with exponential backoff
   const timeout = options.timeout || 10000
 
-  return createServerClient<Database>(SERVER_ENV.SUPABASE_URL!, SERVER_ENV.SUPABASE_ANON_KEY!, {
+  return createServerClient<Database>(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
     cookies: {
       get(name: string) {
         return cookieGetter(name)

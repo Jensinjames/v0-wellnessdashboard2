@@ -3,6 +3,7 @@ import { EnhancedSignInForm } from "@/components/auth/enhanced-sign-in-form"
 import { cookies } from "next/headers"
 import { createServerComponentClient } from "@supabase/auth-helpers-nextjs"
 import { redirect } from "next/navigation"
+import { AuthLayoutSimplified } from "@/components/auth/auth-layout-simplified"
 
 export const metadata: Metadata = {
   title: "Sign In | Wellness Dashboard",
@@ -24,10 +25,8 @@ export default async function SignInPage() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center py-12 px-4 sm:px-6 lg:px-8 bg-gray-50">
-      <div className="w-full max-w-md space-y-8 bg-white p-8 rounded-lg shadow-md">
-        <EnhancedSignInForm />
-      </div>
-    </div>
+    <AuthLayoutSimplified>
+      <EnhancedSignInForm />
+    </AuthLayoutSimplified>
   )
 }
