@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server"
-import { getConnectionPoolStats } from "@/lib/supabase-server-optimized"
+import connectionPool from "@/lib/connection-pool"
 
 export async function GET() {
   try {
-    const poolStats = await getConnectionPoolStats()
+    // Get stats without initializing connections
+    const poolStats = connectionPool.getStats()
 
     return NextResponse.json({
       poolStats,

@@ -4,6 +4,8 @@ import { Navigation } from "@/components/navigation"
 import { WellnessDashboard } from "@/components/dashboard/wellness-dashboard"
 import { ProfileReminderBanner } from "@/components/profile/profile-reminder-banner"
 import { isOnline } from "@/utils/network-utils"
+import { useEffect, useState } from "react"
+import { useProfileCompletion } from "@/context/profile-completion-context"
 
 // Add a network error fallback component
 function NetworkErrorFallback() {
@@ -40,10 +42,15 @@ function NetworkErrorFallback() {
   )
 }
 
-// Update the Dashboard component to check for network errors
-export default function DashboardPage() {
-  // Check if we're online
-  const online = isOnline()
+// Create a wrapper component that safely uses the context
+function DashboardContent() {
+  const { isComplete } = useProfileCompletion()
+  const [online, setOnline] = useState(true)
+
+  useEffect(() => {
+    // Check if we're online only on the client side
+    setOnline(isOnline())
+  }, [])
 
   return (
     <>
@@ -59,4 +66,25 @@ export default function DashboardPage() {
       </div>
     </>
   )
+}
+
+// Update the Dashboard component to handle SSR safely
+export default function DashboardPage() {
+  // Use client-side only rendering for components that use context
+  const [isMounted, setIsMounted] = useState(false)
+
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
+
+  // During SSR or before hydration, render a simple loading state
+  if (!isMounted) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="w-16 h-16 border-4 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+      </div>
+    )
+  }
+
+  return <DashboardContent />
 }

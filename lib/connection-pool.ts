@@ -29,6 +29,7 @@ class ConnectionPool {
   private connectionCreationStartTime = Date.now()
   private isShuttingDown = false
   private maintenanceInterval: NodeJS.Timeout | null = null
+  private isInitialized = false
 
   constructor(config: Partial<PoolConfig> = {}) {
     this.config = {
@@ -37,14 +38,13 @@ class ConnectionPool {
       idleTimeoutMillis: config.idleTimeoutMillis || 30000,
     }
 
-    // Initialize the minimum number of connections
-    this.initializeMinConnections()
-
-    // Start maintenance routine
-    this.startMaintenance()
+    // Don't initialize connections at module level
+    // We'll do it lazily when needed
   }
 
   private async initializeMinConnections(): Promise<void> {
+    if (this.isInitialized) return
+
     console.log(`[Connection Pool] Initializing ${this.config.minSize} minimum connections`)
     const initPromises = []
 
@@ -54,6 +54,11 @@ class ConnectionPool {
 
     await Promise.all(initPromises)
     console.log(`[Connection Pool] Initialized ${this.pool.length} connections`)
+
+    this.isInitialized = true
+
+    // Start maintenance routine
+    this.startMaintenance()
   }
 
   private startMaintenance(): void {
@@ -151,6 +156,11 @@ class ConnectionPool {
       throw new Error("Connection pool is shutting down")
     }
 
+    // Initialize the pool if it hasn't been initialized yet
+    if (!this.isInitialized) {
+      await this.initializeMinConnections()
+    }
+
     // If we have available connections in the pool, use one
     const availableConnection = this.pool.find((conn) => !this.activeConnections.has(conn))
 
@@ -230,6 +240,7 @@ class ConnectionPool {
     this.lastResetTime = Date.now()
     this.pool = []
     this.activeConnections.clear()
+    this.isInitialized = false
 
     console.log("[Connection Pool] Shutdown complete")
   }
@@ -240,7 +251,6 @@ class ConnectionPool {
     this.connectionCreationCount = 0
     this.connectionCreationStartTime = Date.now()
     await this.initializeMinConnections()
-    this.startMaintenance()
   }
 }
 
