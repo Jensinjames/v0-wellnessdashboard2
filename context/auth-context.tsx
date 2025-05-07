@@ -10,6 +10,7 @@ import type { UserProfile, ProfileFormData } from "@/types/auth"
 import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
 import { validateAuthCredentials, sanitizeEmail } from "@/utils/auth-validation"
+import { resetTokenManager } from "@/lib/token-manager"
 import { resetSupabaseClient } from "@/lib/supabase-client"
 
 interface AuthContextType {
@@ -32,6 +33,7 @@ interface AuthContextType {
   refreshProfile: () => Promise<UserProfile | null>
   updateProfile: (data: ProfileFormData) => Promise<{ success: boolean; error: Error | null }>
   getClientInfo: () => any
+  refreshSession: () => Promise<boolean>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -64,6 +66,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = createClientComponentClient()
   const isMounted = useRef(true)
   const isInitialized = useRef(false)
+  const lastTokenRefresh = useRef<number>(0)
+  const refreshInProgress = useRef<boolean>(false)
 
   // Initialize auth state
   useEffect(() => {
@@ -150,6 +154,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(null)
             setProfile(null)
             setSession(null)
+            // Reset token manager to clear any scheduled refreshes
+            resetTokenManager()
             // Reset the client to ensure a clean state
             resetSupabaseClient()
           } else if (event === "SIGNED_IN" && newSession?.user) {
@@ -171,6 +177,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           } else if (event === "TOKEN_REFRESHED" && newSession) {
             debugLog("Token refreshed, updating session")
             setSession(newSession)
+            lastTokenRefresh.current = Date.now()
           }
 
           // Refresh the page to update server components
@@ -322,6 +329,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         // Cache the mock profile
         setCacheItem(CACHE_KEYS.PROFILE(mockUserId), mockProfile)
+        lastTokenRefresh.current = Date.now()
 
         return { error: null, mockSignIn: true }
       } else {
@@ -349,6 +357,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           debugLog("Sign-in successful, updating session and user")
           setSession(data.session)
           setUser(data.user)
+          lastTokenRefresh.current = Date.now()
 
           // Fetch and update the profile as well
           if (data.user) {
@@ -438,6 +447,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } as Session
 
         setSession(mockSession)
+        lastTokenRefresh.current = Date.now()
 
         // Cache the mock profile
         setCacheItem(CACHE_KEYS.PROFILE(mockUserId), mockProfile)
@@ -472,6 +482,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           debugLog("Sign-up successful with immediate session, updating state")
           setSession(data.session)
           setUser(data.user)
+          lastTokenRefresh.current = Date.now()
 
           // Create a profile for the new user
           if (data.user && data.user.email) {
@@ -507,6 +518,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null)
       setProfile(null)
       setSession(null)
+
+      // Reset token manager to clear any scheduled refreshes
+      resetTokenManager()
 
       // Reset the client to ensure a clean state
       resetSupabaseClient()
@@ -559,6 +573,54 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, supabase])
 
+  // New function to proactively refresh the auth session
+  const refreshSession = useCallback(async (): Promise<boolean> => {
+    // Prevent concurrent refreshes
+    if (refreshInProgress.current) {
+      debugLog("Session refresh already in progress")
+      return false
+    }
+
+    if (!session) {
+      debugLog("Cannot refresh session: not signed in")
+      return false
+    }
+
+    // Throttle refresh attempts (no more than once every 30 seconds)
+    const timeSinceLastRefresh = Date.now() - lastTokenRefresh.current
+    if (timeSinceLastRefresh < 30000) {
+      debugLog(`Skipping refresh, last refresh was ${Math.floor(timeSinceLastRefresh / 1000)}s ago`)
+      return true // Return true because we're still within a valid window
+    }
+
+    try {
+      refreshInProgress.current = true
+      debugLog("Manually refreshing session")
+
+      const { data, error } = await supabase.auth.refreshSession()
+
+      if (error) {
+        console.error("Error refreshing session:", error)
+        return false
+      }
+
+      if (data.session) {
+        debugLog("Session refreshed successfully")
+        setSession(data.session)
+        lastTokenRefresh.current = Date.now()
+        return true
+      } else {
+        debugLog("Session refresh returned no session")
+        return false
+      }
+    } catch (error) {
+      console.error("Unexpected error refreshing session:", error)
+      return false
+    } finally {
+      refreshInProgress.current = false
+    }
+  }, [session, supabase])
+
   const getClientInfo = () => {
     return {
       hasClient: true,
@@ -568,6 +630,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       goTrueClientCount: 1,
       clientInitTime: Date.now(),
       lastResetTime: Date.now(),
+      lastTokenRefresh: lastTokenRefresh.current,
       storageKeys:
         typeof window !== "undefined"
           ? Object.keys(localStorage).filter((key) => key.includes("supabase") || key.includes("auth"))
@@ -586,6 +649,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     refreshProfile,
     updateProfile,
     getClientInfo,
+    refreshSession,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

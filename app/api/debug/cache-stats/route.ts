@@ -1,24 +1,39 @@
 import { NextResponse } from "next/server"
 import { getCacheStats } from "@/lib/api-cache"
-import { getDeduplicationStats } from "@/lib/request-deduplication"
+import { createServerSupabaseClient } from "@/lib/supabase-server"
 
 export async function GET() {
   try {
-    // Only available in development mode
-    if (process.env.NODE_ENV !== "development") {
-      return NextResponse.json({ error: "Only available in development mode" }, { status: 403 })
+    // Get cache statistics
+    const cacheStats = getCacheStats()
+
+    // Get connection pool statistics
+    let connectionStats = { status: "unavailable" }
+
+    try {
+      const supabase = createServerSupabaseClient()
+      const { data, error } = await supabase.from("health_check").select("count").limit(1)
+
+      connectionStats = {
+        status: error ? "error" : "connected",
+        queryResult: data ? "success" : "empty",
+        error: error ? error.message : null,
+      }
+    } catch (error) {
+      connectionStats = {
+        status: "error",
+        error: error instanceof Error ? error.message : String(error),
+      }
     }
 
-    const cacheStats = getCacheStats()
-    const deduplicationStats = getDeduplicationStats()
-
+    // Return combined stats
     return NextResponse.json({
-      cacheStats,
-      deduplicationStats,
-      timestamp: Date.now(),
+      cache: cacheStats,
+      connection: connectionStats,
+      timestamp: new Date().toISOString(),
     })
-  } catch (error: any) {
-    console.error("Error fetching cache stats:", error)
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error) {
+    console.error("Error getting debug stats:", error)
+    return NextResponse.json({ error: "Failed to get debug statistics" }, { status: 500 })
   }
 }
