@@ -25,6 +25,14 @@ interface UseSupabaseOptions {
   offlineMode?: boolean
 }
 
+interface QueryOptions<T> {
+  retries?: number
+  retryDelay?: number
+  requiresAuth?: boolean
+  offlineAction?: (...args: any[]) => Promise<T>
+  offlineArgs?: any
+}
+
 export function useSupabase(options: UseSupabaseOptions = {}) {
   const {
     persistSession = true,
@@ -294,7 +302,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         networkCheckTimerRef.current = null
       }
     }
-  }, [isInitialized, monitorNetwork, debug, isOnline, toast, user])
+  }, [isInitialized, monitorNetwork, debug, isOnline, toast, user, tokenManagerRef])
 
   // Set up activity tracking
   useEffect(() => {
@@ -333,7 +341,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         clearInterval(activityTimerRef.current)
       }
     }
-  }, [isInitialized, lastActivity, user, debug])
+  }, [isInitialized, lastActivity, user, debug, tokenManagerRef])
 
   // Function to refresh the auth token directly
   const refreshToken = useCallback(async () => {
@@ -361,7 +369,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
     } finally {
       setIsRefreshing(false)
     }
-  }, [user, debug, tokenManagerRef])
+  }, [user, debug, tokenManagerRef, setConsecutiveErrors])
 
   // Function to check if token is valid
   const isTokenValid = useCallback(() => {
@@ -371,20 +379,10 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
 
   // Wrap Supabase queries with error handling and token validation
   const query = useCallback(
-    async <T>(\
+    async <T>(
       queryFn: (client: SupabaseClient<Database>) => Promise<T>,
-      options: {
-        retries?: number;
-  retryDelay?: number;
-  requiresAuth?: boolean;
-  offlineAction?: (...args: any[]) => Promise<T>;
-  offlineArgs?: any;
-}
-=
-{
-}
-): Promise<T> =>
-{
+      options: QueryOptions<T> = {}
+    ): Promise<T> => {
   const { retries = 3, retryDelay = 1000, requiresAuth = false, offlineAction, offlineArgs } = options
 
   if (!clientRef.current) {
@@ -421,7 +419,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
 
       // Execute the query
       const asyncResult = await queryFn(clientRef.current)
-      return asyncResult;
+      return asyncResult
     } catch (error: any) {
       lastError = error
       attempt++
@@ -508,7 +506,7 @@ const resetAuthState = useCallback(() => {
   if (isOnline && tokenManagerRef.current) {
     tokenManagerRef.current.forceRefresh()
   }
-}, [debug, debugMode, isOnline, clientRef, tokenManagerRef])
+}, [debug, debugMode, isOnline, clientRef, setConsecutiveErrors])
 
 return {
     supabase: clientRef.current,
