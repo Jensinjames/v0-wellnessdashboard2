@@ -380,7 +380,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
 
   // Wrap Supabase queries with error handling and token validation
   const query = useCallback(
-    async <T>(\
+    async <T>(
       queryFn: (client: SupabaseClient<Database>) => Promise<T>,
       options: QueryOptions<T> = {}
     ): Promise<T> => {

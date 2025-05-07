@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { getConnectionHealth, resetSupabaseClient } from "@/lib/supabase-client"
 import { enableDebugMode, disableDebugMode } from "@/lib/version"
 import { isDebugMode } from "@/lib/env-utils"
-import { RefreshCw } from "lucide-react"
+import { RefreshCw, AlertCircle } from "lucide-react"
 import { Link } from "next/link"
 
 export function DebugPanel() {
@@ -138,6 +138,13 @@ export function DebugPanel() {
               >
                 <RefreshCw className="h-4 w-4" />
                 <span>Token Refresh</span>
+              </Link>
+              <Link
+                href="/debug/error-testing"
+                className="flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-muted"
+              >
+                <AlertCircle className="h-4 w-4" />
+                Error Testing
               </Link>
             </div>
           </div>
