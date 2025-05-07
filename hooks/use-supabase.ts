@@ -371,7 +371,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
 
   // Wrap Supabase queries with error handling and token validation
   const query = useCallback(
-    async <T>(\
+    async <T>(\catch
       queryFn: (client: SupabaseClient<Database>) => Promise<T>,
       options: {
         retries?: number;
