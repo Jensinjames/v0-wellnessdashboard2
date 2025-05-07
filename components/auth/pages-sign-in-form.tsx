@@ -4,15 +4,15 @@ import type React from "react"
 
 import { useState } from "react"
 import { useRouter } from "next/router"
-import { useAuth } from "@/context/auth-context-pages"
+import { usePagesAuth } from "@/context/pages-auth-context"
 
 export default function PagesSignInForm() {
+  const router = useRouter()
+  const { signIn } = usePagesAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const router = useRouter()
-  const { signIn } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -27,9 +27,8 @@ export default function PagesSignInForm() {
         return
       }
 
-      // Get the redirect URL from query params or default to dashboard
-      const redirectTo = (router.query.redirectTo as string) || "/dashboard"
-      router.push(redirectTo)
+      // Redirect to dashboard on success
+      router.push("/dashboard")
     } catch (err) {
       setError("An unexpected error occurred")
       console.error(err)
@@ -39,17 +38,18 @@ export default function PagesSignInForm() {
   }
 
   return (
-    <div className="mx-auto max-w-md space-y-6 p-6">
-      <div className="space-y-2 text-center">
-        <h1 className="text-3xl font-bold">Sign In</h1>
-        <p className="text-gray-500">Enter your credentials to access your account</p>
-      </div>
+    <div className="mx-auto w-full max-w-md rounded-lg border p-6 shadow-md">
+      <h1 className="mb-6 text-2xl font-bold">Sign In</h1>
 
-      {error && <div className="rounded-md bg-red-50 p-4 text-sm text-red-500">{error}</div>}
+      {error && (
+        <div className="mb-4 rounded bg-red-100 p-3 text-red-800">
+          <p>{error}</p>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
-        <div className="space-y-2">
-          <label htmlFor="email" className="text-sm font-medium">
+        <div>
+          <label htmlFor="email" className="block text-sm font-medium">
             Email
           </label>
           <input
@@ -58,12 +58,12 @@ export default function PagesSignInForm() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             required
-            className="w-full rounded-md border border-gray-300 p-2"
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
           />
         </div>
 
-        <div className="space-y-2">
-          <label htmlFor="password" className="text-sm font-medium">
+        <div>
+          <label htmlFor="password" className="block text-sm font-medium">
             Password
           </label>
           <input
@@ -72,14 +72,14 @@ export default function PagesSignInForm() {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required
-            className="w-full rounded-md border border-gray-300 p-2"
+            className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-blue-500"
           />
         </div>
 
         <button
           type="submit"
           disabled={isLoading}
-          className="w-full rounded-md bg-blue-600 py-2 text-white hover:bg-blue-700 disabled:opacity-50"
+          className="w-full rounded-md bg-blue-600 px-4 py-2 text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50"
         >
           {isLoading ? "Signing in..." : "Sign In"}
         </button>
