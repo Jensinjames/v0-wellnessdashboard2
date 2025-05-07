@@ -52,50 +52,6 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(redirectUrl)
     }
 
-    // Routes that should bypass onboarding check
-    const bypassOnboardingCheck = ["/onboarding", ...bypassAllChecks]
-
-    // If the user is authenticated, check if they've completed onboarding
-    if (session && !bypassOnboardingCheck.some((route) => pathname.startsWith(route))) {
-      // Check if the user has completed onboarding
-      // We'll use cookies for this check
-      const onboardingCompleted = req.cookies.get("onboarding-completed")?.value === "true"
-
-      // If onboarding is not completed, redirect to onboarding
-      if (!onboardingCompleted) {
-        try {
-          // Get the user's profile to check if they've completed their profile
-          const { data: profile, error } = await supabase
-            .from("profiles")
-            .select("first_name, last_name")
-            .eq("id", session.user.id)
-            .single()
-
-          // If there was an error or no profile, redirect to onboarding
-          if (error || !profile) {
-            return NextResponse.redirect(new URL("/onboarding", req.url))
-          }
-
-          // If the user has a complete profile, mark onboarding as completed
-          if (profile?.first_name && profile?.last_name) {
-            const response = NextResponse.next()
-            response.cookies.set("onboarding-completed", "true", {
-              maxAge: 60 * 60 * 24 * 30, // 30 days
-              path: "/",
-            })
-            return response
-          }
-
-          // Otherwise redirect to onboarding
-          return NextResponse.redirect(new URL("/onboarding", req.url))
-        } catch (error) {
-          console.error("Error checking profile in middleware:", error)
-          // If there's an error, let the user proceed and rely on client-side checks
-          return res
-        }
-      }
-    }
-
     return res
   } catch (error) {
     console.error("Middleware error:", error)

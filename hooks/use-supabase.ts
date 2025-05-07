@@ -371,7 +371,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
 
   // Wrap Supabase queries with error handling and token validation
   const query = useCallback(
-    async <T>(
+    async <T>(\
       queryFn: (client: SupabaseClient<Database>) => Promise<T>,
       options: {
         retries?: number;
@@ -395,9 +395,9 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   if (!isOnline && offlineAction) {
     debug("Executing offline action")
     if (offlineArgs) {
-      return offlineAction(offlineArgs);
+      return offlineAction(offlineArgs)
     }
-    return offlineAction();
+    return offlineAction()
   }
 
   // If we require auth, check token validity first
@@ -420,7 +420,8 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
       setLastActivity(Date.now())
 
       // Execute the query
-      return await queryFn(clientRef.current);
+      const asyncResult = await queryFn(clientRef.current)
+      return asyncResult;
     } catch (error: any) {
       lastError = error
       attempt++
@@ -447,9 +448,9 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         if (offlineAction) {
           debug("Executing offline fallback action")
           if (offlineArgs) {
-            return offlineAction(offlineArgs);
+            return offlineAction(offlineArgs)
           }
-          return offlineAction();
+          return offlineAction()
         }
       }
 
@@ -465,7 +466,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   throw lastError
 }
 ,
-    [isOnline, debug, tokenManagerRef]
+    [isOnline, debug, tokenManagerRef, clientRef, setLastActivity, setIsOnline]
   )
 
 // Get detailed token status

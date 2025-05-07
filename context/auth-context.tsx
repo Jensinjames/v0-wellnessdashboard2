@@ -1,8 +1,7 @@
 "use client"
 
 import type React from "react"
-
-import { createContext, useContext, useEffect, useState, useRef, useCallback } from "react"
+import { createContext, useContext, useEffect, useState, useRef } from "react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useRouter } from "next/navigation"
 import type { User, Session } from "@supabase/supabase-js"
@@ -10,9 +9,7 @@ import type { UserProfile, ProfileFormData } from "@/types/auth"
 import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
 import { validateAuthCredentials, sanitizeEmail } from "@/utils/auth-validation"
-import { resetTokenManager } from "@/lib/token-manager"
-import { resetSupabaseClient, cleanupOrphanedClients } from "@/lib/supabase-client"
-import { isDebugMode } from "@/lib/env-utils"
+import { resetSupabaseClient } from "@/lib/supabase-client"
 
 interface AuthContextType {
   user: User | null
@@ -34,17 +31,19 @@ interface AuthContextType {
   signOut: () => Promise<void>
   refreshProfile: () => Promise<UserProfile | null>
   updateProfile: (data: ProfileFormData) => Promise<{ success: boolean; error: Error | null }>
+  resetPassword: (email: string) => Promise<{ success: boolean; error: string | null }>
+  updatePassword: (password: string) => Promise<{ success: boolean; error: string | null }>
   getClientInfo: () => any
-  refreshSession: () => Promise<boolean>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-// Default debug mode to false
-const DEFAULT_AUTH_DEBUG_MODE = false
+// Debug mode flag
+let authDebugMode = process.env.NODE_ENV === "development"
 
 // Enable/disable debug logging
 export function setAuthDebugMode(enabled: boolean): void {
+  authDebugMode = enabled
   if (typeof window !== "undefined") {
     localStorage.setItem("auth_debug", enabled ? "true" : "false")
   }
@@ -53,7 +52,7 @@ export function setAuthDebugMode(enabled: boolean): void {
 
 // Internal debug logging function
 function debugLog(...args: any[]): void {
-  if (isDebugMode()) {
+  if (authDebugMode) {
     console.log("[Auth Context]", ...args)
   }
 }
@@ -67,8 +66,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const supabase = createClientComponentClient()
   const isMounted = useRef(true)
   const isInitialized = useRef(false)
-  const lastTokenRefresh = useRef<number>(0)
-  const refreshInProgress = useRef<boolean>(false)
 
   // Initialize auth state
   useEffect(() => {
@@ -155,8 +152,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(null)
             setProfile(null)
             setSession(null)
-            // Reset token manager to clear any scheduled refreshes
-            resetTokenManager()
             // Reset the client to ensure a clean state
             resetSupabaseClient()
           } else if (event === "SIGNED_IN" && newSession?.user) {
@@ -178,11 +173,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           } else if (event === "TOKEN_REFRESHED" && newSession) {
             debugLog("Token refreshed, updating session")
             setSession(newSession)
-            lastTokenRefresh.current = Date.now()
-          } else if (event === "USER_UPDATED" && newSession) {
-            debugLog("User updated, updating session and user")
-            setSession(newSession)
-            setUser(newSession.user)
           }
 
           // Refresh the page to update server components
@@ -206,15 +196,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [supabase, router])
 
-  // Add cleanup on unmount
-  useEffect(() => {
-    return () => {
-      // Clean up orphaned clients when the auth provider unmounts
-      cleanupOrphanedClients(true)
-    }
-  }, [])
-
-  // Update profile function
+  // Update profile function that uses server action instead of direct database access
   const updateProfile = async (data: ProfileFormData): Promise<{ success: boolean; error: Error | null }> => {
     if (!user) {
       return { success: false, error: new Error("User not authenticated") }
@@ -223,44 +205,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       debugLog("Updating profile for user", user.id, data)
 
-      // Direct database update approach
-      const { data: updatedProfile, error } = await supabase
-        .from("profiles")
-        .update({
-          // Map the ProfileFormData to the actual database column names
-          // This is where we need to ensure the column names match
-          first_name: data.first_name,
-          last_name: data.last_name,
-          full_name: `${data.first_name} ${data.last_name}`, // If your DB uses full_name
-          display_name: data.first_name, // If your DB uses display_name
-          avatar_url: data.avatar_url,
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", user.id)
-        .select()
-        .single()
+      // Use the server action to update the profile
+      const result = await fetch("/api/update-profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          profile: data,
+        }),
+      })
 
-      if (error) {
-        debugLog("Error updating profile:", error)
+      const responseData = await result.json()
+
+      if (!result.ok) {
+        debugLog("Error updating profile:", responseData.error)
         return {
           success: false,
-          error: new Error(error.message || "Failed to update profile"),
+          error: new Error(responseData.error || "Failed to update profile"),
         }
       }
 
       // Update local profile state with the new data
-      if (updatedProfile) {
-        const mergedProfile = {
+      if (profile) {
+        const updatedProfile = {
           ...profile,
-          ...updatedProfile,
-          // Ensure our client-side model has the expected properties
-          first_name: data.first_name,
-          last_name: data.last_name,
-        } as UserProfile
-
-        setProfile(mergedProfile)
+          ...data,
+          updated_at: new Date().toISOString(),
+        }
+        setProfile(updatedProfile)
         // Update cache
-        setCacheItem(CACHE_KEYS.PROFILE(user.id), mergedProfile)
+        setCacheItem(CACHE_KEYS.PROFILE(user.id), updatedProfile)
       }
 
       return { success: true, error: null }
@@ -297,106 +273,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      if (sanitizedEmail === "demo@example.com" && credentials.password === "demo123") {
-        debugLog("Using mock sign-in for demo user")
-        // Mock sign-in for demo user
-        const mockUserId = "mock-" + Math.random().toString(36).substring(2, 15)
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: sanitizedEmail,
+        password: credentials.password,
+      })
 
-        setUser({
-          id: mockUserId,
-          email: "demo@example.com",
-          aud: "authenticated",
-          app_metadata: {},
-          user_metadata: {},
-          created_at: new Date().toISOString(),
-          role: "authenticated",
-          updated_at: new Date().toISOString(),
-        })
-
-        const mockProfile = {
-          id: mockUserId,
-          email: "demo@example.com",
-          first_name: "Demo",
-          last_name: "User",
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        } as UserProfile
-
-        setProfile(mockProfile)
-
-        const mockSession = {
-          access_token: "mock-token",
-          token_type: "bearer",
-          expires_in: 3600,
-          refresh_token: "mock-refresh-token",
-          expires_at: Math.floor(Date.now() / 1000) + 3600,
-          user: {
-            id: mockUserId,
-            email: "demo@example.com",
-            app_metadata: {},
-            user_metadata: {},
-            aud: "authenticated",
-            created_at: new Date().toISOString(),
-          },
-        } as Session
-
-        setSession(mockSession)
-        lastTokenRefresh.current = Date.now()
-
-        // Cache the mock profile
-        setCacheItem(CACHE_KEYS.PROFILE(mockUserId), mockProfile)
-
-        return { error: null, mockSignIn: true }
-      } else {
-        debugLog("Attempting real sign-in with Supabase")
-        // Use a properly structured object for signInWithPassword
-        const { data, error } = await supabase.auth.signInWithPassword({
-          email: sanitizedEmail,
-          password: credentials.password,
-        })
-
-        if (error) {
-          debugLog("Sign-in error from Supabase", error)
-
-          // Check if the error is due to email not being verified
-          if (error.message?.includes("Email not confirmed")) {
-            return {
-              error: new Error("Please verify your email before signing in. Check your inbox for a verification link."),
-              mockSignIn: false,
-            }
-          }
-
-          if (error.message?.includes("Network request failed")) {
-            return {
-              error: new Error(error.message),
-              mockSignIn: false,
-              networkIssue: true,
-            }
-          }
-          return { error: new Error(error.message), mockSignIn: false }
-        }
-
-        // Explicitly update the state with the new session data
-        if (data?.session) {
-          debugLog("Sign-in successful, updating session and user")
-          setSession(data.session)
-          setUser(data.user)
-          lastTokenRefresh.current = Date.now()
-
-          // Fetch and update the profile as well
-          if (data.user) {
-            const { profile: fetchedProfile } = await fetchProfileSafely(data.user.id)
-            if (fetchedProfile) {
-              debugLog("Profile fetched after sign-in")
-              setProfile(fetchedProfile)
-              // Cache the profile
-              setCacheItem(CACHE_KEYS.PROFILE(data.user.id), fetchedProfile)
-            }
-          }
-        }
-
-        return { error: null, mockSignIn: false }
+      if (error) {
+        debugLog("Sign-in error from Supabase", error)
+        return { error: new Error(error.message) }
       }
+
+      // Explicitly update the state with the new session data
+      if (data?.session) {
+        debugLog("Sign-in successful, updating session and user")
+        setSession(data.session)
+        setUser(data.user)
+
+        // Fetch and update the profile as well
+        if (data.user) {
+          const { profile: fetchedProfile } = await fetchProfileSafely(data.user.id)
+          if (fetchedProfile) {
+            debugLog("Profile fetched after sign-in")
+            setProfile(fetchedProfile)
+            // Cache the profile
+            setCacheItem(CACHE_KEYS.PROFILE(data.user.id), fetchedProfile)
+          }
+        }
+      }
+
+      return { error: null }
     } catch (error: any) {
       console.error("Sign in error:", error)
       return { error: error instanceof Error ? error : new Error(String(error)) }
@@ -427,120 +332,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      if (sanitizedEmail === "demo@example.com") {
-        debugLog("Using mock sign-up for demo user")
-        // Mock sign-up for demo user
-        const mockUserId = "mock-" + Math.random().toString(36).substring(2, 15)
+      const { data, error } = await supabase.auth.signUp({
+        email: sanitizedEmail,
+        password: credentials.password,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
 
-        setUser({
-          id: mockUserId,
-          email: "demo@example.com",
-          aud: "authenticated",
-          app_metadata: {},
-          user_metadata: {},
-          created_at: new Date().toISOString(),
-          role: "authenticated",
-          updated_at: new Date().toISOString(),
-        })
-
-        const mockProfile = {
-          id: mockUserId,
-          email: "demo@example.com",
-          first_name: "Demo",
-          last_name: "User",
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString(),
-        } as UserProfile
-
-        setProfile(mockProfile)
-
-        const mockSession = {
-          access_token: "mock-token",
-          token_type: "bearer",
-          expires_in: 3600,
-          refresh_token: "mock-refresh-token",
-          expires_at: Math.floor(Date.now() / 1000) + 3600,
-          user: {
-            id: mockUserId,
-            email: "demo@example.com",
-            app_metadata: {},
-            user_metadata: {},
-            aud: "authenticated",
-            created_at: new Date().toISOString(),
-          },
-        } as Session
-
-        setSession(mockSession)
-        lastTokenRefresh.current = Date.now()
-
-        // Cache the mock profile
-        setCacheItem(CACHE_KEYS.PROFILE(mockUserId), mockProfile)
-
-        return { error: null, mockSignUp: true }
-      } else {
-        debugLog("Attempting real sign-up with Supabase")
-
-        // Get the current origin for the redirect URL
-        const origin = typeof window !== "undefined" ? window.location.origin : ""
-        const redirectUrl = `${origin}/auth/callback`
-
-        debugLog(`Using redirect URL: ${redirectUrl}`)
-
-        // Use a properly structured object for signUp
-        const { data, error } = await supabase.auth.signUp({
-          email: sanitizedEmail,
-          password: credentials.password,
-          options: {
-            emailRedirectTo: redirectUrl,
-          },
-        })
-
-        if (error) {
-          debugLog("Sign-up error from Supabase", error)
-          if (error.message?.includes("Network request failed")) {
-            return {
-              error: new Error(error.message),
-              mockSignUp: false,
-              networkIssue: true,
-            }
-          }
-          return { error: new Error(error.message), mockSignUp: false }
-        }
-
-        // Check if confirmation is required
-        const emailVerificationRequired = !data.session
-
-        if (emailVerificationRequired) {
-          debugLog("Sign-up successful, email verification required")
-          return {
-            error: null,
-            mockSignUp: false,
-            emailVerificationSent: true,
-          }
-        }
-
-        // Explicitly update the state with the new session data if available
-        if (data?.session) {
-          debugLog("Sign-up successful with immediate session, updating state")
-          setSession(data.session)
-          setUser(data.user)
-          lastTokenRefresh.current = Date.now()
-
-          // Create a profile for the new user
-          if (data.user && data.user.email) {
-            debugLog("Creating profile for new user")
-            const { profile: createdProfile } = await createProfileSafely(data.user.id, data.user.email)
-            if (createdProfile) {
-              debugLog("Profile created after sign-up")
-              setProfile(createdProfile)
-              // Cache the profile
-              setCacheItem(CACHE_KEYS.PROFILE(data.user.id), createdProfile)
-            }
-          }
-        }
-
-        return { error: null, mockSignUp: false }
+      if (error) {
+        debugLog("Sign-up error from Supabase", error)
+        return { error: new Error(error.message) }
       }
+
+      // Explicitly update the state with the new session data if available
+      // Note: For sign-up with email confirmation, there might not be a session yet
+      if (data?.user) {
+        debugLog("Sign-up successful, confirmation required")
+        // User created but confirmation required, no session yet
+        // We could update UI to show confirmation required message
+      }
+
+      return { error: null, emailVerificationSent: true }
     } catch (error: any) {
       console.error("Sign up error:", error)
       return { error: error instanceof Error ? error : new Error(String(error)) }
@@ -556,9 +369,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null)
       setProfile(null)
       setSession(null)
-
-      // Reset token manager to clear any scheduled refreshes
-      resetTokenManager()
 
       // Reset the client to ensure a clean state
       resetSupabaseClient()
@@ -577,7 +387,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const refreshProfile = useCallback(async () => {
+  const resetPassword = async (email: string): Promise<{ success: boolean; error: string | null }> => {
+    try {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password`,
+      })
+
+      if (error) {
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, error: null }
+    } catch (error: any) {
+      console.error("Reset password error:", error)
+      return { success: false, error: error.message || "Failed to reset password" }
+    }
+  }
+
+  const updatePassword = async (password: string): Promise<{ success: boolean; error: string | null }> => {
+    try {
+      const { error } = await supabase.auth.updateUser({
+        password,
+      })
+
+      if (error) {
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, error: null }
+    } catch (error: any) {
+      console.error("Update password error:", error)
+      return { success: false, error: error.message || "Failed to update password" }
+    }
+  }
+
+  const refreshProfile = async (): Promise<UserProfile | null> => {
     if (!user) {
       debugLog("Cannot refresh profile: no user")
       return null
@@ -609,55 +453,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }, [user, supabase])
-
-  // New function to proactively refresh the auth session
-  const refreshSession = useCallback(async (): Promise<boolean> => {
-    // Prevent concurrent refreshes
-    if (refreshInProgress.current) {
-      debugLog("Session refresh already in progress")
-      return false
-    }
-
-    if (!session) {
-      debugLog("Cannot refresh session: not signed in")
-      return false
-    }
-
-    // Throttle refresh attempts (no more than once every 30 seconds)
-    const timeSinceLastRefresh = Date.now() - lastTokenRefresh.current
-    if (timeSinceLastRefresh < 30000) {
-      debugLog(`Skipping refresh, last refresh was ${Math.floor(timeSinceLastRefresh / 1000)}s ago`)
-      return true // Return true because we're still within a valid window
-    }
-
-    try {
-      refreshInProgress.current = true
-      debugLog("Manually refreshing session")
-
-      const { data, error } = await supabase.auth.refreshSession()
-
-      if (error) {
-        console.error("Error refreshing session:", error)
-        return false
-      }
-
-      if (data.session) {
-        debugLog("Session refreshed successfully")
-        setSession(data.session)
-        lastTokenRefresh.current = Date.now()
-        return true
-      } else {
-        debugLog("Session refresh returned no session")
-        return false
-      }
-    } catch (error) {
-      console.error("Unexpected error refreshing session:", error)
-      return false
-    } finally {
-      refreshInProgress.current = false
-    }
-  }, [session, supabase])
+  }
 
   const getClientInfo = () => {
     return {
@@ -668,7 +464,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       goTrueClientCount: 1,
       clientInitTime: Date.now(),
       lastResetTime: Date.now(),
-      lastTokenRefresh: lastTokenRefresh.current,
       storageKeys:
         typeof window !== "undefined"
           ? Object.keys(localStorage).filter((key) => key.includes("supabase") || key.includes("auth"))
@@ -686,8 +481,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signOut,
     refreshProfile,
     updateProfile,
+    resetPassword,
+    updatePassword,
     getClientInfo,
-    refreshSession,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

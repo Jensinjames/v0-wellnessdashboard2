@@ -49,7 +49,7 @@ export function useGoalHierarchy(): GoalHierarchyData {
       setIsLoading(true)
       setError(null)
 
-      const { data, error } = await supabase
+      const { data, error: fetchError } = await supabase
         .from("goal_categories")
         .select(`
           *,
@@ -61,8 +61,8 @@ export function useGoalHierarchy(): GoalHierarchyData {
         .eq("user_id", user.id)
         .order("created_at")
 
-      if (error) {
-        throw error
+      if (fetchError) {
+        throw fetchError
       }
 
       setCategories(data || [])
@@ -80,7 +80,10 @@ export function useGoalHierarchy(): GoalHierarchyData {
   }, [user, supabase, toast])
 
   useEffect(() => {
-    fetchGoalHierarchy()
+    fetchGoalHierarchy().catch((err) => {
+      console.error("Error in fetchGoalHierarchy effect:", err)
+      setError(err?.message || "An unexpected error occurred")
+    })
   }, [fetchGoalHierarchy])
 
   const createCategory = async (category: Partial<GoalCategory>) => {
@@ -89,7 +92,7 @@ export function useGoalHierarchy(): GoalHierarchyData {
     }
 
     try {
-      const { data, error } = await supabase
+      const { data, error: createError } = await supabase
         .from("goal_categories")
         .insert({
           name: category.name,
@@ -104,8 +107,8 @@ export function useGoalHierarchy(): GoalHierarchyData {
         .select("id")
         .single()
 
-      if (error) {
-        throw error
+      if (createError) {
+        throw createError
       }
 
       await fetchGoalHierarchy()
@@ -114,7 +117,7 @@ export function useGoalHierarchy(): GoalHierarchyData {
         description: "Category created successfully",
       })
 
-      return { success: true, id: data.id }
+      return { success: true, id: data?.id }
     } catch (err: any) {
       console.error("Error creating category:", err)
       toast({
@@ -132,7 +135,7 @@ export function useGoalHierarchy(): GoalHierarchyData {
     }
 
     try {
-      const { error } = await supabase
+      const { error: updateError } = await supabase
         .from("goal_categories")
         .update({
           name: updates.name,
@@ -145,8 +148,8 @@ export function useGoalHierarchy(): GoalHierarchyData {
         .eq("id", categoryId)
         .eq("user_id", user.id)
 
-      if (error) {
-        throw error
+      if (updateError) {
+        throw updateError
       }
 
       await fetchGoalHierarchy()
@@ -173,10 +176,14 @@ export function useGoalHierarchy(): GoalHierarchyData {
     }
 
     try {
-      const { error } = await supabase.from("goal_categories").delete().eq("id", categoryId).eq("user_id", user.id)
+      const { error: deleteError } = await supabase
+        .from("goal_categories")
+        .delete()
+        .eq("id", categoryId)
+        .eq("user_id", user.id)
 
-      if (error) {
-        throw error
+      if (deleteError) {
+        throw deleteError
       }
 
       await fetchGoalHierarchy()
@@ -203,7 +210,7 @@ export function useGoalHierarchy(): GoalHierarchyData {
     }
 
     try {
-      const { data, error } = await supabase
+      const { data, error: createError } = await supabase
         .from("goal_subcategories")
         .insert({
           name: subcategory.name,
@@ -217,8 +224,8 @@ export function useGoalHierarchy(): GoalHierarchyData {
         .select("id")
         .single()
 
-      if (error) {
-        throw error
+      if (createError) {
+        throw createError
       }
 
       await fetchGoalHierarchy()
@@ -227,7 +234,7 @@ export function useGoalHierarchy(): GoalHierarchyData {
         description: "Subcategory created successfully",
       })
 
-      return { success: true, id: data.id }
+      return { success: true, id: data?.id }
     } catch (err: any) {
       console.error("Error creating subcategory:", err)
       toast({
@@ -245,7 +252,7 @@ export function useGoalHierarchy(): GoalHierarchyData {
     }
 
     try {
-      const { error } = await supabase
+      const { error: updateError } = await supabase
         .from("goal_subcategories")
         .update({
           name: updates.name,
@@ -257,8 +264,8 @@ export function useGoalHierarchy(): GoalHierarchyData {
         .eq("id", subcategoryId)
         .eq("user_id", user.id)
 
-      if (error) {
-        throw error
+      if (updateError) {
+        throw updateError
       }
 
       await fetchGoalHierarchy()
@@ -285,14 +292,14 @@ export function useGoalHierarchy(): GoalHierarchyData {
     }
 
     try {
-      const { error } = await supabase
+      const { error: deleteError } = await supabase
         .from("goal_subcategories")
         .delete()
         .eq("id", subcategoryId)
         .eq("user_id", user.id)
 
-      if (error) {
-        throw error
+      if (deleteError) {
+        throw deleteError
       }
 
       await fetchGoalHierarchy()
@@ -319,7 +326,7 @@ export function useGoalHierarchy(): GoalHierarchyData {
     }
 
     try {
-      const { data, error } = await supabase
+      const { data, error: createError } = await supabase
         .from("goals")
         .insert({
           name: goal.name,
@@ -338,8 +345,8 @@ export function useGoalHierarchy(): GoalHierarchyData {
         .select("id")
         .single()
 
-      if (error) {
-        throw error
+      if (createError) {
+        throw createError
       }
 
       await fetchGoalHierarchy()
@@ -348,7 +355,7 @@ export function useGoalHierarchy(): GoalHierarchyData {
         description: "Goal created successfully",
       })
 
-      return { success: true, id: data.id }
+      return { success: true, id: data?.id }
     } catch (err: any) {
       console.error("Error creating goal:", err)
       toast({
@@ -366,7 +373,7 @@ export function useGoalHierarchy(): GoalHierarchyData {
     }
 
     try {
-      const { error } = await supabase
+      const { error: updateError } = await supabase
         .from("goals")
         .update({
           name: updates.name,
@@ -383,8 +390,8 @@ export function useGoalHierarchy(): GoalHierarchyData {
         .eq("id", goalId)
         .eq("user_id", user.id)
 
-      if (error) {
-        throw error
+      if (updateError) {
+        throw updateError
       }
 
       await fetchGoalHierarchy()
@@ -411,10 +418,10 @@ export function useGoalHierarchy(): GoalHierarchyData {
     }
 
     try {
-      const { error } = await supabase.from("goals").delete().eq("id", goalId).eq("user_id", user.id)
+      const { error: deleteError } = await supabase.from("goals").delete().eq("id", goalId).eq("user_id", user.id)
 
-      if (error) {
-        throw error
+      if (deleteError) {
+        throw deleteError
       }
 
       await fetchGoalHierarchy()
@@ -441,7 +448,7 @@ export function useGoalHierarchy(): GoalHierarchyData {
     }
 
     try {
-      const { error } = await supabase
+      const { error: updateError } = await supabase
         .from("goals")
         .update({
           subcategory_id: newSubcategoryId,
@@ -450,8 +457,8 @@ export function useGoalHierarchy(): GoalHierarchyData {
         .eq("id", goalId)
         .eq("user_id", user.id)
 
-      if (error) {
-        throw error
+      if (updateError) {
+        throw updateError
       }
 
       await fetchGoalHierarchy()
@@ -478,7 +485,7 @@ export function useGoalHierarchy(): GoalHierarchyData {
     }
 
     try {
-      const { error } = await supabase
+      const { error: updateError } = await supabase
         .from("goal_subcategories")
         .update({
           category_id: newCategoryId,
@@ -487,8 +494,8 @@ export function useGoalHierarchy(): GoalHierarchyData {
         .eq("id", subcategoryId)
         .eq("user_id", user.id)
 
-      if (error) {
-        throw error
+      if (updateError) {
+        throw updateError
       }
 
       await fetchGoalHierarchy()
@@ -515,7 +522,12 @@ export function useGoalHierarchy(): GoalHierarchyData {
     }
 
     try {
-      const { data, error } = await supabase
+      // Validate that we have the required fields
+      if (!entry.goal_id || !entry.duration) {
+        throw new Error("Missing required fields: goal_id and duration are required")
+      }
+
+      const { data, error: createError } = await supabase
         .from("time_entries")
         .insert({
           goal_id: entry.goal_id,
@@ -528,8 +540,8 @@ export function useGoalHierarchy(): GoalHierarchyData {
         .select("id")
         .single()
 
-      if (error) {
-        throw error
+      if (createError) {
+        throw createError
       }
 
       await fetchGoalHierarchy()
@@ -538,7 +550,7 @@ export function useGoalHierarchy(): GoalHierarchyData {
         description: "Time entry added successfully",
       })
 
-      return { success: true, id: data.id }
+      return { success: true, id: data?.id }
     } catch (err: any) {
       console.error("Error adding time entry:", err)
       toast({
