@@ -1,40 +1,38 @@
-import Link from "next/link"
 import { getServerSession } from "@/lib/server-auth"
+import Link from "next/link"
+import { Button } from "@/components/ui/button"
 
-export default async function HomePage() {
+export default async function Page() {
   const session = await getServerSession()
 
-  return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-4">
-      <h1 className="mb-8 text-4xl font-bold">Wellness Dashboard</h1>
-      <p className="mb-8 max-w-md text-center text-gray-600">
-        Track and manage your wellness goals with our comprehensive dashboard.
-      </p>
+  if (session) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <h1 className="text-3xl font-bold mb-6">Welcome to Wellness Dashboard</h1>
+        <p className="mb-4">You are signed in as {session.user.email}</p>
+        <div className="flex gap-4 mt-6">
+          <Button asChild>
+            <Link href="/dashboard">Go to Dashboard</Link>
+          </Button>
+          <Button asChild variant="outline">
+            <Link href="/profile">View Profile</Link>
+          </Button>
+        </div>
+      </div>
+    )
+  }
 
-      <div className="flex gap-4">
-        {session ? (
-          <Link
-            href="/dashboard"
-            className="rounded bg-blue-500 px-6 py-3 text-white hover:bg-blue-600 transition-colors"
-          >
-            Go to Dashboard
-          </Link>
-        ) : (
-          <>
-            <Link
-              href="/auth/sign-in"
-              className="rounded bg-blue-500 px-6 py-3 text-white hover:bg-blue-600 transition-colors"
-            >
-              Sign In
-            </Link>
-            <Link
-              href="/auth/sign-up"
-              className="rounded border border-gray-300 bg-white px-6 py-3 text-gray-800 hover:bg-gray-100 transition-colors"
-            >
-              Sign Up
-            </Link>
-          </>
-        )}
+  return (
+    <div className="container mx-auto px-4 py-8">
+      <h1 className="text-3xl font-bold mb-6">Welcome to Wellness Dashboard</h1>
+      <p className="mb-4">Please sign in to access your dashboard</p>
+      <div className="flex gap-4 mt-6">
+        <Button asChild>
+          <Link href="/auth/sign-in">Sign In</Link>
+        </Button>
+        <Button asChild variant="outline">
+          <Link href="/auth/sign-up">Sign Up</Link>
+        </Button>
       </div>
     </div>
   )
