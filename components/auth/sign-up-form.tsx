@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertTriangle, RefreshCw, Mail, CheckCircle, ArrowRight } from "lucide-react"
+import { useEdgeSignup } from "@/hooks/use-edge-signup"
 
 export function SignUpForm() {
   const [email, setEmail] = useState("")
@@ -24,6 +25,7 @@ export function SignUpForm() {
   const [isResendingVerification, setIsResendingVerification] = useState(false)
   const { signUp } = useAuth()
   const router = useRouter()
+  const { signUp: edgeSignUp } = useEdgeSignup() // Move hook call outside of conditional block
 
   // Clear errors when inputs change
   useEffect(() => {
@@ -57,8 +59,8 @@ export function SignUpForm() {
     }
 
     try {
-      // Pass credentials as a single object with the correct structure
-      const result = await signUp({ email, password })
+      // Use the Edge Function for signup
+      const result = await edgeSignUp({ email, password })
 
       if (result.fieldErrors) {
         setFieldErrors(result.fieldErrors)
@@ -69,16 +71,16 @@ export function SignUpForm() {
       if (result.error) {
         // Check if it's a network error
         if (
-          result.error.message?.includes("Failed to fetch") ||
-          result.error.message?.includes("Network") ||
-          result.error.message?.includes("network") ||
-          result.error.message?.includes("connect")
+          result.error.includes("Failed to fetch") ||
+          result.error.includes("Network") ||
+          result.error.includes("network") ||
+          result.error.includes("connect")
         ) {
           setError(
             "Network error: Unable to connect to the authentication service. Please check your internet connection.",
           )
         } else {
-          setError(result.error.message)
+          setError(result.error)
         }
         setIsLoading(false)
         return
@@ -93,7 +95,6 @@ export function SignUpForm() {
       }
 
       // If we get here, the sign-up was successful but no verification email was sent
-      // (this is unusual with Supabase email auth, but we'll handle it)
       setSignUpSuccess(true)
 
       // Show success message for a moment before redirecting
@@ -117,16 +118,16 @@ export function SignUpForm() {
     setError(null)
 
     try {
-      // Use the signUp function again - Supabase will handle this as a resend if the user exists
-      const result = await signUp({ email, password })
+      // Use the Edge Function for resending verification
+      const result = await edgeSignUp({ email, password })
 
       if (result.error) {
         // If the error indicates the user already exists, that's actually good in this context
-        if (result.error.message?.includes("already exists")) {
+        if (result.error.includes("already exists")) {
           setEmailVerificationSent(true)
           setError(null)
         } else {
-          setError(`Failed to resend verification: ${result.error.message}`)
+          setError(`Failed to resend verification: ${result.error}`)
         }
       } else {
         setEmailVerificationSent(true)

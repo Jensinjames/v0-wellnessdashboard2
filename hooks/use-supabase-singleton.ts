@@ -1,33 +1,63 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { createSupabaseSingleton, startGoTrueMonitoring } from "@/lib/supabase-singleton"
-import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Database } from "@/types/database"
-import { isDebugMode } from "@/utils/environment"
+import { getSupabaseClient } from "@/lib/supabase-singleton"
 
-/**
- * Hook to use the Supabase singleton client
- * This ensures only one client instance is used across the application
- */
+// Track component instances using the hook
+let hookInstances = 0
+
+export { instanceCount } from "@/lib/supabase-singleton"
+
 export function useSupabaseSingleton() {
-  // Create the client immediately to ensure it's available on first render
-  const [supabase] = useState<SupabaseClient<Database>>(() => createSupabaseSingleton())
+  const [instances, setInstances] = useState(0)
+  const [lastChecked, setLastChecked] = useState(new Date())
+  const [connectionStatus, setConnectionStatus] = useState<string>("unknown")
+
+  // Get the singleton instance
+  const supabase = getSupabaseClient()
 
   useEffect(() => {
-    // Start monitoring for multiple GoTrueClient instances
-    const stopMonitoring = startGoTrueMonitoring()
+    // Increment the counter when a component uses this hook
+    hookInstances++
+    setInstances(hookInstances)
 
-    // Log debug information if in debug mode
-    if (isDebugMode()) {
-      console.log("[useSupabaseSingleton] Initialized Supabase client")
+    // Check connection status
+    const checkConnection = async () => {
+      try {
+        const { data, error } = await supabase.auth.getSession()
+        if (error) {
+          setConnectionStatus("error")
+        } else if (data.session) {
+          setConnectionStatus("authenticated")
+        } else {
+          setConnectionStatus("unauthenticated")
+        }
+      } catch (e) {
+        setConnectionStatus("error")
+      }
+
+      setLastChecked(new Date())
     }
 
+    checkConnection()
+
+    // Set up interval to periodically check
+    const intervalId = setInterval(() => {
+      setInstances(hookInstances)
+      checkConnection()
+    }, 5000)
+
+    // Clean up
     return () => {
-      // Stop monitoring when component unmounts
-      stopMonitoring()
+      hookInstances--
+      clearInterval(intervalId)
     }
-  }, [])
+  }, [supabase])
 
-  return supabase
+  return {
+    supabase,
+    instances,
+    lastChecked,
+    connectionStatus,
+  }
 }

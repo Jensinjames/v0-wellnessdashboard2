@@ -1,12 +1,12 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useAuth } from "@/context/auth-context"
 import { useToast } from "@/hooks/use-toast"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 import { getTokenManager, TOKEN_EVENTS, resetTokenManager } from "@/lib/token-manager"
+import { getSupabaseClient } from "@/lib/supabase-singleton"
 
 // Network status detection
 const NETWORK_DETECTION_INTERVAL = 10000 // 10 seconds
@@ -88,25 +88,8 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         // Ignore storage errors
       }
 
-      // Create client with enhanced options
-      clientRef.current = createClientComponentClient<Database>({
-        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
-        supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        options: {
-          auth: {
-            persistSession,
-            autoRefreshToken,
-            storageKey: "supabase-auth-token-v2",
-            flowType: "pkce",
-            debug: debugMode,
-          },
-          global: {
-            headers: {
-              "x-client-info": `useSupabase-hook/${process.env.NEXT_PUBLIC_APP_VERSION || "1.0.0"}`,
-            },
-          },
-        },
-      })
+      // Use the singleton client
+      clientRef.current = getSupabaseClient()
 
       // Initialize token manager
       if (clientRef.current) {
@@ -384,7 +367,6 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
       queryFn: (client: SupabaseClient<Database>) => Promise<T>,
       options: QueryOptions<T> = {}
     ): Promise<T> => {
-                        {useRef<SupabaseClient<Database> | null>(null)}/
   const { retries = 3, retryDelay = 1000, requiresAuth = false, offlineAction, offlineArgs } = options
 
   if (!clientRef.current) {

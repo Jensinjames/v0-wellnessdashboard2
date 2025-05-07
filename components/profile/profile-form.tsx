@@ -13,9 +13,11 @@ import { VerificationBadge } from "@/components/profile/verification-badge"
 import { Loader2, CheckCircle2, ArrowRight } from "lucide-react"
 import { useEffect } from "react"
 import Link from "next/link"
+import { useSupabaseSingleton } from "@/hooks/use-supabase-singleton"
 
 export function ProfileForm() {
   const { updateProfile, profile } = useAuth()
+  const supabase = useSupabaseSingleton()
 
   const {
     formData,
