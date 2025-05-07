@@ -3,9 +3,15 @@
 import { useAuth } from "@/context/auth-context"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { isDebugMode } from "@/lib/env-utils"
 
 export function AuthDebugger() {
   const { user, profile, session, isLoading } = useAuth()
+
+  // Only show in debug mode
+  if (!isDebugMode()) {
+    return null
+  }
 
   return (
     <Card className="w-full max-w-md mx-auto my-4">

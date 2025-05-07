@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react"
 import { useAuth } from "@/context/auth-context"
 import { cleanupOrphanedClients } from "@/lib/supabase-client"
+import { isDebugMode } from "@/lib/env-utils"
 
 export function ClientMonitor() {
   const [clientInfo, setClientInfo] = useState<any>(null)
@@ -18,10 +19,10 @@ export function ClientMonitor() {
     return () => clearInterval(interval)
   }, [getClientInfo])
 
-  // Check if we should show the monitor
+  // Check if we should show the monitor using our utility function
   const shouldShow = () => {
     if (typeof window === "undefined") return false
-    return process.env.NEXT_PUBLIC_DEBUG_MODE === "true" || localStorage.getItem("debug_mode") === "true"
+    return isDebugMode()
   }
 
   if (!shouldShow()) {

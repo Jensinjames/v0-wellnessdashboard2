@@ -9,6 +9,8 @@ import { Switch } from "@/components/ui/switch"
 import { Label } from "@/components/ui/label"
 import { Button } from "@/components/ui/button"
 import { getConnectionHealth, resetSupabaseClient } from "@/lib/supabase-client"
+import { enableDebugMode, disableDebugMode } from "@/lib/version"
+import { isDebugMode } from "@/lib/env-utils"
 
 export function DebugPanel() {
   const [isOpen, setIsOpen] = useState(false)
@@ -28,6 +30,15 @@ export function DebugPanel() {
       setSupabaseDebugMode(newValue)
     }
 
+    // Update global debug mode
+    if (namespace === "all") {
+      if (newValue) {
+        enableDebugMode()
+      } else {
+        disableDebugMode()
+      }
+    }
+
     setDebugSettings(getDebugSettings())
   }
 
@@ -38,6 +49,11 @@ export function DebugPanel() {
   const resetClient = () => {
     resetSupabaseClient()
     refreshConnectionHealth()
+  }
+
+  // Only show in debug mode
+  if (!isOpen && !isDebugMode()) {
+    return null
   }
 
   if (!isOpen) {

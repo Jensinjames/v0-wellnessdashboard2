@@ -20,10 +20,20 @@ export function SignInForm() {
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
   const [mockSignIn, setMockSignIn] = useState(false)
   const [isEmailVerificationError, setIsEmailVerificationError] = useState(false)
+  const [redirectPath, setRedirectPath] = useState("/dashboard")
   const { signIn } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const redirectTo = searchParams.get("redirectTo") || "/dashboard"
+
+  // Use effect to safely access search params after mount
+  useEffect(() => {
+    if (searchParams) {
+      const redirectTo = searchParams.get("redirectTo")
+      if (redirectTo) {
+        setRedirectPath(redirectTo)
+      }
+    }
+  }, [searchParams])
 
   useEffect(() => {
     // Clear any errors when inputs change
@@ -71,13 +81,13 @@ export function SignInForm() {
         setMockSignIn(true)
         // Wait a moment before redirecting to simulate the sign-in process
         setTimeout(() => {
-          router.push(redirectTo)
+          router.push(redirectPath)
         }, 2000)
         return
       }
 
       // If we get here, sign-in was successful
-      router.push(redirectTo)
+      router.push(redirectPath)
     } catch (err: any) {
       console.error("Unexpected error during sign-in:", err)
       setError(err.message || "An unexpected error occurred")

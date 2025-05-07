@@ -49,7 +49,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   const clientRef = useRef<SupabaseClient<Database> | null>(null)
   const tokenManagerRef = useRef<ReturnType<typeof getTokenManager> | null>(null)
   const networkCheckTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const activityTimerRef = useRef(false)
+  const activityTimerRef = useRef<NodeJS.Timeout | null>(null)
   const pingInProgressRef = useRef(false)
 
   // Debug logging
@@ -374,11 +374,11 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
     async <T>(
       queryFn: (client: SupabaseClient<Database>) => Promise<T>,
       options: {
-        retries?: number
-        retryDelay?: number
-        requiresAuth?: boolean
-        offlineAction?: (...args: any[]) => Promise<T>
-        offlineArgs?: any
+        retries?: number;
+  retryDelay?: number;
+  requiresAuth?: boolean;
+  offlineAction?: (...args: any[]) => Promise<T>;
+  offlineArgs?: any;
 }
 =
 {
@@ -395,9 +395,9 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   if (!isOnline && offlineAction) {
     debug("Executing offline action")
     if (offlineArgs) {
-      return offlineAction(offlineArgs)
+      return offlineAction(offlineArgs);
     }
-    return offlineAction()
+    return offlineAction();
   }
 
   // If we require auth, check token validity first
@@ -420,7 +420,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
       setLastActivity(Date.now())
 
       // Execute the query
-      return await queryFn(clientRef.current)
+      return await queryFn(clientRef.current);
     } catch (error: any) {
       lastError = error
       attempt++
@@ -447,9 +447,9 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         if (offlineAction) {
           debug("Executing offline fallback action")
           if (offlineArgs) {
-            return offlineAction(offlineArgs)
+            return offlineAction(offlineArgs);
           }
-          return offlineAction()
+          return offlineAction();
         }
       }
 

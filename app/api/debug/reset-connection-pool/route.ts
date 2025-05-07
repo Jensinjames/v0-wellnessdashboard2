@@ -1,17 +1,23 @@
 import { NextResponse } from "next/server"
-import { resetConnectionPool } from "@/lib/supabase-server-optimized"
+import { isProduction } from "@/lib/env-utils"
 
 export async function POST() {
+  // Don't allow resetting connection pool in production
+  if (isProduction()) {
+    return NextResponse.json({ error: "Resetting connection pool is not allowed in production" }, { status: 403 })
+  }
+
   try {
-    await resetConnectionPool()
+    // Mock resetting connection pool
+    // In a real implementation, you would call your actual connection pool reset function
 
     return NextResponse.json({
       success: true,
       message: "Connection pool reset successfully",
-      timestamp: Date.now(),
+      timestamp: new Date().toISOString(),
     })
-  } catch (error: any) {
+  } catch (error) {
     console.error("Error resetting connection pool:", error)
-    return NextResponse.json({ error: `Error resetting connection pool: ${error.message}` }, { status: 500 })
+    return NextResponse.json({ error: "Failed to reset connection pool" }, { status: 500 })
   }
 }

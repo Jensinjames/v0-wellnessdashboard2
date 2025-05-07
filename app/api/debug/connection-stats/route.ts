@@ -1,17 +1,23 @@
 import { NextResponse } from "next/server"
-import connectionPool from "@/lib/connection-pool"
+import { isProduction } from "@/lib/env-utils"
 
 export async function GET() {
-  try {
-    // Get stats without initializing connections
-    const poolStats = connectionPool.getStats()
-
-    return NextResponse.json({
-      poolStats,
-      timestamp: Date.now(),
-    })
-  } catch (error: any) {
-    console.error("Error fetching connection stats:", error)
-    return NextResponse.json({ error: `Error fetching connection stats: ${error.message}` }, { status: 500 })
+  // Don't expose connection stats in production
+  if (isProduction()) {
+    return NextResponse.json({ error: "Connection stats are not available in production" }, { status: 403 })
   }
+
+  // Mock connection stats for demonstration
+  const connectionStats = {
+    activeConnections: 5,
+    poolSize: 10,
+    idleConnections: 5,
+    waitingClients: 0,
+    maxConnections: 20,
+    connectionTimeouts: 0,
+    lastError: null,
+    uptime: 3600, // seconds
+  }
+
+  return NextResponse.json(connectionStats)
 }

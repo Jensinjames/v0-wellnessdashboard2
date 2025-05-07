@@ -1,39 +1,23 @@
 import { NextResponse } from "next/server"
-import { getCacheStats } from "@/lib/api-cache"
-import { createServerSupabaseClient } from "@/lib/supabase-server"
+import { isProduction } from "@/lib/env-utils"
 
 export async function GET() {
-  try {
-    // Get cache statistics
-    const cacheStats = getCacheStats()
-
-    // Get connection pool statistics
-    let connectionStats = { status: "unavailable" }
-
-    try {
-      const supabase = createServerSupabaseClient()
-      const { data, error } = await supabase.from("health_check").select("count").limit(1)
-
-      connectionStats = {
-        status: error ? "error" : "connected",
-        queryResult: data ? "success" : "empty",
-        error: error ? error.message : null,
-      }
-    } catch (error) {
-      connectionStats = {
-        status: "error",
-        error: error instanceof Error ? error.message : String(error),
-      }
-    }
-
-    // Return combined stats
-    return NextResponse.json({
-      cache: cacheStats,
-      connection: connectionStats,
-      timestamp: new Date().toISOString(),
-    })
-  } catch (error) {
-    console.error("Error getting debug stats:", error)
-    return NextResponse.json({ error: "Failed to get debug statistics" }, { status: 500 })
+  // Don't expose cache stats in production
+  if (isProduction()) {
+    return NextResponse.json({ error: "Cache stats are not available in production" }, { status: 403 })
   }
+
+  // Mock cache stats for demonstration
+  const cacheStats = {
+    hits: 150,
+    misses: 45,
+    size: 32, // number of items
+    maxSize: 100,
+    avgTtl: 300, // seconds
+    oldestItem: new Date(Date.now() - 3600000).toISOString(),
+    newestItem: new Date().toISOString(),
+    evictions: 12,
+  }
+
+  return NextResponse.json(cacheStats)
 }

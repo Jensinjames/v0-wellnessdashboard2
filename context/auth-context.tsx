@@ -11,7 +11,8 @@ import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
 import { validateAuthCredentials, sanitizeEmail } from "@/utils/auth-validation"
 import { resetTokenManager } from "@/lib/token-manager"
-import { resetSupabaseClient } from "@/lib/supabase-client"
+import { resetSupabaseClient, cleanupOrphanedClients } from "@/lib/supabase-client"
+import { isDebugMode } from "@/lib/env-utils"
 
 interface AuthContextType {
   user: User | null
@@ -52,13 +53,7 @@ export function setAuthDebugMode(enabled: boolean): void {
 
 // Internal debug logging function
 function debugLog(...args: any[]): void {
-  // Read from localStorage to allow dynamic toggling
-  let authDebugMode = DEFAULT_AUTH_DEBUG_MODE
-  if (typeof window !== "undefined") {
-    authDebugMode = localStorage.getItem("auth_debug") === "true"
-  }
-
-  if (authDebugMode) {
+  if (isDebugMode()) {
     console.log("[Auth Context]", ...args)
   }
 }
@@ -210,6 +205,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       isMounted.current = false
     }
   }, [supabase, router])
+
+  // Add cleanup on unmount
+  useEffect(() => {
+    return () => {
+      // Clean up orphaned clients when the auth provider unmounts
+      cleanupOrphanedClients(true)
+    }
+  }, [])
 
   // Update profile function
   const updateProfile = async (data: ProfileFormData): Promise<{ success: boolean; error: Error | null }> => {

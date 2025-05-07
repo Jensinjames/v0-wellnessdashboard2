@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react"
 import { getCurrentClient } from "@/lib/supabase-client"
+import { isProduction } from "@/lib/env-utils"
 
 export function SupabaseDebug() {
   const [clientInfo, setClientInfo] = useState({
@@ -41,7 +42,8 @@ export function SupabaseDebug() {
     return () => clearInterval(interval)
   }, [])
 
-  if (process.env.NODE_ENV === "production") {
+  // Use isProduction() instead of directly checking NODE_ENV
+  if (isProduction()) {
     return null
   }
 

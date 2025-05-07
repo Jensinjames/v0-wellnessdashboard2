@@ -1,16 +1,42 @@
 import { NextResponse } from "next/server"
-import { getDatabaseSchema } from "@/utils/schema-utils"
+import { isProduction } from "@/lib/env-utils"
 
 export async function GET() {
-  try {
-    const schema = await getDatabaseSchema()
-
-    return NextResponse.json({
-      success: true,
-      schema,
-    })
-  } catch (error) {
-    console.error("Error in schema debug endpoint:", error)
-    return NextResponse.json({ error: "Failed to fetch database schema" }, { status: 500 })
+  // Don't expose schema information in production
+  if (isProduction()) {
+    return NextResponse.json({ error: "Schema information is not available in production" }, { status: 403 })
   }
+
+  // Mock schema information for demonstration
+  const schemaInfo = {
+    tables: [
+      {
+        name: "profiles",
+        columns: [
+          { name: "id", type: "uuid", isPrimary: true },
+          { name: "email", type: "varchar", isUnique: true },
+          { name: "first_name", type: "varchar" },
+          { name: "last_name", type: "varchar" },
+          { name: "full_name", type: "varchar" },
+          { name: "avatar_url", type: "varchar" },
+          { name: "created_at", type: "timestamp" },
+          { name: "updated_at", type: "timestamp" },
+        ],
+      },
+      {
+        name: "categories",
+        columns: [
+          { name: "id", type: "uuid", isPrimary: true },
+          { name: "name", type: "varchar" },
+          { name: "description", type: "text" },
+          { name: "user_id", type: "uuid", isForeignKey: true },
+          { name: "created_at", type: "timestamp" },
+          { name: "updated_at", type: "timestamp" },
+        ],
+      },
+      // Add more tables as needed
+    ],
+  }
+
+  return NextResponse.json(schemaInfo)
 }

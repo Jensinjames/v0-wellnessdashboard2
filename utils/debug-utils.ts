@@ -1,54 +1,90 @@
-// Global debug mode flag
-let isDebugMode = false
+import { isDebugMode } from "@/lib/env-utils"
 
-// Debug namespaces
-type DebugNamespace = "auth" | "supabase" | "data" | "ui" | "all"
-
-// Debug settings for each namespace
-const debugSettings: Record<DebugNamespace, boolean> = {
-  auth: false,
-  supabase: false,
-  data: false,
-  ui: false,
-  all: false,
+// Debug settings object
+interface DebugSettings {
+  all: boolean
+  auth: boolean
+  supabase: boolean
+  api: boolean
+  cache: boolean
+  performance: boolean
+  ui: boolean
 }
 
-/**
- * Enable or disable debug mode globally or for specific namespaces
- */
-export function setDebugMode(enabled: boolean, namespace: DebugNamespace = "all"): void {
-  if (namespace === "all") {
-    isDebugMode = enabled
-    Object.keys(debugSettings).forEach((key) => {
-      debugSettings[key as DebugNamespace] = enabled
-    })
-    console.log(`Debug mode ${enabled ? "enabled" : "disabled"} for all namespaces`)
-  } else {
-    debugSettings[namespace] = enabled
-    isDebugMode = Object.values(debugSettings).some((value) => value)
-    console.log(`Debug mode ${enabled ? "enabled" : "disabled"} for ${namespace} namespace`)
+// Default debug settings
+const defaultDebugSettings: DebugSettings = {
+  all: false,
+  auth: false,
+  supabase: false,
+  api: false,
+  cache: false,
+  performance: false,
+  ui: false,
+}
+
+// Get debug settings from localStorage or use defaults
+export function getDebugSettings(): DebugSettings {
+  if (typeof window === "undefined") {
+    return defaultDebugSettings
+  }
+
+  try {
+    const storedSettings = localStorage.getItem("debug_settings")
+    return storedSettings ? JSON.parse(storedSettings) : defaultDebugSettings
+  } catch (error) {
+    console.error("Error reading debug settings:", error)
+    return defaultDebugSettings
   }
 }
 
-/**
- * Check if debug mode is enabled for a specific namespace
- */
-export function isDebugEnabled(namespace: DebugNamespace = "all"): boolean {
-  return debugSettings[namespace] || debugSettings.all
+// Set debug mode for a specific namespace
+export function setDebugMode(enabled: boolean, namespace: keyof DebugSettings = "all"): void {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  try {
+    const settings = getDebugSettings()
+    settings[namespace] = enabled
+
+    // If setting "all", update all namespaces
+    if (namespace === "all") {
+      Object.keys(settings).forEach((key) => {
+        settings[key as keyof DebugSettings] = enabled
+      })
+    }
+
+    localStorage.setItem("debug_settings", JSON.stringify(settings))
+    console.log(`Debug mode for ${namespace}: ${enabled ? "enabled" : "disabled"}`)
+  } catch (error) {
+    console.error("Error setting debug mode:", error)
+  }
 }
 
-/**
- * Debug logging function with namespace support
- */
-export function debugLog(namespace: DebugNamespace, ...args: any[]): void {
-  if (debugSettings[namespace] || debugSettings.all) {
+// Debug logging function
+export function debugLog(namespace: keyof DebugSettings, ...args: any[]): void {
+  const settings = getDebugSettings()
+
+  if (settings[namespace] || settings.all || isDebugMode()) {
     console.log(`[${namespace.toUpperCase()}]`, ...args)
   }
 }
 
-/**
- * Get current debug settings
- */
-export function getDebugSettings(): Record<DebugNamespace, boolean> {
-  return { ...debugSettings }
+// Initialize debug settings based on environment
+export function initializeDebugSettings(): void {
+  if (typeof window === "undefined") {
+    return
+  }
+
+  // Initialize from environment if not already set
+  if (!localStorage.getItem("debug_settings")) {
+    const shouldEnableDebug = isDebugMode()
+
+    if (shouldEnableDebug) {
+      setDebugMode(true, "all")
+    }
+  }
 }
+
+// Call this function when your app initializes
+initializeDebugSettings()

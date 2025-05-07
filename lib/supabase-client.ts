@@ -18,7 +18,6 @@ const goTrueClientRegistry = new Set<any>()
 
 // Enable/disable debug logging
 export function setDebugMode(enabled: boolean): void {
-  const debugMode = enabled
   if (typeof window !== "undefined") {
     localStorage.setItem("supabase_debug", enabled ? "true" : "false")
   }
@@ -169,14 +168,14 @@ export function getSupabaseClient(
         clientOptions,
       )
 
+      // Before storing the new client, clean up any existing GoTrueClient instances
+      cleanupOrphanedClients()
+
       // Store the client
       supabaseClient = newClient
 
       // Track the GoTrueClient instance
       if (newClient.auth && (newClient.auth as any)._goTrueClient) {
-        // Clear any existing GoTrueClient instances first to prevent duplicates
-        goTrueClientRegistry.clear()
-
         // Add the new instance
         goTrueClientRegistry.add((newClient.auth as any)._goTrueClient)
         debugLog(`Registered GoTrueClient instance. Total instances: ${goTrueClientRegistry.size}`)
@@ -187,11 +186,22 @@ export function getSupabaseClient(
             `[CRITICAL] Multiple GoTrueClient instances detected (${goTrueClientRegistry.size}). ` +
               `This may lead to undefined behavior. Please ensure only one instance is created.`,
           )
+
+          // Force cleanup of orphaned instances
+          cleanupOrphanedClients(true)
         }
       }
 
       // Reset initialization state
       isInitializing = false
+
+      // Add unload event listener to clean up client on page unload
+      if (typeof window !== "undefined") {
+        window.addEventListener("beforeunload", () => {
+          debugLog("Page unloading, cleaning up Supabase client")
+          cleanupOrphanedClients(true)
+        })
+      }
 
       // Resolve the promise with the client
       resolve(newClient)
@@ -244,6 +254,15 @@ export function resetSupabaseClient() {
 
   // Record reset time
   lastResetTime = Date.now()
+
+  // Clean up any event listeners or timers associated with the client
+  if (supabaseClient && (supabaseClient as any)._closeChannel) {
+    try {
+      ;(supabaseClient as any)._closeChannel()
+    } catch (e) {
+      debugLog("Error closing realtime channel:", e)
+    }
+  }
 
   // Clear the client and initialization state
   supabaseClient = null
@@ -323,8 +342,8 @@ export function getClientDebugInfo() {
 }
 
 // Clear any orphaned GoTrueClient instances
-export function cleanupOrphanedClients() {
-  if (goTrueClientRegistry.size > 1) {
+export function cleanupOrphanedClients(forceCleanup = false) {
+  if (goTrueClientRegistry.size > 1 || forceCleanup) {
     debugLog(`Cleaning up orphaned GoTrueClient instances. Before: ${goTrueClientRegistry.size}`)
 
     // Keep only the current client's GoTrueClient
@@ -338,5 +357,29 @@ export function cleanupOrphanedClients() {
     }
 
     debugLog(`Cleanup complete. After: ${goTrueClientRegistry.size}`)
+
+    // Force garbage collection if possible
+    if (typeof window !== "undefined" && (window as any).gc) {
+      try {
+        ;(window as any).gc()
+      } catch (e) {
+        // Ignore if gc is not available
+      }
+    }
   }
+}
+
+// Add a function to detect and fix GoTrueClient leaks
+export function monitorGoTrueClientInstances(intervalMs = 60000): () => void {
+  if (typeof window === "undefined") return () => {}
+
+  const intervalId = setInterval(() => {
+    if (goTrueClientRegistry.size > 1) {
+      console.warn(`[MONITOR] Detected ${goTrueClientRegistry.size} GoTrueClient instances. Cleaning up...`)
+      cleanupOrphanedClients(true)
+    }
+  }, intervalMs)
+
+  // Return a function to stop monitoring
+  return () => clearInterval(intervalId)
 }

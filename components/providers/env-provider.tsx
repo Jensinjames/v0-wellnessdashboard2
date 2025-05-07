@@ -1,13 +1,15 @@
 "use client"
 
 import type React from "react"
-
 import { createContext, useContext, useEffect } from "react"
 import { APP_VERSION, enableDebugMode, disableDebugMode, isDebugMode } from "@/lib/version"
+import { getEnvironment, isDevelopment } from "@/lib/env-utils"
+import { monitorGoTrueClientInstances } from "@/lib/supabase-client"
 
 // Define the environment context type
 type EnvContextType = {
   appVersion: string
+  environment: string
   isDebugMode: boolean
   enableDebugMode: () => void
   disableDebugMode: () => void
@@ -16,6 +18,7 @@ type EnvContextType = {
 // Create the context
 const EnvContext = createContext<EnvContextType>({
   appVersion: "1.0.0",
+  environment: "production",
   isDebugMode: false,
   enableDebugMode: () => {},
   disableDebugMode: () => {},
@@ -32,10 +35,25 @@ export function EnvProvider({ children }: { children: React.ReactNode }) {
     if (process.env.NEXT_PUBLIC_DEBUG_MODE === "true") {
       enableDebugMode()
     }
+
+    // Start monitoring GoTrueClient instances in development mode
+    let stopMonitoring: (() => void) | undefined
+
+    if (isDevelopment()) {
+      stopMonitoring = monitorGoTrueClientInstances(30000) // Check every 30 seconds
+    }
+
+    return () => {
+      // Clean up the monitor when the component unmounts
+      if (stopMonitoring) {
+        stopMonitoring()
+      }
+    }
   }, [])
 
   const value = {
     appVersion: APP_VERSION,
+    environment: getEnvironment(),
     isDebugMode: isDebugMode(),
     enableDebugMode,
     disableDebugMode,
