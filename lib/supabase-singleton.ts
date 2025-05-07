@@ -1,40 +1,70 @@
+/**
+ * Enhanced Supabase singleton client implementation
+ * This ensures only one Supabase client is created and shared across the application
+ */
 import { createClient } from "@supabase/supabase-js"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 
-// Singleton pattern to ensure only one instance is created
-let supabaseInstance: ReturnType<typeof createClient<Database>> | null = null
+// Global singleton variables
+let instance: SupabaseClient<Database> | null = null
+let isInitializing = false
+let initPromise: Promise<SupabaseClient<Database>> | null = null
 
-export function getSupabaseClient() {
-  if (typeof window === "undefined") {
-    // Server-side - we should use server client instead
-    throw new Error("Use createServerSupabaseClient on the server")
+/**
+ * Get the Supabase client instance (singleton pattern)
+ */
+export function getSupabaseClient(
+  options = {} as { forceNew?: boolean },
+): SupabaseClient<Database> | Promise<SupabaseClient<Database>> {
+  // Early return if we already have an instance
+  if (instance && !options.forceNew) {
+    return instance
   }
 
-  if (!supabaseInstance) {
-    // Debug log to track instance creation
-    console.log("[Supabase] Creating new browser client instance")
+  // If we're already initializing, return the promise
+  if (isInitializing && initPromise && !options.forceNew) {
+    return initPromise
+  }
 
-    supabaseInstance = createClient<Database>(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        auth: {
-          persistSession: true,
-          storageKey: "wellness-dashboard-auth",
-        },
-        global: {
-          headers: {
-            "x-application-name": "wellness-dashboard",
+  // Set initializing flag
+  isInitializing = true
+
+  // Create initialization promise
+  initPromise = new Promise((resolve, reject) => {
+    try {
+      // Check required environment variables
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        throw new Error("Missing required Supabase environment variables")
+      }
+
+      // Create the client
+      const client = createClient<Database>(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        {
+          auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true,
+            flowType: "pkce",
           },
         },
-      },
-    )
-  }
+      )
 
-  return supabaseInstance
-}
+      // Store the client in our singleton
+      instance = client
 
-// Reset function for testing purposes
-export function resetSupabaseClient() {
-  supabaseInstance = null
+      // Reset state and resolve
+      isInitializing = false
+      resolve(client)
+    } catch (error) {
+      // Reset state and reject
+      isInitializing = false
+      initPromise = null
+      reject(error)
+    }
+  })
+
+  return initPromise
 }

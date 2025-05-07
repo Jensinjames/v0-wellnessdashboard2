@@ -14,6 +14,9 @@ const PING_TIMEOUT = 5000 // 5 seconds
 const OFFLINE_MODE_STORAGE_KEY = "supabase_offline_mode"
 const AUTH_DEBUG_STORAGE_KEY = "auth_debug_mode"
 
+// Default to false in production, true in development
+const DEFAULT_DEBUG_MODE = false
+
 interface UseSupabaseOptions {
   persistSession?: boolean
   autoRefreshToken?: boolean
@@ -26,7 +29,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   const {
     persistSession = true,
     autoRefreshToken = true,
-    debugMode = false,
+    debugMode = DEFAULT_DEBUG_MODE,
     monitorNetwork = true,
     offlineMode = false,
   } = options
@@ -358,23 +361,24 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
     } finally {
       setIsRefreshing(false)
     }
-  }, [user, debug])
+  }, [user, debug, tokenManagerRef])
 
   // Function to check if token is valid
   const isTokenValid = useCallback(() => {
     if (!tokenManagerRef.current) return false
     return tokenManagerRef.current.isTokenValid()
-  }, [])
+  }, [tokenManagerRef])
 
   // Wrap Supabase queries with error handling and token validation
-  const query = useCallback(async <T>(\
-    queryFn: (client: SupabaseClient<Database>) => Promise<T>,
-    options: { 
-      retries?: number;
-  retryDelay?: number;
-  requiresAuth?: boolean;
-  offlineAction?: (args: any) => Promise<T>;
-  offlineArgs?: any;
+  const query = useCallback(
+    async <T>(
+      queryFn: (client: SupabaseClient<Database>) => Promise<T>,
+      options: {
+        retries?: number
+        retryDelay?: number
+        requiresAuth?: boolean
+        offlineAction?: (...args: any[]) => Promise<T>
+        offlineArgs?: any
 }
 =
 {
@@ -390,7 +394,10 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   // Check if we're offline and have an offline action
   if (!isOnline && offlineAction) {
     debug("Executing offline action")
-    return offlineAction(offlineArgs)
+    if (offlineArgs) {
+      return offlineAction(offlineArgs)
+    }
+    return offlineAction()
   }
 
   // If we require auth, check token validity first
@@ -439,7 +446,10 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         // If we have an offline action, use it
         if (offlineAction) {
           debug("Executing offline fallback action")
-          return offlineAction(offlineArgs)
+          if (offlineArgs) {
+            return offlineAction(offlineArgs)
+          }
+          return offlineAction()
         }
       }
 
@@ -454,7 +464,9 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   // If we've exhausted all retries, throw the last error
   throw lastError
 }
-, [isOnline, debug, setLastActivity, clientRef, tokenManagerRef])
+,
+    [isOnline, debug, tokenManagerRef]
+  )
 
 // Get detailed token status
 const getTokenStatus = useCallback(() => {
@@ -477,7 +489,7 @@ const getTokenStatus = useCallback(() => {
     lastRefresh: status.telemetry.lastRefreshSuccess,
     successRate: status.telemetry.successCount / (status.telemetry.successCount + status.telemetry.failureCount || 1),
   }
-}, [])
+}, [tokenManagerRef])
 
 // Reset all auth and token state (useful for debugging or troubleshooting)
 const resetAuthState = useCallback(() => {
@@ -488,7 +500,6 @@ const resetAuthState = useCallback(() => {
   if (clientRef.current) {
     tokenManagerRef.current = getTokenManager(clientRef.current, debugMode)
   }
-  tokenManagerRef.current = getTokenManager(clientRef.current, debugMode)
 
   // After resetting, refresh connection status
   setConsecutiveErrors(0)
@@ -496,7 +507,7 @@ const resetAuthState = useCallback(() => {
   if (isOnline && tokenManagerRef.current) {
     tokenManagerRef.current.forceRefresh()
   }
-}, [debug, debugMode, isOnline, clientRef])
+}, [debug, debugMode, isOnline, clientRef, tokenManagerRef])
 
 return {
     supabase: clientRef.current,

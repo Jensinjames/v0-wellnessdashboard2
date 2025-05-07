@@ -1,170 +1,148 @@
 "use client"
 
 import { useState } from "react"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { TokenMonitor } from "@/components/debug/token-monitor"
 import { useSupabase } from "@/hooks/use-supabase"
 import { useAuth } from "@/context/auth-context"
-import { TokenMonitor } from "@/components/debug/token-monitor"
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { AlertCircle, CheckCircle, WifiOff } from "lucide-react"
+import { Separator } from "@/components/ui/separator"
+import { LogOut, RefreshCw, User, Shield } from "lucide-react"
 
 export default function AuthDebugPage() {
-  const { user, session } = useAuth()
-  const { isInitialized, isOnline, refreshToken, getTokenStatus, resetAuthState } = useSupabase({ debugMode: true })
+  const { user, signOut } = useAuth()
+  const { isOnline, refreshToken } = useSupabase({ debugMode: true })
+  const [refreshing, setRefreshing] = useState(false)
 
-  const [lastAction, setLastAction] = useState<string | null>(null)
-  const [actionResult, setActionResult] = useState<string | null>(null)
-
-  // Handle refresh button click
   const handleRefresh = async () => {
-    setLastAction("Manual Token Refresh")
-    setActionResult("Processing...")
-
+    setRefreshing(true)
     try {
-      const result = await refreshToken()
-      setActionResult(result ? "Success" : "Failed")
-    } catch (error: any) {
-      setActionResult(`Error: ${error.message}`)
-    }
-  }
-
-  // Handle reset button click
-  const handleReset = () => {
-    setLastAction("Reset Auth State")
-    setActionResult("Processing...")
-
-    try {
-      resetAuthState()
-      setActionResult("Success")
-    } catch (error: any) {
-      setActionResult(`Error: ${error.message}`)
+      await refreshToken()
+    } finally {
+      setRefreshing(false)
     }
   }
 
   return (
-    <div className="container max-w-4xl py-10">
-      <h1 className="text-3xl font-bold mb-6">Authentication Debug</h1>
+    <div className="container mx-auto py-8">
+      <h1 className="mb-6 text-3xl font-bold">Authentication Debug</h1>
 
-      <div className="grid gap-6">
-        <div className="flex flex-col sm:flex-row gap-6">
-          {/* Status Card */}
-          <Card className="w-full">
-            <CardHeader>
-              <CardTitle>System Status</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">Client Initialized:</span>
-                  {isInitialized ? (
-                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                      <CheckCircle className="w-3 h-3 mr-1" /> Ready
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                      <AlertCircle className="w-3 h-3 mr-1" /> Initializing
-                    </Badge>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">Network Status:</span>
-                  {isOnline ? (
-                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                      <CheckCircle className="w-3 h-3 mr-1" /> Online
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-                      <WifiOff className="w-3 h-3 mr-1" /> Offline
-                    </Badge>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between">
-                  <span className="font-medium">Authentication:</span>
-                  {user ? (
-                    <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-                      <CheckCircle className="w-3 h-3 mr-1" /> Signed In
-                    </Badge>
-                  ) : (
-                    <Badge variant="outline" className="bg-amber-50 text-amber-700 border-amber-200">
-                      <AlertCircle className="w-3 h-3 mr-1" /> Signed Out
-                    </Badge>
-                  )}
-                </div>
-
-                {lastAction && (
-                  <div className="pt-4 border-t">
-                    <div className="text-sm text-muted-foreground">Last Action: {lastAction}</div>
-                    <div className="font-medium">{actionResult}</div>
-                  </div>
-                )}
-              </div>
-            </CardContent>
-            <CardFooter>
-              <div className="flex gap-4">
-                <Button onClick={handleRefresh} variant="outline">
-                  Refresh Token
-                </Button>
-                <Button onClick={handleReset} variant="secondary">
-                  Reset Auth State
-                </Button>
-              </div>
-            </CardFooter>
-          </Card>
-
-          {/* Token Monitor */}
-          <TokenMonitor />
-        </div>
-
-        {/* Session Details */}
+      <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Authentication Details</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <User className="h-5 w-5" /> User Information
+            </CardTitle>
+            <CardDescription>Current authentication state</CardDescription>
           </CardHeader>
           <CardContent>
-            <Tabs defaultValue="user">
-              <TabsList>
-                <TabsTrigger value="user">User</TabsTrigger>
-                <TabsTrigger value="session">Session</TabsTrigger>
-                <TabsTrigger value="token">Token</TabsTrigger>
-              </TabsList>
+            {user ? (
+              <div className="space-y-4">
+                <div>
+                  <div className="text-sm font-medium">User ID</div>
+                  <div className="text-sm text-muted-foreground">{user.id}</div>
+                </div>
+                <div>
+                  <div className="text-sm font-medium">Email</div>
+                  <div className="text-sm text-muted-foreground">{user.email}</div>
+                </div>
+                <div>
+                  <div className="text-sm font-medium">Last Sign In</div>
+                  <div className="text-sm text-muted-foreground">
+                    {user.last_sign_in_at ? new Date(user.last_sign_in_at).toLocaleString() : "Unknown"}
+                  </div>
+                </div>
+                <div>
+                  <div className="text-sm font-medium">Created At</div>
+                  <div className="text-sm text-muted-foreground">
+                    {user.created_at ? new Date(user.created_at).toLocaleString() : "Unknown"}
+                  </div>
+                </div>
 
-              <TabsContent value="user" className="p-4 bg-muted/40 rounded-md mt-2">
-                {user ? (
-                  <pre className="text-xs overflow-auto">{JSON.stringify(user, null, 2)}</pre>
-                ) : (
-                  <div className="text-muted-foreground">Not signed in</div>
-                )}
-              </TabsContent>
+                <Separator />
 
-              <TabsContent value="session" className="p-4 bg-muted/40 rounded-md mt-2">
-                {session ? (
-                  <pre className="text-xs overflow-auto">
-                    {JSON.stringify(
-                      {
-                        expires_at: session.expires_at,
-                        expires_in: Math.floor((session.expires_at * 1000 - Date.now()) / 1000),
-                        token_type: session.token_type,
-                        has_refresh_token: !!session.refresh_token,
-                      },
-                      null,
-                      2,
+                <div className="flex gap-2">
+                  <Button variant="outline" onClick={handleRefresh} disabled={refreshing || !isOnline}>
+                    {refreshing ? (
+                      <>
+                        <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Refreshing...
+                      </>
+                    ) : (
+                      <>
+                        <RefreshCw className="mr-2 h-4 w-4" /> Refresh Session
+                      </>
                     )}
-                  </pre>
-                ) : (
-                  <div className="text-muted-foreground">No active session</div>
-                )}
-              </TabsContent>
-
-              <TabsContent value="token" className="p-4 bg-muted/40 rounded-md mt-2">
-                <pre className="text-xs overflow-auto">{JSON.stringify(getTokenStatus(), null, 2)}</pre>
-              </TabsContent>
-            </Tabs>
+                  </Button>
+                  <Button variant="destructive" onClick={signOut}>
+                    <LogOut className="mr-2 h-4 w-4" /> Sign Out
+                  </Button>
+                </div>
+              </div>
+            ) : (
+              <div className="text-center">
+                <p className="mb-4 text-muted-foreground">Not signed in</p>
+                <Button asChild>
+                  <a href="/auth/sign-in">Sign In</a>
+                </Button>
+              </div>
+            )}
           </CardContent>
         </Card>
+
+        <TokenMonitor />
+      </div>
+
+      <div className="mt-6">
+        <Tabs defaultValue="token">
+          <TabsList>
+            <TabsTrigger value="token">Token Management</TabsTrigger>
+            <TabsTrigger value="security">Security Settings</TabsTrigger>
+          </TabsList>
+          <TabsContent value="token" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Shield className="h-5 w-5" /> Token Management
+                </CardTitle>
+                <CardDescription>Understand how token refresh works</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-md bg-muted p-4">
+                  <h3 className="mb-2 font-medium">How Token Refresh Works</h3>
+                  <ul className="list-inside list-disc space-y-2 text-sm text-muted-foreground">
+                    <li>Tokens are automatically refreshed 5 minutes before they expire</li>
+                    <li>If a refresh fails, the system will retry with exponential backoff</li>
+                    <li>After multiple failures, you'll be prompted to sign in again</li>
+                    <li>Network status is monitored to handle offline scenarios</li>
+                    <li>User activity is tracked to refresh tokens after periods of inactivity</li>
+                  </ul>
+                </div>
+
+                <div className="rounded-md bg-muted p-4">
+                  <h3 className="mb-2 font-medium">Troubleshooting</h3>
+                  <ul className="list-inside list-disc space-y-2 text-sm text-muted-foreground">
+                    <li>If you're experiencing authentication issues, try manually refreshing your token</li>
+                    <li>Check your network connection if token refreshes are failing</li>
+                    <li>The "Reset Auth State" button can help resolve persistent issues</li>
+                    <li>If problems persist, sign out and sign back in</li>
+                  </ul>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+          <TabsContent value="security" className="mt-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Security Settings</CardTitle>
+                <CardDescription>Manage your security preferences</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <p className="text-muted-foreground">Security settings will be implemented in a future update.</p>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   )

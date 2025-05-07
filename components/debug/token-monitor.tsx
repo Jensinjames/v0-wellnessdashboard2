@@ -1,170 +1,207 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
+import { Button } from "@/components/ui/button"
+import { Badge } from "@/components/ui/badge"
 import { useSupabase } from "@/hooks/use-supabase"
 import { TOKEN_EVENTS } from "@/lib/token-manager"
-import { Card, CardHeader, CardTitle, CardContent, CardFooter } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
-import { RotateCw, AlertCircle, CheckCircle, Clock } from "lucide-react"
+import { useToast } from "@/hooks/use-toast"
+import { RefreshCw, AlertTriangle, CheckCircle, Clock, Wifi, WifiOff } from "lucide-react"
 
 export function TokenMonitor() {
-  const { getTokenStatus, refreshToken, isTokenValid } = useSupabase({ debugMode: true })
-  const [status, setStatus] = useState(getTokenStatus())
-  const [lastEvent, setLastEvent] = useState<{ type: string; time: string } | null>(null)
-  const [expanded, setExpanded] = useState(false)
+  const { toast } = useToast()
+  const { refreshToken, getTokenStatus, isOnline, resetAuthState } = useSupabase({ debugMode: true })
+  const [status, setStatus] = useState<ReturnType<typeof getTokenStatus>>()
+  const [refreshing, setRefreshing] = useState(false)
+  const [events, setEvents] = useState<Array<{ type: string; time: Date; message: string }>>([])
 
-  useEffect(() => {
-    // Update status every 10 seconds
-    const interval = setInterval(() => {
-      setStatus(getTokenStatus())
-    }, 10000)
-
-    // Listen for token events
-    const handleRefreshSuccess = () => {
-      setStatus(getTokenStatus())
-      setLastEvent({ type: "success", time: new Date().toLocaleTimeString() })
-    }
-
-    const handleRefreshFailure = () => {
-      setStatus(getTokenStatus())
-      setLastEvent({ type: "failure", time: new Date().toLocaleTimeString() })
-    }
-
-    const handleRefreshAttempt = () => {
-      setStatus(getTokenStatus())
-      setLastEvent({ type: "attempt", time: new Date().toLocaleTimeString() })
-    }
-
-    // Add event listeners
-    window.addEventListener(TOKEN_EVENTS.REFRESH_SUCCESS, handleRefreshSuccess)
-    window.addEventListener(TOKEN_EVENTS.REFRESH_FAILURE, handleRefreshFailure)
-    window.addEventListener(TOKEN_EVENTS.REFRESH_ATTEMPT, handleRefreshAttempt)
-
-    return () => {
-      clearInterval(interval)
-      window.removeEventListener(TOKEN_EVENTS.REFRESH_SUCCESS, handleRefreshSuccess)
-      window.removeEventListener(TOKEN_EVENTS.REFRESH_FAILURE, handleRefreshFailure)
-      window.removeEventListener(TOKEN_EVENTS.REFRESH_ATTEMPT, handleRefreshAttempt)
-    }
-  }, [getTokenStatus])
-
-  // Format expiry time
-  const formatExpiry = () => {
-    if (!status.expiresAt) return "Unknown"
+  // Format time remaining
+  const formatTimeRemaining = useCallback((expiresAt: number | null) => {
+    if (!expiresAt) return "Unknown"
 
     const now = Date.now()
-    const expiresAt = status.expiresAt
     const diff = expiresAt - now
 
-    if (diff < 0) return "Expired"
+    if (diff <= 0) return "Expired"
 
     const minutes = Math.floor(diff / 60000)
     const seconds = Math.floor((diff % 60000) / 1000)
 
     return `${minutes}m ${seconds}s`
-  }
+  }, [])
 
-  // Format last refresh time
-  const formatLastRefresh = () => {
-    if (!status.lastRefresh) return "Never"
+  // Format date
+  const formatDate = useCallback((timestamp: number | null) => {
+    if (!timestamp) return "Never"
+    return new Date(timestamp).toLocaleTimeString()
+  }, [])
 
-    const now = Date.now()
-    const diff = now - status.lastRefresh
+  // Update status
+  const updateStatus = useCallback(() => {
+    const currentStatus = getTokenStatus()
+    setStatus(currentStatus)
+  }, [getTokenStatus])
 
-    if (diff < 60000) {
-      return `${Math.floor(diff / 1000)}s ago`
-    } else if (diff < 3600000) {
-      return `${Math.floor(diff / 60000)}m ago`
-    } else {
-      return new Date(status.lastRefresh).toLocaleTimeString()
+  // Handle manual refresh
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    try {
+      const success = await refreshToken()
+      if (success) {
+        toast({
+          title: "Token refreshed",
+          description: "Your authentication token has been refreshed successfully.",
+        })
+      } else {
+        toast({
+          title: "Refresh failed",
+          description: "Unable to refresh your authentication token.",
+          variant: "destructive",
+        })
+      }
+      updateStatus()
+    } finally {
+      setRefreshing(false)
     }
   }
 
+  // Listen for token events
+  useEffect(() => {
+    const handleTokenEvent = (event: Event) => {
+      const customEvent = event as CustomEvent
+      const eventType = event.type
+      const now = new Date()
+
+      let message = ""
+      switch (eventType) {
+        case TOKEN_EVENTS.REFRESH_SUCCESS:
+          message = "Token refreshed successfully"
+          break
+        case TOKEN_EVENTS.REFRESH_FAILURE:
+          message = `Refresh failed: ${customEvent.detail?.error?.message || "Unknown error"}`
+          break
+        case TOKEN_EVENTS.REFRESH_STARTED:
+          message = "Token refresh started"
+          break
+        case TOKEN_EVENTS.SESSION_EXPIRED:
+          message = "Session expired"
+          break
+        default:
+          message = `Unknown event: ${eventType}`
+      }
+
+      setEvents((prev) => [{ type: eventType, time: now, message }, ...prev].slice(0, 10))
+      updateStatus()
+    }
+
+    // Add event listeners
+    window.addEventListener(TOKEN_EVENTS.REFRESH_SUCCESS, handleTokenEvent)
+    window.addEventListener(TOKEN_EVENTS.REFRESH_FAILURE, handleTokenEvent)
+    window.addEventListener(TOKEN_EVENTS.REFRESH_STARTED, handleTokenEvent)
+    window.addEventListener(TOKEN_EVENTS.SESSION_EXPIRED, handleTokenEvent)
+
+    // Initial status update
+    updateStatus()
+
+    // Set up interval to update status
+    const interval = setInterval(updateStatus, 1000)
+
+    return () => {
+      window.removeEventListener(TOKEN_EVENTS.REFRESH_SUCCESS, handleTokenEvent)
+      window.removeEventListener(TOKEN_EVENTS.REFRESH_FAILURE, handleTokenEvent)
+      window.removeEventListener(TOKEN_EVENTS.REFRESH_STARTED, handleTokenEvent)
+      window.removeEventListener(TOKEN_EVENTS.SESSION_EXPIRED, handleTokenEvent)
+      clearInterval(interval)
+    }
+  }, [updateStatus])
+
   return (
-    <Card className="w-full max-w-md">
-      <CardHeader className="pb-2">
-        <div className="flex justify-between items-center">
-          <CardTitle className="text-lg">Authentication Token</CardTitle>
-          {status.valid ? (
-            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
-              <CheckCircle className="w-3 h-3 mr-1" /> Valid
+    <Card className="w-full">
+      <CardHeader>
+        <CardTitle className="flex items-center justify-between">
+          <span>Authentication Token Status</span>
+          {isOnline ? (
+            <Badge variant="outline" className="flex items-center gap-1 bg-green-50">
+              <Wifi className="h-3 w-3" /> Online
             </Badge>
           ) : (
-            <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
-              <AlertCircle className="w-3 h-3 mr-1" /> Invalid
+            <Badge variant="outline" className="flex items-center gap-1 bg-red-50">
+              <WifiOff className="h-3 w-3" /> Offline
             </Badge>
           )}
-        </div>
+        </CardTitle>
+        <CardDescription>Monitor and manage your authentication token</CardDescription>
       </CardHeader>
-      <CardContent className="pb-2">
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Expires in:</span>
-            <span className={`font-medium ${status.expiresSoon ? "text-amber-600" : ""}`}>
-              {formatExpiry()}
-              {status.expiresSoon && <Clock className="w-3 h-3 inline ml-1 mb-1" />}
-            </span>
-          </div>
-
-          <div className="flex justify-between text-sm">
-            <span className="text-muted-foreground">Last refresh:</span>
-            <span className="font-medium">{formatLastRefresh()}</span>
-          </div>
-
-          {lastEvent && (
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">Last event:</span>
-              <span
-                className={`font-medium ${
-                  lastEvent.type === "success"
-                    ? "text-green-600"
-                    : lastEvent.type === "failure"
-                      ? "text-red-600"
-                      : "text-amber-600"
-                }`}
-              >
-                {lastEvent.type} at {lastEvent.time}
-              </span>
+      <CardContent className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Token Status</div>
+            <div className="flex items-center gap-2">
+              {status?.valid ? (
+                <Badge className="flex items-center gap-1 bg-green-100 text-green-800">
+                  <CheckCircle className="h-3 w-3" /> Valid
+                </Badge>
+              ) : (
+                <Badge variant="destructive" className="flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" /> Invalid
+                </Badge>
+              )}
             </div>
-          )}
+          </div>
+          <div className="space-y-2">
+            <div className="text-sm font-medium">Expires In</div>
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="flex items-center gap-1">
+                <Clock className="h-3 w-3" /> {formatTimeRemaining(status?.expiresAt || null)}
+              </Badge>
+            </div>
+          </div>
+        </div>
 
-          {expanded && (
-            <>
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Refresh attempts:</span>
-                <span className="font-medium">{status.refreshAttempts}</span>
-              </div>
+        <div className="space-y-2">
+          <div className="text-sm font-medium">Refresh History</div>
+          <div className="rounded-md border p-2">
+            <div className="text-xs text-muted-foreground">
+              Last successful refresh: {formatDate(status?.lastRefresh)}
+            </div>
+            <div className="text-xs text-muted-foreground">
+              Success rate: {status?.successRate ? Math.round(status.successRate * 100) : 0}%
+            </div>
+            <div className="text-xs text-muted-foreground">Refresh attempts: {status?.refreshAttempts || 0}</div>
+          </div>
+        </div>
 
-              <div className="flex justify-between text-sm">
-                <span className="text-muted-foreground">Success rate:</span>
-                <span
-                  className={`font-medium ${
-                    status.successRate > 0.8
-                      ? "text-green-600"
-                      : status.successRate > 0.5
-                        ? "text-amber-600"
-                        : "text-red-600"
-                  }`}
-                >
-                  {Math.round(status.successRate * 100)}%
-                </span>
-              </div>
-            </>
-          )}
+        <div className="space-y-2">
+          <div className="text-sm font-medium">Recent Events</div>
+          <div className="max-h-32 overflow-y-auto rounded-md border p-2">
+            {events.length === 0 ? (
+              <div className="text-xs text-muted-foreground">No events recorded</div>
+            ) : (
+              events.map((event, i) => (
+                <div key={i} className="text-xs">
+                  <span className="font-medium">{event.time.toLocaleTimeString()}</span>:{" "}
+                  <span className="text-muted-foreground">{event.message}</span>
+                </div>
+              ))
+            )}
+          </div>
         </div>
       </CardContent>
-      <CardFooter className="flex justify-between pt-2">
-        <Button variant="outline" size="sm" onClick={() => setExpanded(!expanded)}>
-          {expanded ? "Less details" : "More details"}
+      <CardFooter className="flex justify-between">
+        <Button variant="outline" onClick={resetAuthState}>
+          Reset Auth State
         </Button>
-        <Button
-          variant="secondary"
-          size="sm"
-          onClick={() => refreshToken()}
-          disabled={!isTokenValid() && status.refreshAttempts > 0}
-        >
-          <RotateCw className="w-4 h-4 mr-1" /> Refresh Now
+        <Button onClick={handleRefresh} disabled={refreshing}>
+          {refreshing ? (
+            <>
+              <RefreshCw className="mr-2 h-4 w-4 animate-spin" /> Refreshing...
+            </>
+          ) : (
+            <>
+              <RefreshCw className="mr-2 h-4 w-4" /> Refresh Token
+            </>
+          )}
         </Button>
       </CardFooter>
     </Card>

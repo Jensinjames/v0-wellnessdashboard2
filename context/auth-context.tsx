@@ -38,12 +38,11 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-// Debug mode flag
-let authDebugMode = process.env.NODE_ENV === "development"
+// Default debug mode to false
+const DEFAULT_AUTH_DEBUG_MODE = false
 
 // Enable/disable debug logging
 export function setAuthDebugMode(enabled: boolean): void {
-  authDebugMode = enabled
   if (typeof window !== "undefined") {
     localStorage.setItem("auth_debug", enabled ? "true" : "false")
   }
@@ -52,6 +51,12 @@ export function setAuthDebugMode(enabled: boolean): void {
 
 // Internal debug logging function
 function debugLog(...args: any[]): void {
+  // Read from localStorage to allow dynamic toggling
+  let authDebugMode = DEFAULT_AUTH_DEBUG_MODE
+  if (typeof window !== "undefined") {
+    authDebugMode = localStorage.getItem("auth_debug") === "true"
+  }
+
   if (authDebugMode) {
     console.log("[Auth Context]", ...args)
   }
@@ -326,10 +331,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         } as Session
 
         setSession(mockSession)
+        lastTokenRefresh.current = Date.now()
 
         // Cache the mock profile
         setCacheItem(CACHE_KEYS.PROFILE(mockUserId), mockProfile)
-        lastTokenRefresh.current = Date.now()
 
         return { error: null, mockSignIn: true }
       } else {

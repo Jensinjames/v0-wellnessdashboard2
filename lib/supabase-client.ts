@@ -10,15 +10,15 @@ let clientInitTime: number | null = null
 let clientInstanceCount = 0
 let lastResetTime: number | null = null
 
-// Debug mode flag
-let debugMode = process.env.NODE_ENV === "development"
+// Debug mode flag - default to false in production
+const DEFAULT_DEBUG_MODE = false
 
 // Global registry to track all GoTrueClient instances
 const goTrueClientRegistry = new Set<any>()
 
 // Enable/disable debug logging
 export function setDebugMode(enabled: boolean): void {
-  debugMode = enabled
+  const debugMode = enabled
   if (typeof window !== "undefined") {
     localStorage.setItem("supabase_debug", enabled ? "true" : "false")
   }
@@ -27,6 +27,17 @@ export function setDebugMode(enabled: boolean): void {
 
 // Internal debug logging function
 function debugLog(...args: any[]): void {
+  // Read from localStorage to allow dynamic toggling
+  let debugMode = DEFAULT_DEBUG_MODE
+  if (typeof window !== "undefined") {
+    debugMode = localStorage.getItem("supabase_debug") === "true"
+
+    // Use NEXT_PUBLIC prefixed variable instead of NODE_ENV directly
+    if (process.env.NEXT_PUBLIC_DEBUG_MODE === "true") {
+      debugMode = true
+    }
+  }
+
   if (debugMode) {
     console.log("[Supabase Client]", ...args)
   }
@@ -91,8 +102,8 @@ export function getSupabaseClient(
           flowType: "pkce",
           // Use a consistent storage key to prevent conflicts
           storageKey: "wellness-dashboard-auth-v2",
-          // Debug flag to help identify issues
-          debug: debugMode,
+          // Debug flag to help identify issues - read from localStorage
+          debug: typeof window !== "undefined" ? localStorage.getItem("supabase_debug") === "true" : DEFAULT_DEBUG_MODE,
           // Storage event listener to sync auth state across tabs
           storage: {
             getItem: (key: string) => {
@@ -163,6 +174,10 @@ export function getSupabaseClient(
 
       // Track the GoTrueClient instance
       if (newClient.auth && (newClient.auth as any)._goTrueClient) {
+        // Clear any existing GoTrueClient instances first to prevent duplicates
+        goTrueClientRegistry.clear()
+
+        // Add the new instance
         goTrueClientRegistry.add((newClient.auth as any)._goTrueClient)
         debugLog(`Registered GoTrueClient instance. Total instances: ${goTrueClientRegistry.size}`)
 

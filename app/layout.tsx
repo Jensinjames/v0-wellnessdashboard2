@@ -4,6 +4,7 @@ import { Inter } from "next/font/google"
 import "./globals.css"
 import { AuthProvider } from "@/context/auth-context"
 import { ProfileCompletionProvider } from "@/context/profile-completion-context"
+import { EnvProvider } from "@/components/providers/env-provider"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -21,9 +22,11 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <AuthProvider>
-          <ProfileCompletionProvider>{children}</ProfileCompletionProvider>
-        </AuthProvider>
+        <EnvProvider>
+          <AuthProvider>
+            <ProfileCompletionProvider>{children}</ProfileCompletionProvider>
+          </AuthProvider>
+        </EnvProvider>
       </body>
     </html>
   )

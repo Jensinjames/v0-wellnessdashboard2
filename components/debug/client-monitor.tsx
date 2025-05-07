@@ -18,7 +18,13 @@ export function ClientMonitor() {
     return () => clearInterval(interval)
   }, [getClientInfo])
 
-  if (process.env.NODE_ENV === "production") {
+  // Check if we should show the monitor
+  const shouldShow = () => {
+    if (typeof window === "undefined") return false
+    return process.env.NEXT_PUBLIC_DEBUG_MODE === "true" || localStorage.getItem("debug_mode") === "true"
+  }
+
+  if (!shouldShow()) {
     return null
   }
 
