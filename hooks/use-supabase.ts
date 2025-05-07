@@ -1,12 +1,12 @@
 "use client"
 
 import { useState, useEffect, useRef, useCallback } from "react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useAuth } from "@/context/auth-context"
 import { useToast } from "@/hooks/use-toast"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 import { getTokenManager, TOKEN_EVENTS, resetTokenManager } from "@/lib/token-manager"
-import { getSupabaseClient } from "@/lib/supabase-singleton"
 
 // Network status detection
 const NETWORK_DETECTION_INTERVAL = 10000 // 10 seconds
@@ -23,15 +23,6 @@ interface UseSupabaseOptions {
   debugMode?: boolean
   monitorNetwork?: boolean
   offlineMode?: boolean
-}
-
-// Define interface for query options to improve type safety
-interface QueryOptions<T> {
-  retries?: number
-  retryDelay?: number
-  requiresAuth?: boolean
-  offlineAction?: (...args: any[]) => Promise<T>
-  offlineArgs?: any
 }
 
 export function useSupabase(options: UseSupabaseOptions = {}) {
@@ -88,8 +79,25 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         // Ignore storage errors
       }
 
-      // Use the singleton client
-      clientRef.current = getSupabaseClient()
+      // Create client with enhanced options
+      clientRef.current = createClientComponentClient<Database>({
+        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+        supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        options: {
+          auth: {
+            persistSession,
+            autoRefreshToken,
+            storageKey: "supabase-auth-token-v2",
+            flowType: "pkce",
+            debug: debugMode,
+          },
+          global: {
+            headers: {
+              "x-client-info": `useSupabase-hook/${process.env.NEXT_PUBLIC_APP_VERSION || "1.0.0"}`,
+            },
+          },
+        },
+      })
 
       // Initialize token manager
       if (clientRef.current) {
@@ -286,7 +294,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         networkCheckTimerRef.current = null
       }
     }
-  }, [isInitialized, monitorNetwork, debug, isOnline, toast, user, tokenManagerRef])
+  }, [isInitialized, monitorNetwork, debug, isOnline, toast, user])
 
   // Set up activity tracking
   useEffect(() => {
@@ -325,7 +333,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         clearInterval(activityTimerRef.current)
       }
     }
-  }, [isInitialized, lastActivity, user, debug, tokenManagerRef])
+  }, [isInitialized, lastActivity, user, debug])
 
   // Function to refresh the auth token directly
   const refreshToken = useCallback(async () => {
@@ -353,7 +361,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
     } finally {
       setIsRefreshing(false)
     }
-  }, [user, debug, tokenManagerRef, setIsRefreshing])
+  }, [user, debug, tokenManagerRef])
 
   // Function to check if token is valid
   const isTokenValid = useCallback(() => {
@@ -365,8 +373,18 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   const query = useCallback(
     async <T>(\
       queryFn: (client: SupabaseClient<Database>) => Promise<T>,
-      options: QueryOptions<T> = {}
-    ): Promise<T> => {
+      options: {
+        retries?: number;
+  retryDelay?: number;
+  requiresAuth?: boolean;
+  offlineAction?: (...args: any[]) => Promise<T>;
+  offlineArgs?: any;
+}
+=
+{
+}
+): Promise<T> =>
+{
   const { retries = 3, retryDelay = 1000, requiresAuth = false, offlineAction, offlineArgs } = options
 
   if (!clientRef.current) {
@@ -403,7 +421,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
 
       // Execute the query
       const asyncResult = await queryFn(clientRef.current)
-      return asyncResult
+      return asyncResult;
     } catch (error: any) {
       lastError = error
       attempt++
@@ -448,7 +466,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   throw lastError
 }
 ,
-    [isOnline, debug, clientRef, setLastActivity, setIsOnline, tokenManagerRef]
+    [isOnline, debug, tokenManagerRef, clientRef, setLastActivity, setIsOnline]
   )
 
 // Get detailed token status

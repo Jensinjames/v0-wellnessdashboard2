@@ -1,16 +1,15 @@
 "use client"
 
-import { useRouter } from "next/navigation"
-
 import type React from "react"
 import { createContext, useContext, useEffect, useState, useRef } from "react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { useRouter } from "next/navigation"
 import type { User, Session } from "@supabase/supabase-js"
 import type { UserProfile, ProfileFormData } from "@/types/auth"
 import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
 import { validateAuthCredentials, sanitizeEmail } from "@/utils/auth-validation"
 import { resetSupabaseClient } from "@/lib/supabase-client"
-import { getSupabaseClient } from "@/lib/supabase-singleton"
 
 interface AuthContextType {
   user: User | null
@@ -64,7 +63,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
-  const supabase = getSupabaseClient()
+  const supabase = createClientComponentClient()
   const isMounted = useRef(true)
   const isInitialized = useRef(false)
 
@@ -351,9 +350,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data?.user) {
         debugLog("Sign-up successful, confirmation required")
         // User created but confirmation required, no session yet
+        // We could update UI to show confirmation required message
       }
 
-      // Explicitly indicate that an email verification was sent
       return { error: null, emailVerificationSent: true }
     } catch (error: any) {
       console.error("Sign up error:", error)

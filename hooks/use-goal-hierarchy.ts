@@ -1,502 +1,589 @@
 "use client"
 
 import { useState, useEffect, useCallback } from "react"
-import { useSupabase } from "./use-supabase"
-import type { GoalHierarchy, Category, Subcategory, Goal, TimeEntry } from "@/types/goals-hierarchy"
+import { useAuth } from "@/context/auth-context"
+import { useToast } from "@/hooks/use-toast"
+import type { GoalCategory, GoalSubcategory, Goal, TimeEntry } from "@/types/goals-hierarchy"
+import { useSupabase } from "@/hooks/use-supabase"
 
-export function useGoalHierarchy() {
-  const { supabase, query, isInitialized } = useSupabase()
-  const [hierarchy, setHierarchy] = useState<GoalHierarchy>({
-    categories: [],
-    subcategories: [],
-    goals: [],
-    timeEntries: [],
-  })
+interface GoalHierarchyData {
+  categories: GoalCategory[]
+  isLoading: boolean
+  error: string | null
+  totalDailyTimeAllocation: number
+  createCategory: (category: Partial<GoalCategory>) => Promise<{ success: boolean; id?: string; error?: string }>
+  updateCategory: (categoryId: string, updates: Partial<GoalCategory>) => Promise<{ success: boolean; error?: string }>
+  deleteCategory: (categoryId: string) => Promise<{ success: boolean; error?: string }>
+  createSubcategory: (
+    subcategory: Partial<GoalSubcategory>,
+  ) => Promise<{ success: boolean; id?: string; error?: string }>
+  updateSubcategory: (
+    subcategoryId: string,
+    updates: Partial<GoalSubcategory>,
+  ) => Promise<{ success: boolean; error?: string }>
+  deleteSubcategory: (subcategoryId: string) => Promise<{ success: boolean; error?: string }>
+  createGoal: (goal: Partial<Goal>) => Promise<{ success: boolean; id?: string; error?: string }>
+  updateGoal: (goalId: string, updates: Partial<Goal>) => Promise<{ success: boolean; error?: string }>
+  deleteGoal: (goalId: string) => Promise<{ success: boolean; error?: string }>
+  moveGoal: (goalId: string, newSubcategoryId: string) => Promise<{ success: boolean; error?: string }>
+  moveSubcategory: (subcategoryId: string, newCategoryId: string) => Promise<{ success: boolean; error?: string }>
+  addTimeEntry: (entry: Partial<TimeEntry>) => Promise<{ success: boolean; id?: string; error?: string }>
+  refetch: () => Promise<void>
+}
+
+export function useGoalHierarchy(): GoalHierarchyData {
+  const { user } = useAuth()
+  const { supabase } = useSupabase()
+  const { toast } = useToast()
+  const [categories, setCategories] = useState<GoalCategory[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
+  const [error, setError] = useState<string | null>(null)
 
-  // Fetch all data
-  const fetchHierarchy = useCallback(async () => {
-    if (!isInitialized) return
-
-    setIsLoading(true)
-    setError(null)
+  const fetchGoalHierarchy = useCallback(async () => {
+    if (!user) {
+      setIsLoading(false)
+      return
+    }
 
     try {
-      // Fetch categories
-      const categories = await query<Category[]>(
-        async (client) => {
-          const { data, error } = await client.from("categories").select("*").order("order")
+      setIsLoading(true)
+      setError(null)
 
-          if (error) throw error
-          return data || []
-        },
-        { requiresAuth: true },
-      )
+      const { data, error: fetchError } = await supabase
+        .from("goal_categories")
+        .select(`
+          *,
+          subcategories:goal_subcategories(
+            *,
+            goals:goals(*)
+          )
+        `)
+        .eq("user_id", user.id)
+        .order("created_at")
 
-      // Fetch subcategories
-      const subcategories = await query<Subcategory[]>(
-        async (client) => {
-          const { data, error } = await client.from("subcategories").select("*").order("order")
+      if (fetchError) {
+        throw fetchError
+      }
 
-          if (error) throw error
-          return data || []
-        },
-        { requiresAuth: true },
-      )
-
-      // Fetch goals
-      const goals = await query<Goal[]>(
-        async (client) => {
-          const { data, error } = await client.from("goals").select("*").order("priority")
-
-          if (error) throw error
-          return data || []
-        },
-        { requiresAuth: true },
-      )
-
-      // Fetch time entries
-      const timeEntries = await query<TimeEntry[]>(
-        async (client) => {
-          const { data, error } = await client
-            .from("time_entries")
-            .select("*")
-            .order("start_time", { ascending: false })
-
-          if (error) throw error
-          return data || []
-        },
-        { requiresAuth: true },
-      )
-
-      setHierarchy({
-        categories,
-        subcategories,
-        goals,
-        timeEntries,
-      })
-    } catch (err) {
+      setCategories(data || [])
+    } catch (err: any) {
       console.error("Error fetching goal hierarchy:", err)
-      setError(err instanceof Error ? err : new Error("Failed to fetch goal hierarchy"))
+      setError(err.message || "Failed to load goal data")
+      toast({
+        title: "Error",
+        description: "Failed to load your goals. Please try again.",
+        variant: "destructive",
+      })
     } finally {
       setIsLoading(false)
     }
-  }, [isInitialized, query])
+  }, [user, supabase, toast])
 
-  // Add a new category
-  const addCategory = useCallback(
-    async (category: Omit<Category, "id">) => {
-      if (!supabase) return null
-
-      try {
-        const { data, error } = await supabase.from("categories").insert(category).select().single()
-
-        if (error) throw error
-
-        setHierarchy((prev) => ({
-          ...prev,
-          categories: [...prev.categories, data],
-        }))
-
-        return data
-      } catch (err) {
-        console.error("Error adding category:", err)
-        throw err
-      }
-    },
-    [supabase],
-  )
-
-  // Add a new subcategory
-  const addSubcategory = useCallback(
-    async (subcategory: Omit<Subcategory, "id">) => {
-      if (!supabase) return null
-
-      try {
-        const { data, error } = await supabase.from("subcategories").insert(subcategory).select().single()
-
-        if (error) throw error
-
-        setHierarchy((prev) => ({
-          ...prev,
-          subcategories: [...prev.subcategories, data],
-        }))
-
-        return data
-      } catch (err) {
-        console.error("Error adding subcategory:", err)
-        throw err
-      }
-    },
-    [supabase],
-  )
-
-  // Add a new goal
-  const addGoal = useCallback(
-    async (goal: Omit<Goal, "id">) => {
-      if (!supabase) return null
-
-      try {
-        const { data, error } = await supabase.from("goals").insert(goal).select().single()
-
-        if (error) throw error
-
-        setHierarchy((prev) => ({
-          ...prev,
-          goals: [...prev.goals, data],
-        }))
-
-        return data
-      } catch (err) {
-        console.error("Error adding goal:", err)
-        throw err
-      }
-    },
-    [supabase],
-  )
-
-  // Add a new time entry
-  const addTimeEntry = useCallback(
-    async (timeEntry: Omit<TimeEntry, "id">) => {
-      if (!supabase) return null
-
-      try {
-        const { data, error } = await supabase.from("time_entries").insert(timeEntry).select().single()
-
-        if (error) throw error
-
-        setHierarchy((prev) => ({
-          ...prev,
-          timeEntries: [data, ...prev.timeEntries],
-        }))
-
-        return data
-      } catch (err) {
-        console.error("Error adding time entry:", err)
-        throw err
-      }
-    },
-    [supabase],
-  )
-
-  // Update a category
-  const updateCategory = useCallback(
-    async (id: string, updates: Partial<Category>) => {
-      if (!supabase) return false
-
-      try {
-        const { error } = await supabase.from("categories").update(updates).eq("id", id)
-
-        if (error) throw error
-
-        setHierarchy((prev) => ({
-          ...prev,
-          categories: prev.categories.map((cat) => (cat.id === id ? { ...cat, ...updates } : cat)),
-        }))
-
-        return true
-      } catch (err) {
-        console.error("Error updating category:", err)
-        throw err
-      }
-    },
-    [supabase],
-  )
-
-  // Update a subcategory
-  const updateSubcategory = useCallback(
-    async (id: string, updates: Partial<Subcategory>) => {
-      if (!supabase) return false
-
-      try {
-        const { error } = await supabase.from("subcategories").update(updates).eq("id", id)
-
-        if (error) throw error
-
-        setHierarchy((prev) => ({
-          ...prev,
-          subcategories: prev.subcategories.map((subcat) => (subcat.id === id ? { ...subcat, ...updates } : subcat)),
-        }))
-
-        return true
-      } catch (err) {
-        console.error("Error updating subcategory:", err)
-        throw err
-      }
-    },
-    [supabase],
-  )
-
-  // Update a goal
-  const updateGoal = useCallback(
-    async (id: string, updates: Partial<Goal>) => {
-      if (!supabase) return false
-
-      try {
-        const { error } = await supabase.from("goals").update(updates).eq("id", id)
-
-        if (error) throw error
-
-        setHierarchy((prev) => ({
-          ...prev,
-          goals: prev.goals.map((goal) => (goal.id === id ? { ...goal, ...updates } : goal)),
-        }))
-
-        return true
-      } catch (err) {
-        console.error("Error updating goal:", err)
-        throw err
-      }
-    },
-    [supabase],
-  )
-
-  // Update a time entry
-  const updateTimeEntry = useCallback(
-    async (id: string, updates: Partial<TimeEntry>) => {
-      if (!supabase) return false
-
-      try {
-        const { error } = await supabase.from("time_entries").update(updates).eq("id", id)
-
-        if (error) throw error
-
-        setHierarchy((prev) => ({
-          ...prev,
-          timeEntries: prev.timeEntries.map((entry) => (entry.id === id ? { ...entry, ...updates } : entry)),
-        }))
-
-        return true
-      } catch (err) {
-        console.error("Error updating time entry:", err)
-        throw err
-      }
-    },
-    [supabase],
-  )
-
-  // Delete a category
-  const deleteCategory = useCallback(
-    async (id: string) => {
-      if (!supabase) return false
-
-      try {
-        const { error } = await supabase.from("categories").delete().eq("id", id)
-
-        if (error) throw error
-
-        setHierarchy((prev) => ({
-          ...prev,
-          categories: prev.categories.filter((cat) => cat.id !== id),
-        }))
-
-        return true
-      } catch (err) {
-        console.error("Error deleting category:", err)
-        throw err
-      }
-    },
-    [supabase],
-  )
-
-  // Delete a subcategory
-  const deleteSubcategory = useCallback(
-    async (id: string) => {
-      if (!supabase) return false
-
-      try {
-        const { error } = await supabase.from("subcategories").delete().eq("id", id)
-
-        if (error) throw error
-
-        setHierarchy((prev) => ({
-          ...prev,
-          subcategories: prev.subcategories.filter((subcat) => subcat.id !== id),
-        }))
-
-        return true
-      } catch (err) {
-        console.error("Error deleting subcategory:", err)
-        throw err
-      }
-    },
-    [supabase],
-  )
-
-  // Delete a goal
-  const deleteGoal = useCallback(
-    async (id: string) => {
-      if (!supabase) return false
-
-      try {
-        const { error } = await supabase.from("goals").delete().eq("id", id)
-
-        if (error) throw error
-
-        setHierarchy((prev) => ({
-          ...prev,
-          goals: prev.goals.filter((goal) => goal.id !== id),
-        }))
-
-        return true
-      } catch (err) {
-        console.error("Error deleting goal:", err)
-        throw err
-      }
-    },
-    [supabase],
-  )
-
-  // Delete a time entry
-  const deleteTimeEntry = useCallback(
-    async (id: string) => {
-      if (!supabase) return false
-
-      try {
-        const { error } = await supabase.from("time_entries").delete().eq("id", id)
-
-        if (error) throw error
-
-        setHierarchy((prev) => ({
-          ...prev,
-          timeEntries: prev.timeEntries.filter((entry) => entry.id !== id),
-        }))
-
-        return true
-      } catch (err) {
-        console.error("Error deleting time entry:", err)
-        throw err
-      }
-    },
-    [supabase],
-  )
-
-  // Get subcategories for a specific category
-  const getSubcategoriesForCategory = useCallback(
-    (categoryId: string) => {
-      return hierarchy.subcategories.filter((subcat) => subcat.category_id === categoryId)
-    },
-    [hierarchy.subcategories],
-  )
-
-  // Get goals for a specific subcategory
-  const getGoalsForSubcategory = useCallback(
-    (subcategoryId: string) => {
-      return hierarchy.goals.filter((goal) => goal.subcategory_id === subcategoryId)
-    },
-    [hierarchy.goals],
-  )
-
-  // Get time entries for a specific goal
-  const getTimeEntriesForGoal = useCallback(
-    (goalId: string) => {
-      return hierarchy.timeEntries.filter((entry) => entry.goal_id === goalId)
-    },
-    [hierarchy.timeEntries],
-  )
-
-  // Get all time entries for a specific category
-  const getTimeEntriesForCategory = useCallback(
-    (categoryId: string) => {
-      const subcategoryIds = hierarchy.subcategories
-        .filter((subcat) => subcat.category_id === categoryId)
-        .map((subcat) => subcat.id)
-
-      const goalIds = hierarchy.goals
-        .filter((goal) => subcategoryIds.includes(goal.subcategory_id))
-        .map((goal) => goal.id)
-
-      return hierarchy.timeEntries.filter((entry) => goalIds.includes(entry.goal_id))
-    },
-    [hierarchy],
-  )
-
-  // Get total time spent on a goal
-  const getTotalTimeForGoal = useCallback(
-    (goalId: string) => {
-      return hierarchy.timeEntries
-        .filter((entry) => entry.goal_id === goalId)
-        .reduce((total, entry) => {
-          const duration = entry.end_time
-            ? new Date(entry.end_time).getTime() - new Date(entry.start_time).getTime()
-            : 0
-          return total + duration
-        }, 0)
-    },
-    [hierarchy.timeEntries],
-  )
-
-  // Get total time spent on a subcategory
-  const getTotalTimeForSubcategory = useCallback(
-    (subcategoryId: string) => {
-      const goalIds = hierarchy.goals.filter((goal) => goal.subcategory_id === subcategoryId).map((goal) => goal.id)
-
-      return hierarchy.timeEntries
-        .filter((entry) => goalIds.includes(entry.goal_id))
-        .reduce((total, entry) => {
-          const duration = entry.end_time
-            ? new Date(entry.end_time).getTime() - new Date(entry.start_time).getTime()
-            : 0
-          return total + duration
-        }, 0)
-    },
-    [hierarchy],
-  )
-
-  // Get total time spent on a category
-  const getTotalTimeForCategory = useCallback(
-    (categoryId: string) => {
-      const subcategoryIds = hierarchy.subcategories
-        .filter((subcat) => subcat.category_id === categoryId)
-        .map((subcat) => subcat.id)
-
-      const goalIds = hierarchy.goals
-        .filter((goal) => subcategoryIds.includes(goal.subcategory_id))
-        .map((goal) => goal.id)
-
-      return hierarchy.timeEntries
-        .filter((entry) => goalIds.includes(entry.goal_id))
-        .reduce((total, entry) => {
-          const duration = entry.end_time
-            ? new Date(entry.end_time).getTime() - new Date(entry.start_time).getTime()
-            : 0
-          return total + duration
-        }, 0)
-    },
-    [hierarchy],
-  )
-
-  // Load data on initial mount
   useEffect(() => {
-    if (isInitialized) {
-      fetchHierarchy()
+    fetchGoalHierarchy().catch((err) => {
+      console.error("Error in fetchGoalHierarchy effect:", err)
+      setError(err?.message || "An unexpected error occurred")
+    })
+  }, [fetchGoalHierarchy])
+
+  const createCategory = async (category: Partial<GoalCategory>) => {
+    if (!user) {
+      return { success: false, error: "You must be logged in" }
     }
-  }, [isInitialized, fetchHierarchy])
+
+    try {
+      const { data, error: createError } = await supabase
+        .from("goal_categories")
+        .insert({
+          name: category.name,
+          description: category.description || "",
+          color: category.color || "#4f46e5",
+          icon: category.icon || "",
+          user_id: user.id,
+          daily_time_allocation: category.daily_time_allocation || 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single()
+
+      if (createError) {
+        throw createError
+      }
+
+      await fetchGoalHierarchy()
+      toast({
+        title: "Success",
+        description: "Category created successfully",
+      })
+
+      return { success: true, id: data?.id }
+    } catch (err: any) {
+      console.error("Error creating category:", err)
+      toast({
+        title: "Error",
+        description: err.message || "Failed to create category",
+        variant: "destructive",
+      })
+      return { success: false, error: err.message }
+    }
+  }
+
+  const updateCategory = async (categoryId: string, updates: Partial<GoalCategory>) => {
+    if (!user) {
+      return { success: false, error: "You must be logged in" }
+    }
+
+    try {
+      const { error: updateError } = await supabase
+        .from("goal_categories")
+        .update({
+          name: updates.name,
+          description: updates.description,
+          color: updates.color,
+          icon: updates.icon,
+          daily_time_allocation: updates.daily_time_allocation,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", categoryId)
+        .eq("user_id", user.id)
+
+      if (updateError) {
+        throw updateError
+      }
+
+      await fetchGoalHierarchy()
+      toast({
+        title: "Success",
+        description: "Category updated successfully",
+      })
+
+      return { success: true }
+    } catch (err: any) {
+      console.error("Error updating category:", err)
+      toast({
+        title: "Error",
+        description: err.message || "Failed to update category",
+        variant: "destructive",
+      })
+      return { success: false, error: err.message }
+    }
+  }
+
+  const deleteCategory = async (categoryId: string) => {
+    if (!user) {
+      return { success: false, error: "You must be logged in" }
+    }
+
+    try {
+      const { error: deleteError } = await supabase
+        .from("goal_categories")
+        .delete()
+        .eq("id", categoryId)
+        .eq("user_id", user.id)
+
+      if (deleteError) {
+        throw deleteError
+      }
+
+      await fetchGoalHierarchy()
+      toast({
+        title: "Success",
+        description: "Category deleted successfully",
+      })
+
+      return { success: true }
+    } catch (err: any) {
+      console.error("Error deleting category:", err)
+      toast({
+        title: "Error",
+        description: err.message || "Failed to delete category",
+        variant: "destructive",
+      })
+      return { success: false, error: err.message }
+    }
+  }
+
+  const createSubcategory = async (subcategory: Partial<GoalSubcategory>) => {
+    if (!user) {
+      return { success: false, error: "You must be logged in" }
+    }
+
+    try {
+      const { data, error: createError } = await supabase
+        .from("goal_subcategories")
+        .insert({
+          name: subcategory.name,
+          description: subcategory.description || "",
+          category_id: subcategory.category_id,
+          user_id: user.id,
+          daily_time_allocation: subcategory.daily_time_allocation || 0,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single()
+
+      if (createError) {
+        throw createError
+      }
+
+      await fetchGoalHierarchy()
+      toast({
+        title: "Success",
+        description: "Subcategory created successfully",
+      })
+
+      return { success: true, id: data?.id }
+    } catch (err: any) {
+      console.error("Error creating subcategory:", err)
+      toast({
+        title: "Error",
+        description: err.message || "Failed to create subcategory",
+        variant: "destructive",
+      })
+      return { success: false, error: err.message }
+    }
+  }
+
+  const updateSubcategory = async (subcategoryId: string, updates: Partial<GoalSubcategory>) => {
+    if (!user) {
+      return { success: false, error: "You must be logged in" }
+    }
+
+    try {
+      const { error: updateError } = await supabase
+        .from("goal_subcategories")
+        .update({
+          name: updates.name,
+          description: updates.description,
+          category_id: updates.category_id,
+          daily_time_allocation: updates.daily_time_allocation,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", subcategoryId)
+        .eq("user_id", user.id)
+
+      if (updateError) {
+        throw updateError
+      }
+
+      await fetchGoalHierarchy()
+      toast({
+        title: "Success",
+        description: "Subcategory updated successfully",
+      })
+
+      return { success: true }
+    } catch (err: any) {
+      console.error("Error updating subcategory:", err)
+      toast({
+        title: "Error",
+        description: err.message || "Failed to update subcategory",
+        variant: "destructive",
+      })
+      return { success: false, error: err.message }
+    }
+  }
+
+  const deleteSubcategory = async (subcategoryId: string) => {
+    if (!user) {
+      return { success: false, error: "You must be logged in" }
+    }
+
+    try {
+      const { error: deleteError } = await supabase
+        .from("goal_subcategories")
+        .delete()
+        .eq("id", subcategoryId)
+        .eq("user_id", user.id)
+
+      if (deleteError) {
+        throw deleteError
+      }
+
+      await fetchGoalHierarchy()
+      toast({
+        title: "Success",
+        description: "Subcategory deleted successfully",
+      })
+
+      return { success: true }
+    } catch (err: any) {
+      console.error("Error deleting subcategory:", err)
+      toast({
+        title: "Error",
+        description: err.message || "Failed to delete subcategory",
+        variant: "destructive",
+      })
+      return { success: false, error: err.message }
+    }
+  }
+
+  const createGoal = async (goal: Partial<Goal>) => {
+    if (!user) {
+      return { success: false, error: "You must be logged in" }
+    }
+
+    try {
+      const { data, error: createError } = await supabase
+        .from("goals")
+        .insert({
+          name: goal.name,
+          description: goal.description || "",
+          notes: goal.notes || "",
+          subcategory_id: goal.subcategory_id,
+          user_id: user.id,
+          daily_time_allocation: goal.daily_time_allocation || 0,
+          progress: goal.progress || 0,
+          status: goal.status || "not_started",
+          priority: goal.priority || "medium",
+          due_date: goal.due_date,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single()
+
+      if (createError) {
+        throw createError
+      }
+
+      await fetchGoalHierarchy()
+      toast({
+        title: "Success",
+        description: "Goal created successfully",
+      })
+
+      return { success: true, id: data?.id }
+    } catch (err: any) {
+      console.error("Error creating goal:", err)
+      toast({
+        title: "Error",
+        description: err.message || "Failed to create goal",
+        variant: "destructive",
+      })
+      return { success: false, error: err.message }
+    }
+  }
+
+  const updateGoal = async (goalId: string, updates: Partial<Goal>) => {
+    if (!user) {
+      return { success: false, error: "You must be logged in" }
+    }
+
+    try {
+      const { error: updateError } = await supabase
+        .from("goals")
+        .update({
+          name: updates.name,
+          description: updates.description,
+          notes: updates.notes,
+          subcategory_id: updates.subcategory_id,
+          daily_time_allocation: updates.daily_time_allocation,
+          progress: updates.progress,
+          status: updates.status,
+          priority: updates.priority,
+          due_date: updates.due_date,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", goalId)
+        .eq("user_id", user.id)
+
+      if (updateError) {
+        throw updateError
+      }
+
+      await fetchGoalHierarchy()
+      toast({
+        title: "Success",
+        description: "Goal updated successfully",
+      })
+
+      return { success: true }
+    } catch (err: any) {
+      console.error("Error updating goal:", err)
+      toast({
+        title: "Error",
+        description: err.message || "Failed to update goal",
+        variant: "destructive",
+      })
+      return { success: false, error: err.message }
+    }
+  }
+
+  const deleteGoal = async (goalId: string) => {
+    if (!user) {
+      return { success: false, error: "You must be logged in" }
+    }
+
+    try {
+      const { error: deleteError } = await supabase.from("goals").delete().eq("id", goalId).eq("user_id", user.id)
+
+      if (deleteError) {
+        throw deleteError
+      }
+
+      await fetchGoalHierarchy()
+      toast({
+        title: "Success",
+        description: "Goal deleted successfully",
+      })
+
+      return { success: true }
+    } catch (err: any) {
+      console.error("Error deleting goal:", err)
+      toast({
+        title: "Error",
+        description: err.message || "Failed to delete goal",
+        variant: "destructive",
+      })
+      return { success: false, error: err.message }
+    }
+  }
+
+  const moveGoal = async (goalId: string, newSubcategoryId: string) => {
+    if (!user) {
+      return { success: false, error: "You must be logged in" }
+    }
+
+    try {
+      const { error: updateError } = await supabase
+        .from("goals")
+        .update({
+          subcategory_id: newSubcategoryId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", goalId)
+        .eq("user_id", user.id)
+
+      if (updateError) {
+        throw updateError
+      }
+
+      await fetchGoalHierarchy()
+      toast({
+        title: "Success",
+        description: "Goal moved successfully",
+      })
+
+      return { success: true }
+    } catch (err: any) {
+      console.error("Error moving goal:", err)
+      toast({
+        title: "Error",
+        description: err.message || "Failed to move goal",
+        variant: "destructive",
+      })
+      return { success: false, error: err.message }
+    }
+  }
+
+  const moveSubcategory = async (subcategoryId: string, newCategoryId: string) => {
+    if (!user) {
+      return { success: false, error: "You must be logged in" }
+    }
+
+    try {
+      const { error: updateError } = await supabase
+        .from("goal_subcategories")
+        .update({
+          category_id: newCategoryId,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", subcategoryId)
+        .eq("user_id", user.id)
+
+      if (updateError) {
+        throw updateError
+      }
+
+      await fetchGoalHierarchy()
+      toast({
+        title: "Success",
+        description: "Subcategory moved successfully",
+      })
+
+      return { success: true }
+    } catch (err: any) {
+      console.error("Error moving subcategory:", err)
+      toast({
+        title: "Error",
+        description: err.message || "Failed to move subcategory",
+        variant: "destructive",
+      })
+      return { success: false, error: err.message }
+    }
+  }
+
+  const addTimeEntry = async (entry: Partial<TimeEntry>) => {
+    if (!user) {
+      return { success: false, error: "You must be logged in" }
+    }
+
+    try {
+      // Validate that we have the required fields
+      if (!entry.goal_id || !entry.duration) {
+        throw new Error("Missing required fields: goal_id and duration are required")
+      }
+
+      const { data, error: createError } = await supabase
+        .from("time_entries")
+        .insert({
+          goal_id: entry.goal_id,
+          user_id: user.id,
+          duration: entry.duration,
+          date: entry.date || new Date().toISOString().split("T")[0],
+          notes: entry.notes || "",
+          created_at: new Date().toISOString(),
+        })
+        .select("id")
+        .single()
+
+      if (createError) {
+        throw createError
+      }
+
+      await fetchGoalHierarchy()
+      toast({
+        title: "Success",
+        description: "Time entry added successfully",
+      })
+
+      return { success: true, id: data?.id }
+    } catch (err: any) {
+      console.error("Error adding time entry:", err)
+      toast({
+        title: "Error",
+        description: err.message || "Failed to add time entry",
+        variant: "destructive",
+      })
+      return { success: false, error: err.message }
+    }
+  }
+
+  // Calculate total daily time allocation across all categories
+  const totalDailyTimeAllocation = categories.reduce((total, category) => {
+    return total + (category.daily_time_allocation || 0)
+  }, 0)
 
   return {
-    hierarchy,
+    categories,
     isLoading,
     error,
-    fetchHierarchy,
-    addCategory,
-    addSubcategory,
-    addGoal,
-    addTimeEntry,
+    totalDailyTimeAllocation,
+    createCategory,
     updateCategory,
-    updateSubcategory,
-    updateGoal,
-    updateTimeEntry,
     deleteCategory,
+    createSubcategory,
+    updateSubcategory,
     deleteSubcategory,
+    createGoal,
+    updateGoal,
     deleteGoal,
-    deleteTimeEntry,
-    getSubcategoriesForCategory,
-    getGoalsForSubcategory,
-    getTimeEntriesForGoal,
-    getTimeEntriesForCategory,
-    getTotalTimeForGoal,
-    getTotalTimeForSubcategory,
-    getTotalTimeForCategory,
+    moveGoal,
+    moveSubcategory,
+    addTimeEntry,
+    refetch: fetchGoalHierarchy,
   }
 }

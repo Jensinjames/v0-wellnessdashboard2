@@ -58,13 +58,13 @@
     "tailwindcss-animate": "^1.0.7",
     "vaul": "^0.9.6",
     "zod": "latest",
-    "@emotion/is-prop-valid": "latest",
     "@supabase/supabase-js": "latest",
+    "@emotion/is-prop-valid": "latest",
     "uuid": "latest",
+    "@supabase/ssr": "latest",
     "framer-motion": "latest",
     "@supabase/auth-helpers-nextjs": "latest",
-    "react-colorful": "latest",
-    "@supabase/ssr": "latest"
+    "react-colorful": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",

@@ -1,7 +1,6 @@
 import { createClient } from "@supabase/supabase-js"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
-import { isDebugMode, isClient } from "@/utils/environment"
 
 // Global variables for singleton pattern
 let supabaseClient: SupabaseClient<Database> | null = null
@@ -19,7 +18,7 @@ const goTrueClientRegistry = new Set<any>()
 
 // Enable/disable debug logging
 export function setDebugMode(enabled: boolean): void {
-  if (isClient()) {
+  if (typeof window !== "undefined") {
     localStorage.setItem("supabase_debug", enabled ? "true" : "false")
   }
   console.log(`Supabase client debug mode ${enabled ? "enabled" : "disabled"}`)
@@ -29,11 +28,11 @@ export function setDebugMode(enabled: boolean): void {
 function debugLog(...args: any[]): void {
   // Read from localStorage to allow dynamic toggling
   let debugMode = DEFAULT_DEBUG_MODE
-  if (isClient()) {
+  if (typeof window !== "undefined") {
     debugMode = localStorage.getItem("supabase_debug") === "true"
 
-    // Use NEXT_PUBLIC prefixed variable for debug mode
-    if (isDebugMode()) {
+    // Use NEXT_PUBLIC prefixed variable instead of NODE_ENV directly
+    if (process.env.NEXT_PUBLIC_DEBUG_MODE === "true") {
       debugMode = true
     }
   }
@@ -53,7 +52,7 @@ export function getSupabaseClient(
     timeout?: number
   } = {},
 ): SupabaseClient<Database> | Promise<SupabaseClient<Database>> {
-  if (!isClient()) {
+  if (typeof window === "undefined") {
     throw new Error("This client should only be used in the browser")
   }
 
@@ -103,7 +102,7 @@ export function getSupabaseClient(
           // Use a consistent storage key to prevent conflicts
           storageKey: "wellness-dashboard-auth-v2",
           // Debug flag to help identify issues - read from localStorage
-          debug: isClient() ? localStorage.getItem("supabase_debug") === "true" : DEFAULT_DEBUG_MODE,
+          debug: typeof window !== "undefined" ? localStorage.getItem("supabase_debug") === "true" : DEFAULT_DEBUG_MODE,
           // Storage event listener to sync auth state across tabs
           storage: {
             getItem: (key: string) => {
@@ -197,7 +196,7 @@ export function getSupabaseClient(
       isInitializing = false
 
       // Add unload event listener to clean up client on page unload
-      if (isClient()) {
+      if (typeof window !== "undefined") {
         window.addEventListener("beforeunload", () => {
           debugLog("Page unloading, cleaning up Supabase client")
           cleanupOrphanedClients(true)

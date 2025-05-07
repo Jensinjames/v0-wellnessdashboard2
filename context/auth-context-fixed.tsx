@@ -1,17 +1,17 @@
 "use client"
 
-import { useCallback } from "react"
+import { useRef } from "react"
 
 import type React from "react"
-import { createContext, useContext, useEffect, useState, useRef } from "react"
+import { createContext, useContext, useEffect, useState, useCallback } from "react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useRouter } from "next/navigation"
 import type { User, Session } from "@supabase/supabase-js"
 import type { UserProfile, ProfileFormData } from "@/types/auth"
 import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
 import { validateAuthCredentials, sanitizeEmail } from "@/utils/auth-validation"
-import { useSupabaseSingleton } from "@/hooks/use-supabase-singleton"
-import { isDebugMode } from "@/utils/environment"
+import { resetSupabaseClient } from "@/lib/supabase-client"
 
 interface AuthContextType {
   user: User | null
@@ -28,21 +28,30 @@ interface AuthContextType {
     mockSignUp?: boolean
     networkIssue?: boolean
     fieldErrors?: { email?: string; password?: string }
-    emailVerificationSent?: boolean
   }>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<UserProfile | null>
   updateProfile: (data: ProfileFormData) => Promise<{ success: boolean; error: Error | null }>
-  resetPassword: (email: string) => Promise<{ success: boolean; error: string | null }>
-  updatePassword: (password: string) => Promise<{ success: boolean; error: string | null }>
   getClientInfo: () => any
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
+// Debug mode flag
+let authDebugMode = process.env.NODE_ENV === "development"
+
+// Enable/disable debug logging
+export function setAuthDebugMode(enabled: boolean): void {
+  authDebugMode = enabled
+  if (typeof window !== "undefined") {
+    localStorage.setItem("auth_debug", enabled ? "true" : "false")
+  }
+  console.log(`Auth debug mode ${enabled ? "enabled" : "disabled"}`)
+}
+
 // Internal debug logging function
 function debugLog(...args: any[]): void {
-  if (isDebugMode()) {
+  if (authDebugMode) {
     console.log("[Auth Context]", ...args)
   }
 }
@@ -53,7 +62,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
-  const supabase = useSupabaseSingleton()
+  const supabase = createClientComponentClient()
   const isMounted = useRef(true)
   const isInitialized = useRef(false)
 
@@ -143,7 +152,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setProfile(null)
             setSession(null)
             // Reset the client to ensure a clean state
-            // resetSupabaseClient() // Removed as supabase is now a singleton
+            resetSupabaseClient()
           } else if (event === "SIGNED_IN" && newSession?.user) {
             debugLog("User signed in, updating state")
             setSession(newSession)
@@ -476,7 +485,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           debugLog("Sign-up successful, confirmation required")
           // User created but confirmation required, no session yet
           // We could update UI to show confirmation required message
-          return { error: null, mockSignUp: false, emailVerificationSent: true }
         }
 
         return { error: null, mockSignUp: false }
@@ -498,7 +506,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(null)
 
       // Reset the client to ensure a clean state
-      // resetSupabaseClient() // Removed as supabase is now a singleton
+      resetSupabaseClient()
 
       // Redirect to sign-in page
       router.push("/auth/sign-in")
@@ -548,50 +556,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user, supabase])
 
-  const resetPassword = async (email: string): Promise<{ success: boolean; error: string | null }> => {
-    debugLog("Reset password attempt", { email })
-    try {
-      const sanitizedEmail = sanitizeEmail(email)
-      if (!sanitizedEmail) {
-        debugLog("Email sanitization failed")
-        return { success: false, error: "Invalid email format" }
-      }
-
-      const { error } = await supabase.auth.resetPasswordForEmail(sanitizedEmail, {
-        redirectTo: `${window.location.origin}/auth/update-password`,
-      })
-
-      if (error) {
-        console.error("Reset password error:", error)
-        return { success: false, error: error.message }
-      }
-
-      debugLog("Reset password email sent successfully")
-      return { success: true, error: null }
-    } catch (error: any) {
-      console.error("Reset password error:", error)
-      return { success: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  }
-
-  const updatePassword = async (password: string): Promise<{ success: boolean; error: string | null }> => {
-    debugLog("Update password attempt")
-    try {
-      const { data, error } = await supabase.auth.updateUser({ password: password })
-
-      if (error) {
-        console.error("Update password error:", error)
-        return { success: false, error: error.message }
-      }
-
-      debugLog("Password updated successfully")
-      return { success: true, error: null }
-    } catch (error: any) {
-      console.error("Update password error:", error)
-      return { success: false, error: error instanceof Error ? error.message : String(error) }
-    }
-  }
-
   const getClientInfo = () => {
     return {
       hasClient: true,
@@ -618,8 +582,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     signOut,
     refreshProfile,
     updateProfile,
-    resetPassword,
-    updatePassword,
     getClientInfo,
   }
 
