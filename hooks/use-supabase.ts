@@ -49,7 +49,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   const clientRef = useRef<SupabaseClient<Database> | null>(null)
   const tokenManagerRef = useRef<ReturnType<typeof getTokenManager> | null>(null)
   const networkCheckTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const activityTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const activityTimerRef = useRef(false)
   const pingInProgressRef = useRef(false)
 
   // Debug logging

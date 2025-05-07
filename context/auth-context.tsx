@@ -28,6 +28,7 @@ interface AuthContextType {
     mockSignUp?: boolean
     networkIssue?: boolean
     fieldErrors?: { email?: string; password?: string }
+    emailVerificationSent?: boolean
   }>
   signOut: () => Promise<void>
   refreshProfile: () => Promise<UserProfile | null>
@@ -183,6 +184,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             debugLog("Token refreshed, updating session")
             setSession(newSession)
             lastTokenRefresh.current = Date.now()
+          } else if (event === "USER_UPDATED" && newSession) {
+            debugLog("User updated, updating session and user")
+            setSession(newSession)
+            setUser(newSession.user)
           }
 
           // Refresh the page to update server components
@@ -221,8 +226,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .update({
           // Map the ProfileFormData to the actual database column names
           // This is where we need to ensure the column names match
-          full_name: `${data.first_name} ${data.last_name}`, // If your DB uses full_name instead of first_name/last_name
-          display_name: data.first_name, // If your DB uses display_name instead of first_name
+          first_name: data.first_name,
+          last_name: data.last_name,
+          full_name: `${data.first_name} ${data.last_name}`, // If your DB uses full_name
+          display_name: data.first_name, // If your DB uses display_name
           avatar_url: data.avatar_url,
           updated_at: new Date().toISOString(),
         })
@@ -347,6 +354,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
         if (error) {
           debugLog("Sign-in error from Supabase", error)
+
+          // Check if the error is due to email not being verified
+          if (error.message?.includes("Email not confirmed")) {
+            return {
+              error: new Error("Please verify your email before signing in. Check your inbox for a verification link."),
+              mockSignIn: false,
+            }
+          }
+
           if (error.message?.includes("Network request failed")) {
             return {
               error: new Error(error.message),
@@ -460,12 +476,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null, mockSignUp: true }
       } else {
         debugLog("Attempting real sign-up with Supabase")
+
+        // Get the current origin for the redirect URL
+        const origin = typeof window !== "undefined" ? window.location.origin : ""
+        const redirectUrl = `${origin}/auth/callback`
+
+        debugLog(`Using redirect URL: ${redirectUrl}`)
+
         // Use a properly structured object for signUp
         const { data, error } = await supabase.auth.signUp({
           email: sanitizedEmail,
           password: credentials.password,
           options: {
-            emailRedirectTo: `${window.location.origin}/auth/callback`,
+            emailRedirectTo: redirectUrl,
           },
         })
 
@@ -481,8 +504,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           return { error: new Error(error.message), mockSignUp: false }
         }
 
+        // Check if confirmation is required
+        const emailVerificationRequired = !data.session
+
+        if (emailVerificationRequired) {
+          debugLog("Sign-up successful, email verification required")
+          return {
+            error: null,
+            mockSignUp: false,
+            emailVerificationSent: true,
+          }
+        }
+
         // Explicitly update the state with the new session data if available
-        // Note: For sign-up with email confirmation, there might not be a session yet
         if (data?.session) {
           debugLog("Sign-up successful with immediate session, updating state")
           setSession(data.session)
@@ -500,10 +534,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               setCacheItem(CACHE_KEYS.PROFILE(data.user.id), createdProfile)
             }
           }
-        } else if (data?.user) {
-          debugLog("Sign-up successful, confirmation required")
-          // User created but confirmation required, no session yet
-          // We could update UI to show confirmation required message
         }
 
         return { error: null, mockSignUp: false }

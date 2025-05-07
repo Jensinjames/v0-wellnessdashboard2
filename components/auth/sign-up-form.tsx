@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Info, AlertTriangle, Wifi, RefreshCw } from "lucide-react"
+import { Info, AlertTriangle, Wifi, RefreshCw, Mail, CheckCircle } from "lucide-react"
 
 export function SignUpForm() {
   const [email, setEmail] = useState("")
@@ -18,11 +18,13 @@ export function SignUpForm() {
   const [confirmPassword, setConfirmPassword] = useState("")
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
   const [mockSignUp, setMockSignUp] = useState(false)
   const [networkError, setNetworkError] = useState(false)
   const [isCheckingNetwork, setIsCheckingNetwork] = useState(false)
   const [databaseError, setDatabaseError] = useState(false)
   const [signUpSuccess, setSignUpSuccess] = useState(false)
+  const [emailVerificationSent, setEmailVerificationSent] = useState(false)
   const { signUp } = useAuth()
   const router = useRouter()
 
@@ -41,7 +43,7 @@ export function SignUpForm() {
     }
 
     // Set initial state
-    if (!navigator.onLine) {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
       setNetworkError(true)
       setError("You appear to be offline. Please check your internet connection.")
     }
@@ -108,18 +110,22 @@ export function SignUpForm() {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
+    setFieldErrors({})
     setMockSignUp(false)
     setDatabaseError(false)
     setSignUpSuccess(false)
+    setEmailVerificationSent(false)
 
+    // Custom validation for password confirmation
     if (password !== confirmPassword) {
       setError("Passwords do not match")
+      setFieldErrors({ password: "Passwords do not match" })
       setIsLoading(false)
       return
     }
 
     // Check if we're online before attempting sign-up
-    if (!navigator.onLine) {
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
       setNetworkError(true)
       setError("You appear to be offline. Sign-up requires an internet connection.")
       setIsLoading(false)
@@ -128,22 +134,21 @@ export function SignUpForm() {
 
     try {
       // Pass credentials as a single object with the correct structure
-      const {
-        error,
-        mockSignUp: isMockSignUp,
-        networkIssue,
-      } = await signUp({
-        email,
-        password,
-      })
+      const result = await signUp({ email, password })
 
-      if (error) {
+      if (result.fieldErrors) {
+        setFieldErrors(result.fieldErrors)
+        setIsLoading(false)
+        return
+      }
+
+      if (result.error) {
         // Check if it's a network error
         if (
-          error.message?.includes("Failed to fetch") ||
-          error.message?.includes("Network") ||
-          error.message?.includes("network") ||
-          error.message?.includes("connect")
+          result.error.message?.includes("Failed to fetch") ||
+          result.error.message?.includes("Network") ||
+          result.error.message?.includes("network") ||
+          result.error.message?.includes("connect")
         ) {
           setNetworkError(true)
           setError(
@@ -151,7 +156,7 @@ export function SignUpForm() {
           )
         }
         // Check if it's a database error
-        else if (error.message?.includes("Database error")) {
+        else if (result.error.message?.includes("Database error")) {
           console.log("Database error detected, proceeding with mock sign-up")
           setDatabaseError(true)
           setError("Database error detected. You'll be signed up in demo mode.")
@@ -163,13 +168,13 @@ export function SignUpForm() {
           }, 3000)
           return
         } else {
-          setError(error.message)
+          setError(result.error.message)
         }
         setIsLoading(false)
         return
       }
 
-      if (networkIssue) {
+      if (result.networkIssue) {
         setNetworkError(true)
         setError("Network issue detected. You've been signed up in offline mode.")
         setMockSignUp(true)
@@ -181,12 +186,19 @@ export function SignUpForm() {
         return
       }
 
-      if (isMockSignUp) {
+      if (result.mockSignUp) {
         setMockSignUp(true)
         // Wait a moment before redirecting to simulate the sign-up process
         setTimeout(() => {
           router.push("/dashboard")
         }, 3000)
+        return
+      }
+
+      if (result.emailVerificationSent) {
+        setEmailVerificationSent(true)
+        setSignUpSuccess(true)
+        setIsLoading(false)
         return
       }
 
@@ -310,9 +322,26 @@ export function SignUpForm() {
         </Alert>
       )}
 
-      {signUpSuccess && (
+      {emailVerificationSent && (
+        <Alert className="mb-4 bg-blue-50" role="status" aria-live="polite">
+          <Mail className="h-4 w-4" aria-hidden="true" />
+          <AlertTitle>Verification Email Sent</AlertTitle>
+          <AlertDescription>
+            <p className="mb-2">
+              We've sent a verification email to <strong>{email}</strong>. Please check your inbox and click the
+              verification link to complete your registration.
+            </p>
+            <p>
+              If you don't see the email, please check your spam folder or request a new verification email from the
+              sign-in page.
+            </p>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {signUpSuccess && !emailVerificationSent && (
         <Alert className="mb-4 bg-green-50" role="status" aria-live="polite">
-          <Info className="h-4 w-4" aria-hidden="true" />
+          <CheckCircle className="h-4 w-4" aria-hidden="true" />
           <AlertTitle>Sign-up Successful</AlertTitle>
           <AlertDescription>
             Your account has been created successfully. You'll be redirected to the verification page.
@@ -320,70 +349,98 @@ export function SignUpForm() {
         </Alert>
       )}
 
-      <div className="space-y-2">
-        <Label htmlFor="email" id="email-label">
-          Email
-        </Label>
-        <Input
-          id="email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          disabled={isLoading || mockSignUp || signUpSuccess}
-          aria-labelledby="email-label"
-          aria-required="true"
-          autoComplete="email"
-        />
-      </div>
+      {!emailVerificationSent && (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="email" id="email-label">
+              Email
+            </Label>
+            <Input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              disabled={isLoading || mockSignUp || signUpSuccess}
+              aria-labelledby="email-label"
+              aria-required="true"
+              autoComplete="email"
+              aria-invalid={!!fieldErrors.email}
+              aria-errormessage={fieldErrors.email ? "email-error" : undefined}
+              className={fieldErrors.email ? "border-red-500" : ""}
+            />
+            {fieldErrors.email && (
+              <p id="email-error" className="mt-1 text-sm text-red-600">
+                {fieldErrors.email}
+              </p>
+            )}
+          </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="password" id="password-label">
-          Password
-        </Label>
-        <Input
-          id="password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          disabled={isLoading || mockSignUp || signUpSuccess}
-          aria-labelledby="password-label"
-          aria-required="true"
-          autoComplete="new-password"
-          aria-describedby="password-requirements"
-        />
-        <p id="password-requirements" className="text-xs text-gray-500">
-          Password should be at least 8 characters long
-        </p>
-      </div>
+          <div className="space-y-2">
+            <Label htmlFor="password" id="password-label">
+              Password
+            </Label>
+            <Input
+              id="password"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              disabled={isLoading || mockSignUp || signUpSuccess}
+              aria-labelledby="password-label"
+              aria-required="true"
+              autoComplete="new-password"
+              aria-describedby="password-requirements"
+              aria-invalid={!!fieldErrors.password}
+              aria-errormessage={fieldErrors.password ? "password-error" : undefined}
+              className={fieldErrors.password ? "border-red-500" : ""}
+            />
+            <p id="password-requirements" className="text-xs text-gray-500">
+              Password should be at least 8 characters long
+            </p>
+            {fieldErrors.password && (
+              <p id="password-error" className="mt-1 text-sm text-red-600">
+                {fieldErrors.password}
+              </p>
+            )}
+          </div>
 
-      <div className="space-y-2">
-        <Label htmlFor="confirm-password" id="confirm-password-label">
-          Confirm Password
-        </Label>
-        <Input
-          id="confirm-password"
-          type="password"
-          value={confirmPassword}
-          onChange={(e) => setConfirmPassword(e.target.value)}
-          required
-          disabled={isLoading || mockSignUp || signUpSuccess}
-          aria-labelledby="confirm-password-label"
-          aria-required="true"
-          autoComplete="new-password"
-        />
-      </div>
+          <div className="space-y-2">
+            <Label htmlFor="confirm-password" id="confirm-password-label">
+              Confirm Password
+            </Label>
+            <Input
+              id="confirm-password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              disabled={isLoading || mockSignUp || signUpSuccess}
+              aria-labelledby="confirm-password-label"
+              aria-required="true"
+              autoComplete="new-password"
+            />
+          </div>
 
-      <Button
-        type="submit"
-        className="w-full"
-        disabled={isLoading || mockSignUp || signUpSuccess || (networkError && !navigator.onLine)}
-        aria-busy={isLoading}
-        aria-live="polite"
-      >
-        {isLoading ? "Signing up..." : mockSignUp ? "Redirecting..." : signUpSuccess ? "Success!" : "Sign up"}
-      </Button>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={isLoading || mockSignUp || signUpSuccess || (networkError && !navigator.onLine)}
+            aria-busy={isLoading}
+            aria-live="polite"
+          >
+            {isLoading ? "Signing up..." : mockSignUp ? "Redirecting..." : signUpSuccess ? "Success!" : "Sign up"}
+          </Button>
+        </>
+      )}
+
+      {emailVerificationSent && (
+        <div className="flex justify-center">
+          <Button type="button" onClick={() => router.push("/auth/sign-in")} className="mt-4">
+            Go to Sign In
+          </Button>
+        </div>
+      )}
 
       <div className="text-center text-sm">
         Already have an account?{" "}
