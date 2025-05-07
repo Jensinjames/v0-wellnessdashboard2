@@ -58,7 +58,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   const clientRef = useRef<SupabaseClient<Database> | null>(null)
   const tokenManagerRef = useRef<ReturnType<typeof getTokenManager> | null>(null)
   const networkCheckTimerRef = useRef<NodeJS.Timeout | null>(null)
-  const activityTimerRef = useRef(false)
+  const activityTimerRef = useRef<NodeJS.Timeout | null>(null)
   const pingInProgressRef = useRef(false)
 
   // Debug logging
@@ -303,7 +303,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         networkCheckTimerRef.current = null
       }
     }
-  }, [isInitialized, monitorNetwork, debug, isOnline, toast, user, tokenManagerRef, debugMode])
+  }, [isInitialized, monitorNetwork, debug, isOnline, toast, user, tokenManagerRef])
 
   // Set up activity tracking
   useEffect(() => {
@@ -321,7 +321,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
     window.addEventListener("mousemove", trackActivity)
 
     // Check for inactivity every minute
-    const activityCheck = () => {
+    activityTimerRef.current = setInterval(() => {
       const inactiveTime = Date.now() - lastActivity
       debug(`User inactive for ${Math.round(inactiveTime / 1000)} seconds`)
 
@@ -330,9 +330,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         debug("User inactive for 30 minutes, refreshing token")
         tokenManagerRef.current.forceRefresh()
       }
-    }
-
-    activityTimerRef.current = setInterval(activityCheck, 60 * 1000)
+    }, 60 * 1000)
 
     return () => {
       window.removeEventListener("click", trackActivity)
@@ -344,7 +342,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         clearInterval(activityTimerRef.current)
       }
     }
-  }, [isInitialized, lastActivity, user, debug, tokenManagerRef, setConsecutiveErrors])
+  }, [isInitialized, lastActivity, user, debug, tokenManagerRef])
 
   // Function to refresh the auth token directly
   const refreshToken = useCallback(async () => {
@@ -372,7 +370,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
     } finally {
       setIsRefreshing(false)
     }
-  }, [user, debug, tokenManagerRef, setIsRefreshing, setConsecutiveErrors])
+  }, [user, debug, tokenManagerRef, setIsRefreshing])
 
   // Function to check if token is valid
   const isTokenValid = useCallback(() => {
@@ -386,6 +384,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
       queryFn: (client: SupabaseClient<Database>) => Promise<T>,
       options: QueryOptions<T> = {}
     ): Promise<T> => {
+                        {useRef<SupabaseClient<Database> | null>(null)}/
   const { retries = 3, retryDelay = 1000, requiresAuth = false, offlineAction, offlineArgs } = options
 
   if (!clientRef.current) {
@@ -467,7 +466,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   throw lastError
 }
 ,
-    [isOnline, debug, clientRef, setLastActivity, setIsOnline, tokenManagerRef, setConsecutiveErrors]
+    [isOnline, debug, clientRef, setLastActivity, setIsOnline, tokenManagerRef]
   )
 
 // Get detailed token status
@@ -509,7 +508,7 @@ const resetAuthState = useCallback(() => {
   if (isOnline && tokenManagerRef.current) {
     tokenManagerRef.current.forceRefresh()
   }
-}, [debug, debugMode, isOnline, clientRef, tokenManagerRef, setConsecutiveErrors])
+}, [debug, debugMode, isOnline, clientRef, tokenManagerRef])
 
 return {
     supabase: clientRef.current,

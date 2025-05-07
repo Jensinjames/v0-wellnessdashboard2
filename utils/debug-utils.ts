@@ -1,4 +1,4 @@
-import { isDebugMode } from "@/lib/env-utils"
+import { isDevelopment, isDebugMode as envIsDebugMode } from "@/utils/environment"
 
 // Debug settings object
 interface DebugSettings {
@@ -65,7 +65,7 @@ export function setDebugMode(enabled: boolean, namespace: keyof DebugSettings = 
 export function debugLog(namespace: keyof DebugSettings, ...args: any[]): void {
   const settings = getDebugSettings()
 
-  if (settings[namespace] || settings.all || isDebugMode()) {
+  if (settings[namespace] || settings.all || envIsDebugMode()) {
     console.log(`[${namespace.toUpperCase()}]`, ...args)
   }
 }
@@ -78,7 +78,7 @@ export function initializeDebugSettings(): void {
 
   // Initialize from environment if not already set
   if (!localStorage.getItem("debug_settings")) {
-    const shouldEnableDebug = isDebugMode()
+    const shouldEnableDebug = envIsDebugMode() || isDevelopment()
 
     if (shouldEnableDebug) {
       setDebugMode(true, "all")

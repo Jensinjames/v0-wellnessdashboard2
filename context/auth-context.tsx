@@ -350,9 +350,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data?.user) {
         debugLog("Sign-up successful, confirmation required")
         // User created but confirmation required, no session yet
-        // We could update UI to show confirmation required message
       }
 
+      // Explicitly indicate that an email verification was sent
       return { error: null, emailVerificationSent: true }
     } catch (error: any) {
       console.error("Sign up error:", error)

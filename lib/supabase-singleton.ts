@@ -1,70 +1,56 @@
-/**
- * Enhanced Supabase singleton client implementation
- * This ensures only one Supabase client is created and shared across the application
- */
+"use client"
+
 import { createClient } from "@supabase/supabase-js"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 
-// Global singleton variables
-let instance: SupabaseClient<Database> | null = null
-let isInitializing = false
-let initPromise: Promise<SupabaseClient<Database>> | null = null
+// Global variables for singleton pattern
+let supabaseClient: SupabaseClient<Database> | null = null
 
 /**
- * Get the Supabase client instance (singleton pattern)
+ * Creates a Supabase client singleton
  */
-export function getSupabaseClient(
-  options = {} as { forceNew?: boolean },
-): SupabaseClient<Database> | Promise<SupabaseClient<Database>> {
-  // Early return if we already have an instance
-  if (instance && !options.forceNew) {
-    return instance
+export function getSupabaseClient(): SupabaseClient<Database> {
+  if (supabaseClient) {
+    return supabaseClient
   }
 
-  // If we're already initializing, return the promise
-  if (isInitializing && initPromise && !options.forceNew) {
-    return initPromise
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    throw new Error("Missing required Supabase environment variables")
   }
 
-  // Set initializing flag
-  isInitializing = true
-
-  // Create initialization promise
-  initPromise = new Promise((resolve, reject) => {
-    try {
-      // Check required environment variables
-      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-        throw new Error("Missing required Supabase environment variables")
-      }
-
-      // Create the client
-      const client = createClient<Database>(
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        {
-          auth: {
-            persistSession: true,
-            autoRefreshToken: true,
-            detectSessionInUrl: true,
-            flowType: "pkce",
-          },
+  supabaseClient = createClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: false,
+        flowType: "pkce",
+      },
+      global: {
+        headers: {
+          "x-application-name": "wellness-dashboard",
         },
-      )
+      },
+    },
+  )
 
-      // Store the client in our singleton
-      instance = client
+  return supabaseClient
+}
 
-      // Reset state and resolve
-      isInitializing = false
-      resolve(client)
-    } catch (error) {
-      // Reset state and reject
-      isInitializing = false
-      initPromise = null
-      reject(error)
-    }
-  })
+// Placeholder for GoTrue monitoring function
+export function startGoTrueMonitoring(intervalMs = 60000): () => void {
+  // This is a placeholder - actual implementation would go here
+  // and likely involve checking for multiple instances of the GoTrue client
+  // and logging warnings or errors
+  console.warn(
+    "[Supabase Singleton] GoTrueClient monitoring is not fully implemented. Add logic to check for multiple instances.",
+  )
 
-  return initPromise
+  // Return a no-op function to stop monitoring
+  return () => {
+    console.log("[Supabase Singleton] GoTrueClient monitoring stopped.")
+  }
 }
