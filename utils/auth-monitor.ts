@@ -1,119 +1,128 @@
-/**
- * Auth Monitor Utility
- * Monitors and reports on GoTrueClient instances and authentication state
- */
 "use client"
 
-import { getInstanceCount } from "@/lib/supabase-manager"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import type { AuthChangeEvent, Session } from "@supabase/supabase-js"
+import { createLogger } from "@/utils/logger"
 
-// Debug mode
-const DEBUG = process.env.NEXT_PUBLIC_DEBUG_MODE === "true"
+const authLogger = createLogger("AuthMonitor")
 
-// Monitoring interval in milliseconds
-const MONITOR_INTERVAL = 60000 // 1 minute
+// Track the current user session
+let currentSession: Session | null = null
 
-// Store for monitoring data
-interface MonitoringData {
-  instanceCount: number
-  lastChecked: number
-  memoryUsage?: number
-}
+// Track the monitoring status
+let isMonitoring = false
 
-let monitoringData: MonitoringData = {
-  instanceCount: 0,
-  lastChecked: 0,
-}
-
-// Start monitoring
-let monitorInterval: NodeJS.Timeout | null = null
-
-/**
- * Start monitoring GoTrueClient instances
- */
+// Function to start monitoring
 export function startAuthMonitoring(): () => void {
-  if (monitorInterval) {
-    return () => stopAuthMonitoring()
+  if (typeof window === "undefined") return () => {}
+
+  if (isMonitoring) {
+    console.warn("Auth monitoring already started")
+    return () => {}
   }
 
-  if (DEBUG) {
-    console.log("[AuthMonitor] Starting auth monitoring")
-  }
+  isMonitoring = true
+  authLogger.info("Starting auth monitoring")
 
-  // Initial check
-  checkInstances()
+  const supabase = createClientComponentClient()
 
-  // Set up interval
-  monitorInterval = setInterval(checkInstances, MONITOR_INTERVAL)
+  // Get initial session
+  supabase.auth.getSession().then(({ data }) => {
+    currentSession = data.session
+  })
+
+  // Set up auth state change listener
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange(async (event, session) => {
+    try {
+      authLogger.info(`Auth state change: ${event}`)
+
+      // Skip if no user involved
+      if (!session?.user && !currentSession?.user) {
+        return
+      }
+
+      // Determine user ID
+      const userId = session?.user?.id || currentSession?.user?.id
+
+      if (!userId) {
+        return
+      }
+
+      // Map events to actions
+      const actionMap: Record<AuthChangeEvent, string> = {
+        SIGNED_IN: "login",
+        SIGNED_OUT: "logout",
+        USER_UPDATED: "user_updated",
+        USER_DELETED: "user_deleted",
+        PASSWORD_RECOVERY: "password_reset_requested",
+        TOKEN_REFRESHED: "token_refreshed",
+        MFA_CHALLENGE_VERIFIED: "mfa_challenge_verified",
+        PASSWORD_RESET: "password_reset",
+      }
+
+      const action = actionMap[event] || `auth_${event.toLowerCase()}`
+
+      // Prepare old and new values
+      const oldValues = currentSession
+        ? {
+            email: currentSession.user?.email,
+            last_sign_in_at: currentSession.user?.last_sign_in_at,
+          }
+        : null
+
+      const newValues = session
+        ? {
+            email: session.user?.email,
+            last_sign_in_at: session.user?.last_sign_in_at,
+          }
+        : null
+
+      // Log the event to the server
+      await fetch("/api/auth/log-event", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          userId,
+          action,
+          oldValues,
+          newValues,
+        }),
+      })
+
+      // Update current session
+      currentSession = session
+    } catch (error) {
+      authLogger.error("Error handling auth state change:", error)
+    }
+  })
 
   // Return cleanup function
-  return () => stopAuthMonitoring()
-}
-
-/**
- * Stop monitoring GoTrueClient instances
- */
-export function stopAuthMonitoring(): void {
-  if (monitorInterval) {
-    clearInterval(monitorInterval)
-    monitorInterval = null
-
-    if (DEBUG) {
-      console.log("[AuthMonitor] Stopped auth monitoring")
-    }
+  return () => {
+    isMonitoring = false
+    authLogger.info("Stopping auth monitoring")
+    subscription.unsubscribe()
   }
 }
 
-/**
- * Check for GoTrueClient instances
- */
-function checkInstances(): void {
-  try {
-    // Get instance count from Supabase manager
-    const instanceCount = getInstanceCount()
+// Function to stop monitoring
+export function stopAuthMonitoring() {
+  isMonitoring = false
+  authLogger.info("Auth monitoring stopped")
+}
 
-    // Update monitoring data
-    monitoringData = {
-      instanceCount,
-      lastChecked: Date.now(),
-      memoryUsage: getMemoryUsage(),
-    }
-
-    if (DEBUG) {
-      console.log("[AuthMonitor] Instance count:", instanceCount)
-    }
-
-    // Log warning if there are multiple instances
-    if (instanceCount > 1 && DEBUG) {
-      console.warn(
-        `[AuthMonitor] Multiple GoTrueClient instances detected (${instanceCount}). This may cause authentication issues.`,
-      )
-    }
-  } catch (error) {
-    console.error("[AuthMonitor] Error checking instances:", error)
+// Function to get monitoring data
+export function getMonitoringData() {
+  return {
+    instanceCount: 1, // Placeholder - replace with actual instance count if needed
+    lastChecked: Date.now(), // Placeholder - replace with actual last checked time
   }
 }
 
-/**
- * Get memory usage if available
- */
-function getMemoryUsage(): number | undefined {
-  if (typeof performance !== "undefined" && performance.memory) {
-    // @ts-ignore - memory is not in the standard TypeScript types
-    return performance.memory.usedJSHeapSize
-  }
-  return undefined
-}
-
-/**
- * Get monitoring data
- */
-export function getMonitoringData(): MonitoringData {
-  return { ...monitoringData }
-}
-
-/**
- * Check if monitoring is active
- */
-export function isMonitoringActive(): boolean {
-  return monitorInterval !== null
+// Function to check if monitoring is active
+export function isMonitoringActive() {
+  return isMonitoring
 }

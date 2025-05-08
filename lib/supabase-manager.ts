@@ -1,17 +1,20 @@
+/**
+ * Supabase Manager
+ *
+ * This module provides utilities for creating and managing Supabase clients
+ */
 "use client"
 
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import type { SupabaseClient, User, Session } from "@supabase/supabase-js"
+import type { SupabaseClient } from "@supabase/supabase-js"
+import type { Session } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 
-// Singleton instance
+// Global singleton instance
 let supabaseClient: SupabaseClient<Database> | null = null
 
-// Track instance count
+// Track instance count to prevent duplicates
 let instanceCount = 0
-
-// Type for auth state change listener
-type AuthStateChangeCallback = (event: string, session: { session: Session | null; user: User | null }) => void
 
 /**
  * Initialize Supabase client
@@ -24,7 +27,7 @@ export function initializeSupabase(): void {
 }
 
 /**
- * Get the Supabase client instance
+ * Get the Supabase client
  */
 export function getSupabase(): SupabaseClient<Database> {
   if (!supabaseClient) {
@@ -34,103 +37,65 @@ export function getSupabase(): SupabaseClient<Database> {
 }
 
 /**
- * Add an auth state change listener
- * @param callback Function to call when auth state changes
- * @returns Function to remove the listener
+ * Add a listener for authentication state changes
  */
-export function addAuthListener(callback: AuthStateChangeCallback): () => void {
+export function addAuthListener(callback: (event: string, session: Session | null) => void): () => void {
   const supabase = getSupabase()
 
-  const { data } = supabase.auth.onAuthStateChange((event, session) => {
-    callback(event, {
-      session,
-      user: session?.user || null,
-    })
+  const {
+    data: { subscription },
+  } = supabase.auth.onAuthStateChange((event, session) => {
+    callback(event, session)
   })
 
   return () => {
-    data.subscription.unsubscribe()
+    subscription.unsubscribe()
   }
 }
 
 /**
  * Sign in with email and password
  */
-export async function signInWithEmail(email: string, password: string) {
-  try {
-    const supabase = getSupabase()
-
-    // Validate inputs
-    if (!email || !password) {
-      return {
-        data: null,
-        error: new Error("Email and password are required"),
-      }
-    }
-
-    // Attempt sign in
-    const result = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    })
-
-    // Check for successful sign in but missing user data
-    if (!result.error && !result.data?.user) {
-      console.error("Sign in succeeded but no user data returned")
-      return {
-        data: null,
-        error: new Error("Authentication failed: No user data returned"),
-      }
-    }
-
-    return result
-  } catch (error) {
-    console.error("Error in signInWithEmail:", error)
-    return {
-      data: null,
-      error: error instanceof Error ? error : new Error(String(error)),
-    }
-  }
+export async function signInWithEmail(email: string, password: string): Promise<{ data: any; error: any }> {
+  const supabase = getSupabase()
+  return await supabase.auth.signInWithPassword({ email, password })
 }
 
 /**
  * Sign up with email and password
  */
-export async function signUpWithEmail(email: string, password: string) {
+export async function signUpWithEmail(email: string, password: string): Promise<{ data: any; error: any }> {
   const supabase = getSupabase()
-  return supabase.auth.signUp({
+  return await supabase.auth.signUp({
     email,
     password,
-    options: {
-      emailRedirectTo: `${window.location.origin}/auth/callback`,
-    },
   })
 }
 
 /**
  * Sign out
  */
-export async function signOut() {
+export async function signOut(): Promise<{ error: any }> {
   const supabase = getSupabase()
-  return supabase.auth.signOut()
+  return await supabase.auth.signOut()
 }
 
 /**
  * Reset password
  */
-export async function resetPassword(email: string) {
+export async function resetPassword(email: string): Promise<{ error: any }> {
   const supabase = getSupabase()
-  return supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${window.location.origin}/auth/reset-password`,
+  return await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: `${window.location.origin}/auth/update-password`,
   })
 }
 
 /**
  * Update password
  */
-export async function updatePassword(password: string) {
+export async function updatePassword(password: string): Promise<{ error: any }> {
   const supabase = getSupabase()
-  return supabase.auth.updateUser({ password })
+  return await supabase.auth.updateUser({ password })
 }
 
 /**
@@ -141,17 +106,8 @@ export function getInstanceCount(): number {
 }
 
 /**
- * Reset the Supabase client
- * Useful for testing and after sign-out
- */
-export function resetSupabaseClient(): void {
-  supabaseClient = null
-}
-
-/**
- * Cleanup function to reset the Supabase client
+ * Cleanup function
  */
 export function cleanup(): void {
-  supabaseClient = null
-  instanceCount = 0
+  // No-op for now
 }

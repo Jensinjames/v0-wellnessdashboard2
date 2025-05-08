@@ -218,3 +218,8 @@ export function createLogger(module: string) {
 
 // Export default logger for quick access
 export default createLogger("App")
+
+// Add the logger export after the default export at the end of the file
+
+// Export a default logger instance as a named export for compatibility
+export const logger = createLogger("App")

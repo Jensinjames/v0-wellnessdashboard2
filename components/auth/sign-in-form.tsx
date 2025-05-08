@@ -1,287 +1,216 @@
 "use client"
 
-import type React from "react"
-import { useState, useEffect } from "react"
-import { useSearchParams, useRouter } from "next/navigation"
+import { useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
-import { useAuth } from "@/context/auth-context"
+import { z } from "zod"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
+import { Eye, EyeOff, Loader2 } from "lucide-react"
+
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertTriangle, Mail, RefreshCw } from "lucide-react"
-import { handleAuthError, getFieldErrors, trackAuthError } from "@/utils/auth-error-handler"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useAuth } from "@/context/auth-context"
+import { createLogger } from "@/utils/logger"
+import { handleAuthError, isSchemaError, getTechnicalErrorDetails } from "@/utils/auth-error-handler"
+
+// Create a dedicated logger for the sign-in form
+const logger = createLogger("SignInForm")
+
+// Define the form schema
+const formSchema = z.object({
+  email: z.string().email("Please enter a valid email address"),
+  password: z.string().min(8, "Password must be at least 8 characters"),
+})
+
+type FormData = z.infer<typeof formSchema>
 
 export function SignInForm() {
-  const [email, setEmail] = useState("")
-  const [password, setPassword] = useState("")
-  const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
-  const [isEmailVerificationError, setIsEmailVerificationError] = useState(false)
-  const [redirectPath, setRedirectPath] = useState<string | undefined>(undefined)
-  const [isResendingVerification, setIsResendingVerification] = useState(false)
-  const { signIn, signUp } = useAuth()
-  const searchParams = useSearchParams()
+  const { signIn } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const [isLoading, setIsLoading] = useState(false)
+  const [showPassword, setShowPassword] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [isSchemaIssue, setIsSchemaIssue] = useState(false)
+  const [technicalDetails, setTechnicalDetails] = useState<string | null>(null)
+  const [retryCount, setRetryCount] = useState(0)
+  const MAX_RETRIES = 2
 
-  // Use effect to safely access search params after mount
-  useEffect(() => {
-    if (searchParams) {
-      const redirectTo = searchParams.get("redirectTo")
-      if (redirectTo) {
-        setRedirectPath(redirectTo)
-      }
+  // Get the redirect URL from the query string
+  const redirectTo = searchParams?.get("redirectTo") || "/dashboard"
 
-      // Check for error parameter from callback
-      const errorParam = searchParams.get("error")
-      if (errorParam) {
-        setError(decodeURIComponent(errorParam))
-      }
-    }
-  }, [searchParams])
+  // Initialize the form
+  const {
+    register,
+    handleSubmit: hookFormSubmit,
+    formState: { errors },
+    setError: setFieldError,
+  } = useForm<FormData>({
+    resolver: zodResolver(formSchema),
+    defaultValues: {
+      email: "",
+      password: "",
+    },
+  })
 
-  useEffect(() => {
-    // Clear any errors when inputs change
-    if (error || Object.keys(fieldErrors).length > 0) {
-      setError(null)
-      setFieldErrors({})
-      setIsEmailVerificationError(false)
-    }
-  }, [email, password, error, fieldErrors])
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setIsLoading(true)
-    setError(null)
-    setFieldErrors({})
-    setIsEmailVerificationError(false)
-
+  // Handle form submission
+  const handleSubmit = async (data: FormData) => {
     try {
-      // Check if we're online before attempting sign-in
-      if (typeof navigator !== "undefined" && !navigator.onLine) {
-        const errorInfo = handleAuthError({ message: "You appear to be offline" }, "sign-in")
-        setError(errorInfo.message)
-        trackAuthError(errorInfo)
-        setIsLoading(false)
-        return
-      }
+      setIsLoading(true)
+      setError(null)
+      setIsSchemaIssue(false)
+      setTechnicalDetails(null)
 
-      // Validate inputs before sending to the server
-      if (!email || !password) {
-        setFieldErrors({
-          ...(!email ? { email: "Email is required" } : {}),
-          ...(!password ? { password: "Password is required" } : {}),
+      // Log the attempt (without sensitive data)
+      logger.info("Attempting sign-in", {
+        emailProvided: !!data.email,
+        passwordProvided: !!data.password,
+      })
+
+      // Call the signIn function from the auth context
+      const { error: signInError, fieldErrors } = await signIn(
+        {
+          email: data.email,
+          password: data.password,
+        },
+        redirectTo,
+      )
+
+      // Handle field-specific errors
+      if (fieldErrors) {
+        Object.entries(fieldErrors).forEach(([field, message]) => {
+          if (message && (field === "email" || field === "password")) {
+            setFieldError(field as "email" | "password", {
+              type: "manual",
+              message,
+            })
+          }
         })
-        setIsLoading(false)
-        return
       }
 
-      // Pass credentials as a single object with the correct structure
-      const result = await signIn({ email, password }, redirectPath)
+      // Handle general errors
+      if (signInError) {
+        // Process the error
+        const authError = handleAuthError(signInError, { email: data.email })
 
-      if (result.fieldErrors) {
-        setFieldErrors(result.fieldErrors)
-        setIsLoading(false)
-        return
-      }
+        // Check if it's a schema error
+        if (isSchemaError(signInError)) {
+          setIsSchemaIssue(true)
+          setTechnicalDetails(getTechnicalErrorDetails(signInError))
 
-      if (result.error) {
-        // Use our enhanced error handler
-        const errorInfo = handleAuthError(result.error, { operation: "sign-in", email })
+          // If we haven't exceeded max retries, try again after a delay
+          if (retryCount < MAX_RETRIES) {
+            setRetryCount((prev) => prev + 1)
+            setError("Database connection issue. Retrying automatically...")
 
-        // Track the error for analytics
-        trackAuthError(errorInfo)
+            // Wait and retry
+            setTimeout(
+              () => {
+                handleSubmit(data)
+              },
+              2000 * (retryCount + 1),
+            ) // Exponential backoff
 
-        // Check if it's an email verification error
-        if (errorInfo.type === "EMAIL_NOT_CONFIRMED") {
-          setIsEmailVerificationError(true)
+            return
+          }
         }
 
-        // Set the user-friendly error message
-        setError(errorInfo.message)
-
-        // Check for field-specific errors
-        const validationErrors = getFieldErrors(result.error)
-        if (Object.keys(validationErrors).length > 0) {
-          setFieldErrors(validationErrors)
-        }
-
-        setIsLoading(false)
-        return
+        setError(authError.message)
       }
-
-      // If we get here, sign-in was successful
-      // Manually redirect if the auth context doesn't handle it
-      if (!redirectPath) {
-        router.push("/dashboard")
-      }
-    } catch (err: any) {
-      const errorInfo = handleAuthError(err, { operation: "sign-in", email })
-      setError(errorInfo.message)
-      trackAuthError(errorInfo)
+    } catch (err) {
+      logger.error("Unexpected error during sign-in:", err)
+      setError("An unexpected error occurred. Please try again.")
+    } finally {
       setIsLoading(false)
     }
   }
 
-  const handleResendVerification = async () => {
-    if (!email) {
-      setError("Please enter your email address to resend verification")
-      return
-    }
-
-    setIsResendingVerification(true)
-    setError(null)
-
-    try {
-      // Use the sign-up function to resend verification
-      const result = await signUp({ email, password: "temporary-password" })
-
-      if (result.error) {
-        // If the error indicates the user already exists, that's actually good in this context
-        if (result.error.message?.includes("already exists")) {
-          setError("Verification email sent. Please check your inbox.")
-        } else {
-          const errorInfo = handleAuthError(result.error, "resend-verification")
-          setError(`Failed to resend verification: ${errorInfo.message}`)
-          trackAuthError(errorInfo, "resend-verification")
-        }
-      } else {
-        setError("Verification email sent. Please check your inbox.")
-      }
-    } catch (err: any) {
-      const errorInfo = handleAuthError(err, "resend-verification")
-      setError(`Failed to resend verification: ${errorInfo.message}`)
-      trackAuthError(errorInfo, "resend-verification")
-    } finally {
-      setIsResendingVerification(false)
-    }
-  }
-
   return (
-    <form onSubmit={handleSubmit} className="space-y-4" aria-labelledby="sign-in-heading">
-      <h2 id="sign-in-heading" className="sr-only">
-        Sign in form
-      </h2>
-
-      {error && !isEmailVerificationError && (
-        <Alert className="rounded-md bg-red-50 p-4 text-sm text-red-700" role="alert" aria-live="assertive">
-          <AlertTriangle className="h-4 w-4 mr-2" aria-hidden="true" />
-          <AlertTitle>Sign in failed</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
-        </Alert>
-      )}
-
-      {isEmailVerificationError && (
-        <Alert className="rounded-md bg-amber-50 p-4 text-sm text-amber-700" role="alert" aria-live="assertive">
-          <Mail className="h-4 w-4" aria-hidden="true" />
-          <AlertTitle>Email Verification Required</AlertTitle>
-          <AlertDescription>
-            <p className="mb-2">
-              Please verify your email address before signing in. Check your inbox for a verification link.
-            </p>
-            <p>
-              If you didn't receive the email, you can{" "}
-              <Button
-                type="button"
-                variant="link"
-                className="p-0 h-auto text-amber-800 underline"
-                onClick={handleResendVerification}
-                disabled={isResendingVerification}
-              >
-                {isResendingVerification ? (
-                  <>
-                    <RefreshCw className="h-3 w-3 mr-1 inline animate-spin" aria-hidden="true" />
-                    Sending...
-                  </>
-                ) : (
-                  "request a new verification email"
-                )}
-              </Button>
-            </p>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      <div className="space-y-2">
-        <Label htmlFor="email" id="email-label">
-          Email
-        </Label>
-        <Input
-          id="email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          disabled={isLoading}
-          aria-labelledby="email-label"
-          aria-required="true"
-          autoComplete="email"
-          aria-invalid={!!fieldErrors.email}
-          aria-errormessage={fieldErrors.email ? "email-error" : undefined}
-          className={fieldErrors.email ? "border-red-500" : ""}
-        />
-        {fieldErrors.email && (
-          <p id="email-error" className="mt-1 text-sm text-red-600">
-            {fieldErrors.email}
-          </p>
-        )}
-      </div>
-
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label htmlFor="password" id="password-label">
-            Password
-          </Label>
-          <Link
-            href="/auth/forgot-password"
-            className="text-sm text-blue-600 hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
-            aria-label="Forgot password"
-          >
-            Forgot password?
-          </Link>
+    <div className="grid gap-6">
+      <form onSubmit={hookFormSubmit(handleSubmit)} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            placeholder="name@example.com"
+            autoCapitalize="none"
+            autoComplete="email"
+            autoCorrect="off"
+            disabled={isLoading}
+            {...register("email")}
+          />
+          {errors.email && <p className="text-sm text-red-500">{errors.email.message}</p>}
         </div>
-        <Input
-          id="password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          disabled={isLoading}
-          aria-labelledby="password-label"
-          aria-required="true"
-          autoComplete="current-password"
-          aria-invalid={!!fieldErrors.password}
-          aria-errormessage={fieldErrors.password ? "password-error" : undefined}
-          className={fieldErrors.password ? "border-red-500" : ""}
-        />
-        {fieldErrors.password && (
-          <p id="password-error" className="mt-1 text-sm text-red-600">
-            {fieldErrors.password}
-          </p>
-        )}
-      </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password">Password</Label>
+            <Link href="/auth/forgot-password" className="text-sm text-primary hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              disabled={isLoading}
+              {...register("password")}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="absolute right-2 top-1/2 -translate-y-1/2 px-2"
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
+            </Button>
+          </div>
+          {errors.password && <p className="text-sm text-red-500">{errors.password.message}</p>}
+        </div>
 
-      <Button type="submit" className="w-full" disabled={isLoading} aria-busy={isLoading} aria-live="polite">
-        {isLoading ? (
-          <>
-            <RefreshCw className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
-            Signing in...
-          </>
-        ) : (
-          "Sign in"
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+            {isSchemaIssue && (
+              <div className="mt-2">
+                <p className="text-sm font-medium">This appears to be a database configuration issue.</p>
+                <p className="text-xs mt-1">Please contact support with the following error code: SCHEMA-001</p>
+                {technicalDetails && (
+                  <details className="mt-2">
+                    <summary className="text-xs cursor-pointer">Technical Details</summary>
+                    <pre className="text-xs mt-1 p-2 bg-gray-100 rounded overflow-x-auto">{technicalDetails}</pre>
+                  </details>
+                )}
+              </div>
+            )}
+          </Alert>
         )}
-      </Button>
+
+        <Button type="submit" className="w-full" disabled={isLoading}>
+          {isLoading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              {retryCount > 0 ? `Retrying (${retryCount}/${MAX_RETRIES})...` : "Signing in..."}
+            </>
+          ) : (
+            "Sign In"
+          )}
+        </Button>
+      </form>
 
       <div className="text-center text-sm">
-        Don't have an account?{" "}
-        <Link
-          href="/auth/sign-up"
-          className="text-blue-600 hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
-        >
+        Don&apos;t have an account?{" "}
+        <Link href="/auth/sign-up" className="text-primary hover:underline">
           Sign up
         </Link>
       </div>
-    </form>
+    </div>
   )
 }

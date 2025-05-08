@@ -14,7 +14,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { AlertTriangle, RefreshCw, Mail, CheckCircle, ArrowRight, Info, Shield } from "lucide-react"
-import { handleAuthError, getFieldErrors, trackAuthError } from "@/utils/auth-error-handler"
+import { handleAuthError, getFieldErrors } from "@/utils/auth-error-handler"
+import { validateEmail, validatePasswordStrength } from "@/utils/auth-validation"
 
 export function SignUpForm() {
   const [email, setEmail] = useState("")
@@ -45,17 +46,10 @@ export function SignUpForm() {
       return
     }
 
-    // Simple password strength check
-    const hasMinLength = password.length >= 8
-    const hasUpperCase = /[A-Z]/.test(password)
-    const hasLowerCase = /[a-z]/.test(password)
-    const hasNumbers = /\d/.test(password)
-    const hasSpecialChars = /[!@#$%^&*(),.?":{}|<>]/.test(password)
+    const { score } = validatePasswordStrength(password)
 
-    const score = [hasMinLength, hasUpperCase, hasLowerCase, hasNumbers, hasSpecialChars].filter(Boolean).length
-
-    if (score <= 2) setPasswordStrength("weak")
-    else if (score <= 4) setPasswordStrength("medium")
+    if (score < 3) setPasswordStrength("weak")
+    else if (score < 5) setPasswordStrength("medium")
     else setPasswordStrength("strong")
   }, [password])
 
@@ -67,30 +61,42 @@ export function SignUpForm() {
     setSignUpSuccess(false)
     setEmailVerificationSent(false)
 
+    // Validate inputs
+    const validationErrors: { email?: string; password?: string } = {}
+
+    if (!email) {
+      validationErrors.email = "Email is required"
+    } else if (!validateEmail(email)) {
+      validationErrors.email = "Please enter a valid email address"
+    }
+
+    if (!password) {
+      validationErrors.password = "Password is required"
+    } else if (password.length < 8) {
+      validationErrors.password = "Password must be at least 8 characters"
+    }
+
     // Custom validation for password confirmation
     if (password !== confirmPassword) {
-      setError("Passwords do not match")
-      setFieldErrors({ password: "Passwords do not match" })
-      setIsLoading(false)
-      return
+      validationErrors.password = "Passwords do not match"
     }
 
     // Check if password is too weak
     if (passwordStrength === "weak") {
-      setError("Password is too weak")
-      setFieldErrors({
-        password:
-          "Please use a stronger password with at least 8 characters, including uppercase, lowercase, numbers, and special characters",
-      })
+      validationErrors.password =
+        "Please use a stronger password with at least 8 characters, including uppercase, lowercase, numbers, and special characters"
+    }
+
+    if (Object.keys(validationErrors).length > 0) {
+      setFieldErrors(validationErrors)
       setIsLoading(false)
       return
     }
 
     // Check if we're online before attempting sign-up
     if (typeof navigator !== "undefined" && !navigator.onLine) {
-      const errorInfo = handleAuthError({ message: "You appear to be offline" }, "sign-up")
+      const errorInfo = handleAuthError({ message: "You appear to be offline" }, { operation: "sign-up" })
       setError(errorInfo.message)
-      trackAuthError(errorInfo, "sign-up")
       setIsLoading(false)
       return
     }
@@ -106,10 +112,7 @@ export function SignUpForm() {
 
       if (result.error) {
         // Use our enhanced error handler
-        const errorInfo = handleAuthError(result.error, "sign-up")
-
-        // Track the error for analytics
-        trackAuthError(errorInfo, "sign-up")
+        const errorInfo = handleAuthError(result.error, { operation: "sign-up" })
 
         // Set the user-friendly error message
         setError(errorInfo.message)
@@ -140,9 +143,8 @@ export function SignUpForm() {
         router.push("/auth/verify-email")
       }, 1500)
     } catch (err: any) {
-      const errorInfo = handleAuthError(err, "sign-up")
+      const errorInfo = handleAuthError(err, { operation: "sign-up" })
       setError(errorInfo.message)
-      trackAuthError(errorInfo, "sign-up")
       setIsLoading(false)
     } finally {
       setIsLoading(false)
@@ -160,7 +162,7 @@ export function SignUpForm() {
 
     try {
       // Use the sign-up function to resend verification
-      const result = await signUp({ email, password })
+      const result = await signUp({ email, password: "temporary-password" })
 
       if (result.error) {
         // If the error indicates the user already exists, that's actually good in this context
@@ -168,17 +170,15 @@ export function SignUpForm() {
           setEmailVerificationSent(true)
           setError(null)
         } else {
-          const errorInfo = handleAuthError(result.error, "resend-verification")
+          const errorInfo = handleAuthError(result.error, { operation: "resend-verification" })
           setError(`Failed to resend verification: ${errorInfo.message}`)
-          trackAuthError(errorInfo, "resend-verification")
         }
       } else {
         setEmailVerificationSent(true)
       }
     } catch (err: any) {
-      const errorInfo = handleAuthError(err, "resend-verification")
+      const errorInfo = handleAuthError(err, { operation: "resend-verification" })
       setError(`Failed to resend verification: ${errorInfo.message}`)
-      trackAuthError(errorInfo, "resend-verification")
     } finally {
       setIsResendingVerification(false)
     }

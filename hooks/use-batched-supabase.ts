@@ -64,11 +64,12 @@ export function useBatchedSupabase() {
   // Execute a Supabase query in a batch
   const executeBatchedQuery = useCallback(
     async <T>(
-      queryFn: (supabase: ReturnType<typeof getSupabaseClient>) => Promise<T>,
+      queryFn: (supabase: any) => Promise<T>,
       options: BatchOptions = {},
     ): Promise<T> => {
       return batcher.add(
         async () => {
+          const { getSupabaseClient } = await import("@/lib/supabase-singleton")
           const supabase = getSupabaseClient()
           return queryFn(supabase)
         },

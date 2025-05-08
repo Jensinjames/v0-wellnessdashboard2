@@ -1,63 +1,72 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { getSupabaseClient } from "@/lib/supabase-singleton"
-
-// Track component instances using the hook
-let hookInstances = 0
-
-export { instanceCount } from "@/lib/supabase-singleton"
+import { getSupabaseSingleton, resetSupabaseSingleton, getSupabaseSingletonDebugInfo } from "@/lib/supabase-singleton"
+import type { SupabaseClient } from "@supabase/supabase-js"
+import type { Database } from "@/types/database"
 
 export function useSupabaseSingleton() {
-  const [instances, setInstances] = useState(0)
-  const [lastChecked, setLastChecked] = useState(new Date())
-  const [connectionStatus, setConnectionStatus] = useState<string>("unknown")
-
-  // Get the singleton instance
-  const supabase = getSupabaseClient()
+  const [supabase, setSupabase] = useState<SupabaseClient<Database> | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
 
   useEffect(() => {
-    // Increment the counter when a component uses this hook
-    hookInstances++
-    setInstances(hookInstances)
+    let isMounted = true
 
-    // Check connection status
-    const checkConnection = async () => {
+    const initializeSupabase = async () => {
       try {
-        const { data, error } = await supabase.auth.getSession()
-        if (error) {
-          setConnectionStatus("error")
-        } else if (data.session) {
-          setConnectionStatus("authenticated")
-        } else {
-          setConnectionStatus("unauthenticated")
+        setIsLoading(true)
+        const client = await Promise.resolve(getSupabaseSingleton())
+
+        if (isMounted) {
+          setSupabase(client)
+          setError(null)
         }
-      } catch (e) {
-        setConnectionStatus("error")
+      } catch (err) {
+        if (isMounted) {
+          console.error("Error initializing Supabase singleton:", err)
+          setError(err instanceof Error ? err : new Error(String(err)))
+        }
+      } finally {
+        if (isMounted) {
+          setIsLoading(false)
+        }
       }
-
-      setLastChecked(new Date())
     }
 
-    checkConnection()
+    initializeSupabase()
 
-    // Set up interval to periodically check
-    const intervalId = setInterval(() => {
-      setInstances(hookInstances)
-      checkConnection()
-    }, 5000)
-
-    // Clean up
     return () => {
-      hookInstances--
-      clearInterval(intervalId)
+      isMounted = false
     }
-  }, [supabase])
+  }, [])
+
+  const reset = () => {
+    resetSupabaseSingleton()
+    setSupabase(null)
+    setIsLoading(true)
+    setError(null)
+
+    // Re-initialize after reset
+    Promise.resolve(getSupabaseSingleton())
+      .then((client) => {
+        setSupabase(client)
+        setIsLoading(false)
+      })
+      .catch((err) => {
+        setError(err instanceof Error ? err : new Error(String(err)))
+        setIsLoading(false)
+      })
+  }
 
   return {
     supabase,
-    instances,
-    lastChecked,
-    connectionStatus,
+    isLoading,
+    error,
+    reset,
+    debugInfo: getSupabaseSingletonDebugInfo(),
   }
 }
+
+// Export the instance count for external monitoring
+export const instanceCount = () => getSupabaseSingletonDebugInfo().instanceCount

@@ -47,6 +47,7 @@ export enum AuthErrorType {
   SERVER_ERROR = "server_error",
   SERVICE_UNAVAILABLE = "service_unavailable",
   DATABASE_ERROR = "database_error",
+  SCHEMA_ERROR = "schema_error", // Added for schema-related errors
 
   // Unknown errors
   UNKNOWN_ERROR = "unknown_error",
@@ -238,6 +239,21 @@ export function parseAuthError(error: any, context?: Record<string, any>): AuthE
     }
   }
 
+  // Database schema errors - specifically check for the user_changes_log error
+  if (
+    errorMessage.includes('relation "user_changes_log" does not exist') ||
+    errorMessage.includes("Database error granting user")
+  ) {
+    return {
+      category: AuthErrorCategory.SERVER,
+      type: AuthErrorType.SCHEMA_ERROR,
+      message: "There is a database configuration issue. Please contact support with error code: SCHEMA-001.",
+      originalError: error,
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
   // Database errors
   if (
     errorMessage.includes("database error") ||
@@ -349,4 +365,32 @@ export function handleAuthError(error: any, context?: Record<string, any>): Auth
   const parsedError = parseAuthError(error, context)
   trackAuthError(parsedError)
   return parsedError
+}
+
+/**
+ * Check if an error is a database schema error
+ */
+export function isSchemaError(error: any): boolean {
+  const parsedError = parseAuthError(error)
+  return parsedError.type === AuthErrorType.SCHEMA_ERROR
+}
+
+/**
+ * Get technical details for support from an error
+ */
+export function getTechnicalErrorDetails(error: any): string {
+  if (!error) return "No error details available"
+
+  const parsedError = error.category && error.type ? error : parseAuthError(error)
+
+  return JSON.stringify(
+    {
+      category: parsedError.category,
+      type: parsedError.type,
+      timestamp: new Date(parsedError.timestamp).toISOString(),
+      originalMessage: parsedError.originalError?.message || "No original message",
+    },
+    null,
+    2,
+  )
 }

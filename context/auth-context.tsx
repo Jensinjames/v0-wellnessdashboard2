@@ -11,7 +11,7 @@ import type { User, Session } from "@supabase/supabase-js"
 import type { UserProfile, ProfileFormData } from "@/types/auth"
 import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
-import { validateAuthCredentials, sanitizeEmail } from "@/utils/auth-validation"
+import { validateAuthCredentials, sanitizeEmail, validateEmail, validatePassword } from "@/utils/auth-validation"
 import { useToast } from "@/hooks/use-toast"
 import {
   getSupabase,
@@ -22,7 +22,10 @@ import {
   resetPassword as supabaseResetPassword,
   updatePassword as supabaseUpdatePassword,
 } from "@/lib/supabase-manager"
-import { logger } from "@/lib/logger"
+import { createLogger } from "@/utils/logger"
+
+// Create a dedicated logger for auth operations
+const authLogger = createLogger("Auth")
 
 interface AuthContextType {
   user: User | null
@@ -98,7 +101,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               const { profile: fetchedProfile, error } = await fetchProfileSafely(initialSession.user.id)
 
               if (error) {
-                console.error("Error fetching profile:", error)
+                authLogger.error("Error fetching profile:", error)
 
                 // If no profile found, try to create one
                 if (initialSession.user.email) {
@@ -108,7 +111,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   )
 
                   if (createError) {
-                    console.error("Error creating profile:", createError)
+                    authLogger.error("Error creating profile:", createError)
                   } else if (createdProfile) {
                     setProfile(createdProfile)
                     // Cache the profile
@@ -121,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setCacheItem(CACHE_KEYS.PROFILE(initialSession.user.id), fetchedProfile)
               }
             } catch (err) {
-              console.error("Unexpected error in profile initialization:", err)
+              authLogger.error("Unexpected error in profile initialization:", err)
             } finally {
               if (isMounted.current) {
                 setIsLoading(false)
@@ -132,7 +135,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIsLoading(false)
         }
       } catch (error) {
-        console.error("Error initializing auth:", error)
+        authLogger.error("Error initializing auth:", error)
         setIsLoading(false)
       }
     }
@@ -160,7 +163,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Fetch profile on sign in
         fetchProfileSafely(payload.session.user.id).then(({ profile, error }) => {
           if (error) {
-            console.error("Error fetching profile after sign in:", error)
+            authLogger.error("Error fetching profile after sign in:", error)
           } else if (profile) {
             setProfile(profile)
             // Cache the profile
@@ -222,7 +225,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return { success: true, error: null }
     } catch (error) {
-      console.error("Error updating profile:", error)
+      authLogger.error("Error updating profile:", error)
       return {
         success: false,
         error: error instanceof Error ? error : new Error(String(error)),
@@ -232,12 +235,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const signIn = async (credentials: { email: string; password: string }, redirectPath?: string) => {
     try {
+      // Enhanced validation with detailed logging
+      if (!credentials || typeof credentials !== "object") {
+        authLogger.error("Invalid credentials object", { credentials })
+        return {
+          error: new Error("Invalid credentials format"),
+          fieldErrors: { email: "Invalid credentials format", password: "Invalid credentials format" },
+        }
+      }
+
       // Strictly validate email and password as strings
+      if (typeof credentials.email !== "string" || typeof credentials.password !== "string") {
+        authLogger.error("Invalid credentials types", {
+          emailType: typeof credentials.email,
+          passwordType: typeof credentials.password,
+        })
+        return {
+          error: new Error("Invalid credentials format"),
+          fieldErrors: {
+            email: typeof credentials.email !== "string" ? "Invalid email format" : undefined,
+            password: typeof credentials.password !== "string" ? "Invalid password format" : undefined,
+          },
+        }
+      }
+
+      // Validate email and password content
       const validation = validateAuthCredentials(credentials.email, credentials.password)
 
       if (!validation.valid) {
+        authLogger.warn("Validation failed for sign-in credentials", validation.errors)
         return {
-          error: new Error("Invalid credentials format"),
+          error: new Error("Invalid credentials"),
           fieldErrors: validation.errors,
         }
       }
@@ -245,22 +273,26 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Sanitize email
       const sanitizedEmail = sanitizeEmail(credentials.email)
       if (!sanitizedEmail) {
+        authLogger.warn("Email sanitization failed", { email: credentials.email })
         return {
           error: new Error("Invalid email format"),
           fieldErrors: { email: "Invalid email format" },
         }
       }
 
+      authLogger.info("Attempting sign in", { email: sanitizedEmail })
+
+      // Attempt sign-in with validated credentials
       const { data, error } = await signInWithEmail(sanitizedEmail, credentials.password)
 
       if (error) {
-        logger.error("Sign in error:", { error, email: sanitizedEmail })
+        authLogger.error("Sign in error:", { error, email: sanitizedEmail })
         return { error }
       }
 
       // Check if we have valid user data before proceeding
       if (!data?.user) {
-        logger.error("Sign in error: No user data returned", { email: sanitizedEmail })
+        authLogger.error("Sign in error: No user data returned", { email: sanitizedEmail })
         return { error: new Error("Authentication failed: No user data returned") }
       }
 
@@ -293,19 +325,44 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return { error: null }
     } catch (error: any) {
-      console.error("Sign in error:", error)
+      authLogger.error("Sign in error:", error)
       return { error: error instanceof Error ? error : new Error(String(error)) }
     }
   }
 
   const signUp = async (credentials: { email: string; password: string }) => {
     try {
+      // Enhanced validation with detailed logging
+      if (!credentials || typeof credentials !== "object") {
+        authLogger.error("Invalid credentials object for sign-up", { credentials })
+        return {
+          error: new Error("Invalid credentials format"),
+          fieldErrors: { email: "Invalid credentials format", password: "Invalid credentials format" },
+        }
+      }
+
       // Strictly validate email and password as strings
+      if (typeof credentials.email !== "string" || typeof credentials.password !== "string") {
+        authLogger.error("Invalid credentials types for sign-up", {
+          emailType: typeof credentials.email,
+          passwordType: typeof credentials.password,
+        })
+        return {
+          error: new Error("Invalid credentials format"),
+          fieldErrors: {
+            email: typeof credentials.email !== "string" ? "Invalid email format" : undefined,
+            password: typeof credentials.password !== "string" ? "Invalid password format" : undefined,
+          },
+        }
+      }
+
+      // Validate email and password content
       const validation = validateAuthCredentials(credentials.email, credentials.password)
 
       if (!validation.valid) {
+        authLogger.warn("Validation failed for sign-up credentials", validation.errors)
         return {
-          error: new Error("Invalid credentials format"),
+          error: new Error("Invalid credentials"),
           fieldErrors: validation.errors,
         }
       }
@@ -313,38 +370,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Sanitize email
       const sanitizedEmail = sanitizeEmail(credentials.email)
       if (!sanitizedEmail) {
+        authLogger.warn("Email sanitization failed for sign-up", { email: credentials.email })
         return {
           error: new Error("Invalid email format"),
           fieldErrors: { email: "Invalid email format" },
         }
       }
 
+      authLogger.info("Attempting sign up", { email: sanitizedEmail })
       const { data, error } = await signUpWithEmail(sanitizedEmail, credentials.password)
 
       if (error) {
+        authLogger.error("Sign up error:", { error, email: sanitizedEmail })
         return { error }
       }
 
       // Explicitly update the state with the new session data if available
       // Note: For sign-up with email confirmation, there might not be a session yet
       if (data?.user) {
-        // User created but confirmation required, no session yet
+        authLogger.info("User created successfully", { userId: data.user.id, email: sanitizedEmail })
       }
 
       // Explicitly indicate that an email verification was sent
       return { error: null, emailVerificationSent: true }
     } catch (error: any) {
-      console.error("Sign up error:", error)
+      authLogger.error("Sign up error:", error)
       return { error: error instanceof Error ? error : new Error(String(error)) }
     }
   }
 
   const signOut = async (redirectPath = "/auth/sign-in") => {
     try {
+      authLogger.info("Attempting sign out")
       const { error } = await supabaseSignOut()
 
       if (error) {
-        console.error("Sign out error:", error)
+        authLogger.error("Sign out error:", error)
       }
 
       // Explicitly clear state
@@ -361,7 +422,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }, 100)
       }
     } catch (error) {
-      console.error("Sign out error:", error)
+      authLogger.error("Sign out error:", error)
       // Even if there's an error, clear the local state
       setUser(null)
       setProfile(null)
@@ -379,30 +440,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPassword = async (email: string): Promise<{ success: boolean; error: string | null }> => {
     try {
-      const { error } = await supabaseResetPassword(email)
+      // Validate email format
+      if (!validateEmail(email)) {
+        return { success: false, error: "Please enter a valid email address" }
+      }
+
+      // Sanitize email
+      const sanitizedEmail = sanitizeEmail(email)
+      if (!sanitizedEmail) {
+        return { success: false, error: "Invalid email format" }
+      }
+
+      authLogger.info("Attempting password reset", { email: sanitizedEmail })
+      const { error } = await supabaseResetPassword(sanitizedEmail)
 
       if (error) {
+        authLogger.error("Reset password error:", { error, email: sanitizedEmail })
         return { success: false, error: error.message }
       }
 
       return { success: true, error: null }
     } catch (error: any) {
-      console.error("Reset password error:", error)
+      authLogger.error("Reset password error:", error)
       return { success: false, error: error.message || "Failed to reset password" }
     }
   }
 
   const updatePassword = async (password: string): Promise<{ success: boolean; error: string | null }> => {
     try {
+      // Validate password strength
+      if (!validatePassword(password)) {
+        return { success: false, error: "Password must be at least 8 characters long" }
+      }
+
+      authLogger.info("Attempting password update")
       const { error } = await supabaseUpdatePassword(password)
 
       if (error) {
+        authLogger.error("Update password error:", error)
         return { success: false, error: error.message }
       }
 
       return { success: true, error: null }
     } catch (error: any) {
-      console.error("Update password error:", error)
+      authLogger.error("Update password error:", error)
       return { success: false, error: error.message || "Failed to update password" }
     }
   }
@@ -419,7 +500,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).single()
 
       if (error) {
-        console.error("Error fetching profile:", error)
+        authLogger.error("Error fetching profile:", error)
         return null
       }
 
@@ -432,7 +513,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       return null
     } catch (error) {
-      console.error("Unexpected error refreshing profile:", error)
+      authLogger.error("Unexpected error refreshing profile:", error)
       return null
     } finally {
       setIsLoading(false)
