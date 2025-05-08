@@ -154,11 +154,12 @@ export const callEdgeFunction = async <T>(\
     const data = await response.json()
 
     if (!response.ok) {
-      throw new Error((data as any).error || `Edge Function ${functionName} failed with status ${response.status}`)
+      const errorData = data as { error?: string }
+      throw new Error(errorData.error || `Edge Function ${functionName} failed with status ${response.status}`)
     }
 
     return data as T
-  } catch (error: any) {
+  } catch (error) {
     console.error(`Edge Function ${functionName} error:`, error)
     throw error
   }

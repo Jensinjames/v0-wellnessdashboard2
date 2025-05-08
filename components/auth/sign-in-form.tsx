@@ -62,7 +62,17 @@ export function SignInForm() {
       if (typeof navigator !== "undefined" && !navigator.onLine) {
         const errorInfo = handleAuthError({ message: "You appear to be offline" }, "sign-in")
         setError(errorInfo.message)
-        trackAuthError(errorInfo, "sign-in")
+        trackAuthError(errorInfo)
+        setIsLoading(false)
+        return
+      }
+
+      // Validate inputs before sending to the server
+      if (!email || !password) {
+        setFieldErrors({
+          ...(!email ? { email: "Email is required" } : {}),
+          ...(!password ? { password: "Password is required" } : {}),
+        })
         setIsLoading(false)
         return
       }
@@ -78,13 +88,13 @@ export function SignInForm() {
 
       if (result.error) {
         // Use our enhanced error handler
-        const errorInfo = handleAuthError(result.error, "sign-in")
+        const errorInfo = handleAuthError(result.error, { operation: "sign-in", email })
 
         // Track the error for analytics
-        trackAuthError(errorInfo, "sign-in")
+        trackAuthError(errorInfo)
 
         // Check if it's an email verification error
-        if (errorInfo.code === "email_not_verified") {
+        if (errorInfo.type === "EMAIL_NOT_CONFIRMED") {
           setIsEmailVerificationError(true)
         }
 
@@ -107,9 +117,9 @@ export function SignInForm() {
         router.push("/dashboard")
       }
     } catch (err: any) {
-      const errorInfo = handleAuthError(err, "sign-in")
+      const errorInfo = handleAuthError(err, { operation: "sign-in", email })
       setError(errorInfo.message)
-      trackAuthError(errorInfo, "sign-in")
+      trackAuthError(errorInfo)
       setIsLoading(false)
     }
   }

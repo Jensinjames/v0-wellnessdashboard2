@@ -22,6 +22,7 @@ import {
   resetPassword as supabaseResetPassword,
   updatePassword as supabaseUpdatePassword,
 } from "@/lib/supabase-manager"
+import { logger } from "@/lib/logger"
 
 interface AuthContextType {
   user: User | null
@@ -253,7 +254,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const { data, error } = await signInWithEmail(sanitizedEmail, credentials.password)
 
       if (error) {
+        logger.error("Sign in error:", { error, email: sanitizedEmail })
         return { error }
+      }
+
+      // Check if we have valid user data before proceeding
+      if (!data?.user) {
+        logger.error("Sign in error: No user data returned", { email: sanitizedEmail })
+        return { error: new Error("Authentication failed: No user data returned") }
       }
 
       // Explicitly update the state with the new session data

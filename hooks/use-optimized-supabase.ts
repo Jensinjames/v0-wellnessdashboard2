@@ -63,26 +63,30 @@ export function useOptimizedSupabase() {
 
   // Execute a Supabase query with optimized parameters
   const executeQuery = useCallback(
-    async <T,>(
+    async <T>(\
       queryFn: (supabase: ReturnType<typeof getSupabaseClient>) => Promise<{ data: T | null; error: any }>,
       options: QueryOptions = {},
-    ): Promise<{ data: T | null; error: any }> => {
-      const {
-        retry = true,
-        maxRetries = 3,
-        timeout = 10000,
-        batchable = false,
-        priority = "medium",
-        category = "database",
-        onSuccess,
-        onError,
-        onNetworkError,
-        onRateLimit,
-      } = options
+    ): Promise<{ data: T | null;
+  error: any
+}
+> =>
+{
+  const {
+    retry = true,
+    maxRetries = 3,
+    timeout = 10000,
+    batchable = false,
+    priority = "medium",
+    category = "database",
+    onSuccess,
+    onError,
+    onNetworkError,
+    onRateLimit,
+  } = options
 
-      // If we should use the batcher and it's available
-      if (batchable && executeBatched) {
-        return executeBatched(
+  // If we should use the batcher and it's available
+  if (batchable && executeBatched) {
+    return executeBatched(
           async () => {
             try {
               const supabase = getSupabaseClient({ timeout })
@@ -120,60 +124,31 @@ export function useOptimizedSupabase() {
           },
           { priority, category, retryOnNetworkError: retry, maxRetries },
         )
-      }
+  }
 
-      // Otherwise, execute directly with our own retry logic
-      let retryCount = 0
+  // Otherwise, execute directly with our own retry logic
+  let retryCount = 0
 
-      while (true) {
-        try {
-          // Get a client with the specified timeout
-          const supabase = getSupabaseClient({ timeout })
-          const result = await queryFn(supabase)
+  while (true) {
+    try {
+      // Get a client with the specified timeout
+      const supabase = getSupabaseClient({ timeout })
+      const result = await queryFn(supabase)
 
-          if (result.error) {
-            // Handle rate limiting
-            if (
-              result.error.status === 429 ||
-              result.error.message?.includes("429") ||
-              result.error.message?.includes("rate limit")
-            ) {
-              console.warn("Rate limit detected in optimized query")
-              onRateLimit?.()
+      if (result.error) {
+        // Handle rate limiting
+        if (
+          result.error.status === 429 ||
+          result.error.message?.includes("429") ||
+          result.error.message?.includes("rate limit")
+        ) {
+          console.warn("Rate limit detected in optimized query")
+          onRateLimit?.()
 
-              if (retry && retryCount < maxRetries) {
-                // Calculate backoff time - exponential with jitter
-                const backoffTime = Math.min(1000 * Math.pow(2, retryCount), 10000) * (0.8 + Math.random() * 0.4)
-                console.log(`Rate limited. Retrying in ${backoffTime}ms (attempt ${retryCount + 1})`)
-
-                // Wait for the backoff period
-                await new Promise((resolve) => setTimeout(resolve, backoffTime))
-
-                retryCount++
-                continue
-              }
-            }
-
-            onError?.(result.error)
-            return result
-          }
-
-          if (onSuccess && result.data) {
-            onSuccess(result.data)
-          }
-
-          return result
-        } catch (error: any) {
-          // Handle network errors with retry
-          if (
-            retry &&
-            retryCount < maxRetries &&
-            ((error instanceof TypeError && error.message.includes("Failed to fetch")) ||
-              (error instanceof DOMException && error.name === "AbortError"))
-          ) {
+          if (retry && retryCount < maxRetries) {
             // Calculate backoff time - exponential with jitter
             const backoffTime = Math.min(1000 * Math.pow(2, retryCount), 10000) * (0.8 + Math.random() * 0.4)
-            console.log(`Network error. Retrying in ${backoffTime}ms (attempt ${retryCount + 1})`)
+            console.log(`Rate limited. Retrying in ${backoffTime}ms (attempt ${retryCount + 1})`)
 
             // Wait for the backoff period
             await new Promise((resolve) => setTimeout(resolve, backoffTime))
@@ -181,27 +156,57 @@ export function useOptimizedSupabase() {
             retryCount++
             continue
           }
-
-          // Handle other errors
-          console.error("Error in optimized query:", error)
-          onError?.(error)
-
-          return { data: null, error }
         }
+
+        onError?.(result.error)
+        return result
       }
-    },
+
+      if (onSuccess && result.data) {
+        onSuccess(result.data)
+      }
+
+      return result
+    } catch (error: any) {
+      // Handle network errors with retry
+      if (
+        retry &&
+        retryCount < maxRetries &&
+        ((error instanceof TypeError && error.message.includes("Failed to fetch")) ||
+          (error instanceof DOMException && error.name === "AbortError"))
+      ) {
+        // Calculate backoff time - exponential with jitter
+        const backoffTime = Math.min(1000 * Math.pow(2, retryCount), 10000) * (0.8 + Math.random() * 0.4)
+        console.log(`Network error. Retrying in ${backoffTime}ms (attempt ${retryCount + 1})`)
+
+        // Wait for the backoff period
+        await new Promise((resolve) => setTimeout(resolve, backoffTime))
+
+        retryCount++
+        continue
+      }
+
+      // Handle other errors
+      console.error("Error in optimized query:", error)
+      onError?.(error)
+
+      return { data: null, error }
+    }
+  }
+}
+,
     [executeBatched],
   )
 
-  // Hook for executing a query with state management
-  const useQuery = <T,>(
+// Hook for executing a query with state management
+const useQuery = <T>(
     queryFn: (supabase: ReturnType<typeof getSupabaseClient>) => Promise<{ data: T | null; error: any }>,
-    options: QueryOptions & {
+    options: {
       enabled?: boolean
       refetchInterval?: number
       refetchOnWindowFocus?: boolean
       initialData?: T | null
-    } = {},
+    } & QueryOptions = {},
   ) => {
     const {
       enabled = true,

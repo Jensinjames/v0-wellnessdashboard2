@@ -57,8 +57,40 @@ export function addAuthListener(callback: AuthStateChangeCallback): () => void {
  * Sign in with email and password
  */
 export async function signInWithEmail(email: string, password: string) {
-  const supabase = getSupabase()
-  return supabase.auth.signInWithPassword({ email, password })
+  try {
+    const supabase = getSupabase()
+
+    // Validate inputs
+    if (!email || !password) {
+      return {
+        data: null,
+        error: new Error("Email and password are required"),
+      }
+    }
+
+    // Attempt sign in
+    const result = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    // Check for successful sign in but missing user data
+    if (!result.error && !result.data?.user) {
+      console.error("Sign in succeeded but no user data returned")
+      return {
+        data: null,
+        error: new Error("Authentication failed: No user data returned"),
+      }
+    }
+
+    return result
+  } catch (error) {
+    console.error("Error in signInWithEmail:", error)
+    return {
+      data: null,
+      error: error instanceof Error ? error : new Error(String(error)),
+    }
+  }
 }
 
 /**

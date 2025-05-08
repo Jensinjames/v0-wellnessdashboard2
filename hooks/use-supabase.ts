@@ -242,7 +242,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   const query = useCallback(
     async <T>(\
       queryFn: (client: SupabaseClient<Database>) => Promise<T>,
-    options: {
+      options: {
         retries?: number
         retryDelay?: number
         requiresAuth?: boolean

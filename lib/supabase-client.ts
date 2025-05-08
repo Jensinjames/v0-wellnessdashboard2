@@ -39,8 +39,11 @@ export function getSupabase() {
           global: {
             headers: {
               "x-application-name": "wellness-dashboard-client",
+              "x-client-info": `${typeof window !== "undefined" ? window.navigator.userAgent : "server"}`,
             },
           },
+          // Add error handling for auth operations
+          debug: debugMode,
         },
       )
 
@@ -108,15 +111,24 @@ export async function getCurrentSession() {
 
 // Get the current user
 export async function getCurrentUser() {
-  const supabase = getSupabase()
-  const { data, error } = await supabase.auth.getUser()
+  try {
+    const supabase = getSupabase()
+    const { data, error } = await supabase.auth.getUser()
 
-  if (error) {
-    console.error("Error getting user:", error)
+    if (error) {
+      console.error("Error getting user:", error)
+      return { user: null, error }
+    }
+
+    if (!data?.user) {
+      return { user: null, error: new Error("No user data returned") }
+    }
+
+    return { user: data.user, error: null }
+  } catch (error) {
+    console.error("Unexpected error getting user:", error)
     return { user: null, error }
   }
-
-  return { user: data.user, error: null }
 }
 
 // Check the Supabase connection health
