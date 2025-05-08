@@ -7,6 +7,7 @@ import { ProfileCompletionProvider } from "@/context/profile-completion-context"
 import { EnvProvider } from "@/components/providers/env-provider"
 import { NavigationProvider } from "@/context/navigation-context"
 import { SupabaseProvider } from "@/components/providers/supabase-provider"
+import { initSchemaCheck } from "@/utils/schema-check"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -37,3 +38,6 @@ export default function RootLayout({
     </html>
   )
 }
+
+// This ensures the schema check runs on the client side
+export const clientInit = typeof window !== "undefined" ? initSchemaCheck() : null

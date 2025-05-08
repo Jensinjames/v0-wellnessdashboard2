@@ -242,7 +242,9 @@ export function parseAuthError(error: any, context?: Record<string, any>): AuthE
   // Database schema errors - specifically check for the user_changes_log error
   if (
     errorMessage.includes('relation "user_changes_log" does not exist') ||
-    errorMessage.includes("Database error granting user")
+    errorMessage.includes("Database error granting user") ||
+    errorMessage.includes("database schema issue") ||
+    errorMessage.includes("schema-001")
   ) {
     return {
       category: AuthErrorCategory.SERVER,

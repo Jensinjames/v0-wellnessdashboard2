@@ -1,72 +1,60 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { getSupabaseSingleton, resetSupabaseSingleton, getSupabaseSingletonDebugInfo } from "@/lib/supabase-singleton"
-import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Database } from "@/types/database"
+/**
+ * Hook to use the Supabase singleton
+ */
 
+import { useState, useEffect } from "react"
+import { getSupabaseSingleton, resetSupabaseSingleton } from "@/lib/supabase-singleton"
+import { createLogger } from "@/utils/logger"
+
+// Track the number of instances created
+let instanceCount = 0
+
+// Export the instance count
+export { instanceCount }
+
+// Create a dedicated logger for the hook
+const logger = createLogger("useSupabaseSingleton")
+
+/**
+ * Hook to use the Supabase singleton
+ * This hook ensures we only have one Supabase client instance across the application
+ */
 export function useSupabaseSingleton() {
-  const [supabase, setSupabase] = useState<SupabaseClient<Database> | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
+  const [isInitialized, setIsInitialized] = useState(false)
 
   useEffect(() => {
-    let isMounted = true
+    try {
+      // Get the Supabase singleton instance
+      const supabase = getSupabaseSingleton()
+      setIsInitialized(true)
 
-    const initializeSupabase = async () => {
-      try {
-        setIsLoading(true)
-        const client = await Promise.resolve(getSupabaseSingleton())
+      // Increment the instance count
+      instanceCount++
 
-        if (isMounted) {
-          setSupabase(client)
-          setError(null)
-        }
-      } catch (err) {
-        if (isMounted) {
-          console.error("Error initializing Supabase singleton:", err)
-          setError(err instanceof Error ? err : new Error(String(err)))
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false)
-        }
+      // Set up auth state change listener
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((event, session) => {
+        logger.info(`Auth state changed: ${event}`)
+      })
+
+      // Clean up the subscription when the component unmounts
+      return () => {
+        subscription.unsubscribe()
       }
-    }
-
-    initializeSupabase()
-
-    return () => {
-      isMounted = false
+    } catch (error) {
+      logger.error("Error initializing Supabase singleton:", error)
+      setIsInitialized(false)
     }
   }, [])
 
-  const reset = () => {
-    resetSupabaseSingleton()
-    setSupabase(null)
-    setIsLoading(true)
-    setError(null)
-
-    // Re-initialize after reset
-    Promise.resolve(getSupabaseSingleton())
-      .then((client) => {
-        setSupabase(client)
-        setIsLoading(false)
-      })
-      .catch((err) => {
-        setError(err instanceof Error ? err : new Error(String(err)))
-        setIsLoading(false)
-      })
-  }
-
   return {
-    supabase,
-    isLoading,
-    error,
-    reset,
-    debugInfo: getSupabaseSingletonDebugInfo(),
+    supabase: getSupabaseSingleton(),
+    isInitialized,
+    reset: resetSupabaseSingleton,
   }
 }
 
-// Export the instance count for external monitoring
-export const instanceCount = () => getSupabaseSingletonDebugInfo().instanceCount
+export default useSupabaseSingleton
