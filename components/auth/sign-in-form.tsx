@@ -1,17 +1,16 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+import { useSearchParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { useAuth } from "@/context/auth-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Info, AlertTriangle, Mail, Loader2, Database, RefreshCw, Wifi } from "lucide-react"
-import { handleAuthError } from "@/utils/auth-error-handler"
+import { AlertTriangle, Mail, RefreshCw } from "lucide-react"
+import { handleAuthError, getFieldErrors, trackAuthError } from "@/utils/auth-error-handler"
 
 export function SignInForm() {
   const [email, setEmail] = useState("")
@@ -19,16 +18,12 @@ export function SignInForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
-  const [mockSignIn, setMockSignIn] = useState(false)
   const [isEmailVerificationError, setIsEmailVerificationError] = useState(false)
-  const [networkError, setNetworkError] = useState(false)
-  const [isCheckingNetwork, setIsCheckingNetwork] = useState(false)
-  const [databaseError, setDatabaseError] = useState(false)
-  const [redirectPath, setRedirectPath] = useState("/dashboard")
-  const { signIn, refreshSession, resendVerificationEmail } = useAuth()
-  const router = useRouter()
+  const [redirectPath, setRedirectPath] = useState<string | undefined>(undefined)
+  const [isResendingVerification, setIsResendingVerification] = useState(false)
+  const { signIn, signUp } = useAuth()
   const searchParams = useSearchParams()
-  const [signInAttempts, setSignInAttempts] = useState(0)
+  const router = useRouter()
 
   // Use effect to safely access search params after mount
   useEffect(() => {
@@ -52,110 +47,28 @@ export function SignInForm() {
       setError(null)
       setFieldErrors({})
       setIsEmailVerificationError(false)
-      setNetworkError(false)
-      setDatabaseError(false)
     }
   }, [email, password, error, fieldErrors])
-
-  // Attempt to refresh the session on component mount
-  // This can help with cases where the session is still valid but the UI doesn't reflect it
-  useEffect(() => {
-    const attemptSessionRefresh = async () => {
-      try {
-        await refreshSession()
-      } catch (err) {
-        // Silently fail - this is just a proactive attempt
-      }
-    }
-
-    attemptSessionRefresh()
-  }, [refreshSession])
-
-  const handleNetworkCheck = async () => {
-    setIsCheckingNetwork(true)
-
-    try {
-      // Try to fetch a known endpoint
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5000)
-
-      const endpoints = [
-        process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-        "https://www.google.com",
-        "https://www.cloudflare.com",
-      ]
-
-      let connected = false
-
-      for (const endpoint of endpoints) {
-        try {
-          await fetch(endpoint, {
-            method: "HEAD",
-            signal: controller.signal,
-            mode: "no-cors",
-            cache: "no-store",
-          })
-          connected = true
-          break
-        } catch (err) {
-          // Try next endpoint
-          console.warn(`Failed to connect to ${endpoint}`)
-        }
-      }
-
-      clearTimeout(timeoutId)
-
-      if (connected) {
-        setNetworkError(false)
-        setError(null)
-      } else {
-        setNetworkError(true)
-        setError("Still unable to connect. Please check your internet connection.")
-      }
-    } catch (err) {
-      setNetworkError(true)
-      setError("Network check failed. Please try again later.")
-    } finally {
-      setIsCheckingNetwork(false)
-    }
-  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
     setFieldErrors({})
-    setMockSignIn(false)
     setIsEmailVerificationError(false)
-    setNetworkError(false)
-    setDatabaseError(false)
-    setSignInAttempts((prev) => prev + 1)
-
-    // Check if we're online before attempting sign-in
-    if (typeof navigator !== "undefined" && !navigator.onLine) {
-      setNetworkError(true)
-      setError("You appear to be offline. Sign-in requires an internet connection.")
-      setIsLoading(false)
-      return
-    }
 
     try {
-      // Trim the email to prevent whitespace issues
-      const trimmedEmail = email.trim()
-
-      // For demo mode, bypass the regular sign-in flow after multiple failed attempts
-      if (signInAttempts >= 2 && trimmedEmail === "demo@example.com" && password === "demo123") {
-        setMockSignIn(true)
-        // Wait a moment before redirecting to simulate the sign-in process
-        setTimeout(() => {
-          router.push(redirectPath)
-        }, 2000)
+      // Check if we're online before attempting sign-in
+      if (typeof navigator !== "undefined" && !navigator.onLine) {
+        const errorInfo = handleAuthError({ message: "You appear to be offline" }, "sign-in")
+        setError(errorInfo.message)
+        trackAuthError(errorInfo, "sign-in")
         setIsLoading(false)
         return
       }
 
       // Pass credentials as a single object with the correct structure
-      const result = await signIn({ email: trimmedEmail, password })
+      const result = await signIn({ email, password }, redirectPath)
 
       if (result.fieldErrors) {
         setFieldErrors(result.fieldErrors)
@@ -164,95 +77,75 @@ export function SignInForm() {
       }
 
       if (result.error) {
-        const errorMessage = result.error.message || "An error occurred during sign-in"
+        // Use our enhanced error handler
+        const errorInfo = handleAuthError(result.error, "sign-in")
 
-        // Check if it's a database error
-        if (
-          errorMessage.includes("Database error") ||
-          errorMessage.includes("database error") ||
-          errorMessage.includes("Database error granting user")
-        ) {
-          setDatabaseError(true)
-          setError(handleAuthError(result.error, "sign-in"))
-        }
+        // Track the error for analytics
+        trackAuthError(errorInfo, "sign-in")
+
         // Check if it's an email verification error
-        else if (
-          errorMessage.includes("verify your email") ||
-          errorMessage.includes("Email not confirmed") ||
-          errorMessage.includes("not confirmed")
-        ) {
+        if (errorInfo.code === "email_not_verified") {
           setIsEmailVerificationError(true)
-          setError(errorMessage)
         }
-        // Check if it's a network error
-        else if (
-          errorMessage.includes("network") ||
-          errorMessage.includes("Failed to fetch") ||
-          errorMessage.includes("Network Error")
-        ) {
-          setNetworkError(true)
-          setError(handleAuthError(result.error, "sign-in"))
-        }
-        // General error
-        else {
-          setError(handleAuthError(result.error, "sign-in"))
+
+        // Set the user-friendly error message
+        setError(errorInfo.message)
+
+        // Check for field-specific errors
+        const validationErrors = getFieldErrors(result.error)
+        if (Object.keys(validationErrors).length > 0) {
+          setFieldErrors(validationErrors)
         }
 
         setIsLoading(false)
         return
       }
 
-      if (result.mockSignIn) {
-        setMockSignIn(true)
-        // Wait a moment before redirecting to simulate the sign-in process
-        setTimeout(() => {
-          router.push(redirectPath)
-        }, 2000)
-        return
-      }
-
       // If we get here, sign-in was successful
-      router.push(redirectPath)
+      // Manually redirect if the auth context doesn't handle it
+      if (!redirectPath) {
+        router.push("/dashboard")
+      }
     } catch (err: any) {
-      console.error("Unexpected error during sign-in:", err)
-      setError(handleAuthError(err, "sign-in"))
-    } finally {
+      const errorInfo = handleAuthError(err, "sign-in")
+      setError(errorInfo.message)
+      trackAuthError(errorInfo, "sign-in")
       setIsLoading(false)
     }
   }
 
   const handleResendVerification = async () => {
-    if (!email || !email.trim()) {
-      setFieldErrors({ email: "Please enter your email address" })
+    if (!email) {
+      setError("Please enter your email address to resend verification")
       return
     }
 
-    try {
-      setIsLoading(true)
+    setIsResendingVerification(true)
+    setError(null)
 
-      const result = await resendVerificationEmail(email.trim())
+    try {
+      // Use the sign-up function to resend verification
+      const result = await signUp({ email, password: "temporary-password" })
 
       if (result.error) {
-        setError(`Failed to resend verification email: ${result.error.message}`)
+        // If the error indicates the user already exists, that's actually good in this context
+        if (result.error.message?.includes("already exists")) {
+          setError("Verification email sent. Please check your inbox.")
+        } else {
+          const errorInfo = handleAuthError(result.error, "resend-verification")
+          setError(`Failed to resend verification: ${errorInfo.message}`)
+          trackAuthError(errorInfo, "resend-verification")
+        }
       } else {
-        alert(`If an account exists with ${email}, a verification email has been sent.`)
+        setError("Verification email sent. Please check your inbox.")
       }
     } catch (err: any) {
-      console.error("Error sending verification email:", err)
-      setError("Failed to send verification email. Please try again.")
+      const errorInfo = handleAuthError(err, "resend-verification")
+      setError(`Failed to resend verification: ${errorInfo.message}`)
+      trackAuthError(errorInfo, "resend-verification")
     } finally {
-      setIsLoading(false)
+      setIsResendingVerification(false)
     }
-  }
-
-  const handleDemoSignIn = () => {
-    setEmail("demo@example.com")
-    setPassword("demo123")
-    // Submit the form with demo credentials
-    setTimeout(() => {
-      const form = document.querySelector("form") as HTMLFormElement
-      if (form) form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }))
-    }, 100)
   }
 
   return (
@@ -261,100 +154,11 @@ export function SignInForm() {
         Sign in form
       </h2>
 
-      {error && !isEmailVerificationError && !networkError && !databaseError && (
+      {error && !isEmailVerificationError && (
         <Alert className="rounded-md bg-red-50 p-4 text-sm text-red-700" role="alert" aria-live="assertive">
           <AlertTriangle className="h-4 w-4 mr-2" aria-hidden="true" />
-          {error}
-        </Alert>
-      )}
-
-      {networkError && (
-        <Alert className="rounded-md bg-orange-50 p-4 text-sm text-orange-700" role="alert" aria-live="assertive">
-          <AlertTriangle className="h-4 w-4" aria-hidden="true" />
-          <AlertTitle>Connection Issue</AlertTitle>
-          <AlertDescription>
-            <p className="mb-2">
-              {error || "Unable to connect to the authentication service. Please check your internet connection."}
-            </p>
-            <div className="flex gap-2 mt-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleNetworkCheck}
-                disabled={isCheckingNetwork}
-                className="bg-orange-100/50"
-                aria-label={isCheckingNetwork ? "Checking network connection" : "Check network connection"}
-              >
-                {isCheckingNetwork ? (
-                  <>
-                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
-                    <span>Checking...</span>
-                  </>
-                ) : (
-                  <>
-                    <Wifi className="h-4 w-4 mr-2" aria-hidden="true" />
-                    <span>Check Connection</span>
-                  </>
-                )}
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => window.location.reload()}
-                className="bg-orange-100/50"
-                aria-label="Reload page"
-              >
-                <RefreshCw className="h-4 w-4 mr-2" aria-hidden="true" />
-                <span>Reload Page</span>
-              </Button>
-            </div>
-            <div className="mt-3">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleDemoSignIn}
-                className="bg-orange-100/50 border-orange-200"
-              >
-                Use Demo Mode
-              </Button>
-            </div>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {databaseError && (
-        <Alert className="rounded-md bg-blue-50 p-4 text-sm text-blue-700" role="alert" aria-live="assertive">
-          <Database className="h-4 w-4" aria-hidden="true" />
-          <AlertTitle>Database Connection Issue</AlertTitle>
-          <AlertDescription>
-            <p className="mb-2">
-              {error ||
-                "We're experiencing a temporary database issue. This might be due to maintenance or high traffic."}
-            </p>
-            <div className="mt-2 flex flex-col sm:flex-row gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="bg-blue-100 border-blue-200 text-blue-800 hover:bg-blue-200"
-                onClick={() => window.location.reload()}
-              >
-                Retry
-              </Button>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="bg-blue-100 border-blue-200 text-blue-800 hover:bg-blue-200"
-                onClick={handleDemoSignIn}
-              >
-                Use Demo Mode
-              </Button>
-            </div>
-          </AlertDescription>
+          <AlertTitle>Sign in failed</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
@@ -373,22 +177,18 @@ export function SignInForm() {
                 variant="link"
                 className="p-0 h-auto text-amber-800 underline"
                 onClick={handleResendVerification}
-                disabled={isLoading}
+                disabled={isResendingVerification}
               >
-                request a new verification email
+                {isResendingVerification ? (
+                  <>
+                    <RefreshCw className="h-3 w-3 mr-1 inline animate-spin" aria-hidden="true" />
+                    Sending...
+                  </>
+                ) : (
+                  "request a new verification email"
+                )}
               </Button>
-              .
             </p>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {mockSignIn && (
-        <Alert className="mb-4" role="status" aria-live="polite">
-          <Info className="h-4 w-4" aria-hidden="true" />
-          <AlertTitle>Demo Mode</AlertTitle>
-          <AlertDescription>
-            You're being signed in with demo credentials. You'll be redirected to the dashboard shortly.
           </AlertDescription>
         </Alert>
       )}
@@ -403,7 +203,7 @@ export function SignInForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          disabled={isLoading || mockSignIn}
+          disabled={isLoading}
           aria-labelledby="email-label"
           aria-required="true"
           autoComplete="email"
@@ -437,7 +237,7 @@ export function SignInForm() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          disabled={isLoading || mockSignIn}
+          disabled={isLoading}
           aria-labelledby="password-label"
           aria-required="true"
           autoComplete="current-password"
@@ -452,20 +252,12 @@ export function SignInForm() {
         )}
       </div>
 
-      <Button
-        type="submit"
-        className="w-full"
-        disabled={isLoading || mockSignIn}
-        aria-busy={isLoading}
-        aria-live="polite"
-      >
+      <Button type="submit" className="w-full" disabled={isLoading} aria-busy={isLoading} aria-live="polite">
         {isLoading ? (
           <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            <RefreshCw className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
             Signing in...
           </>
-        ) : mockSignIn ? (
-          "Redirecting..."
         ) : (
           "Sign in"
         )}
@@ -479,20 +271,6 @@ export function SignInForm() {
         >
           Sign up
         </Link>
-      </div>
-
-      {/* Demo mode button */}
-      <div className="text-center">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="mt-2"
-          onClick={handleDemoSignIn}
-          disabled={isLoading || mockSignIn}
-        >
-          Use Demo Mode
-        </Button>
       </div>
     </form>
   )

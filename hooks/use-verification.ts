@@ -34,7 +34,7 @@ export function useVerification() {
 
   // Request verification code
   const requestVerification = useCallback(
-    async (type: VerificationType, value: string) => {
+    async (type: VerificationType) => {
       if (!user) {
         setError("You must be logged in to verify your account")
         return false
@@ -48,7 +48,7 @@ export function useVerification() {
         const response = await requestVerificationCode({
           userId: user.id,
           type,
-          value,
+          value: type === "email" ? user.email : user.phone,
         })
 
         if (response.success) {

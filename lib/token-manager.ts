@@ -1,311 +1,258 @@
-// Token Manager - Handles token refresh and management
+/**
+ * Token Manager
+ * Handles JWT token refresh, validation, and expiration
+ */
+"use client"
+
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 
 // Event names for token-related events
 export const TOKEN_EVENTS = {
-  REFRESH_SUCCESS: "token:refresh:success",
-  REFRESH_FAILURE: "token:refresh:failure",
-  SESSION_EXPIRED: "token:session:expired",
-  REFRESH_STARTED: "token:refresh:started",
+  REFRESH_SUCCESS: "supabase:token:refresh:success",
+  REFRESH_FAILURE: "supabase:token:refresh:failure",
+  SESSION_EXPIRED: "supabase:session:expired",
 }
 
-// Global registry to track token managers
-const tokenManagerRegistry = new Map<string, any>()
+// Token manager state
+interface TokenManagerState {
+  valid: boolean
+  expiresSoon: boolean
+  expiresAt: number | null
+  telemetry: {
+    refreshAttempts: number
+    successCount: number
+    failureCount: number
+    lastRefreshSuccess: number | null
+    lastRefreshFailure: number | null
+  }
+}
 
-// Global singleton instance
-let globalTokenManager: ReturnType<typeof createTokenManager> | null = null
+// Singleton instance
+let tokenManagerInstance: ReturnType<typeof createTokenManager> | null = null
 
-// Default refresh buffer (5 minutes before expiry)
-const DEFAULT_REFRESH_BUFFER = 5 * 60 * 1000
-
-// Create a token manager for a Supabase client
-function createTokenManager(supabaseClient: SupabaseClient<Database>, debugMode = false) {
-  // Internal state
-  let refreshTimer: NodeJS.Timeout | null = null
-  let refreshInProgress = false
-  let refreshQueue: Array<{
-    resolve: (value: boolean) => void
-    reject: (reason: any) => void
-  }> = []
-  let lastRefreshAttempt = 0
-  let lastRefreshSuccess: number | null = null
-  let refreshAttempts = 0
-  let successCount = 0
-  let failureCount = 0
-  let currentSession: any = null
-  const instanceId = `tm-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+/**
+ * Creates a token manager for handling JWT token refresh and validation
+ */
+function createTokenManager(client: SupabaseClient<Database>, debug = false) {
+  // Token state
+  const state: TokenManagerState = {
+    valid: false,
+    expiresSoon: false,
+    expiresAt: null,
+    telemetry: {
+      refreshAttempts: 0,
+      successCount: 0,
+      failureCount: 0,
+      lastRefreshSuccess: null,
+      lastRefreshFailure: null,
+    },
+  }
 
   // Debug logging
-  const debug = (...args: any[]) => {
-    if (debugMode) {
-      console.log(`[TokenManager:${instanceId.substring(0, 8)}]`, ...args)
+  const log = (...args: any[]) => {
+    if (debug) {
+      console.log("[TokenManager]", ...args)
     }
   }
 
-  debug("Token manager created")
+  // Refresh timer
+  let refreshTimer: NodeJS.Timeout | null = null
 
-  // Register this instance
-  tokenManagerRegistry.set(instanceId, {
-    created: Date.now(),
-    clientId: supabaseClient ? (supabaseClient as any).supabaseUrl : "unknown",
-  })
-
-  // Initialize by getting the current session
+  // Initialize token state
   const initialize = async () => {
     try {
-      const { data } = await supabaseClient.auth.getSession()
-      currentSession = data.session
-      debug("Initialized with session:", currentSession ? "valid" : "none")
+      const { data, error } = await client.auth.getSession()
 
-      if (currentSession) {
-        scheduleRefresh()
+      if (error) {
+        log("Error getting session:", error)
+        state.valid = false
+        return false
       }
+
+      if (!data.session) {
+        log("No session found")
+        state.valid = false
+        return false
+      }
+
+      // Extract expiration from JWT
+      const { session } = data
+      const expiresAt = session.expires_at ? session.expires_at * 1000 : null // Convert to milliseconds
+
+      state.valid = true
+      state.expiresAt = expiresAt
+      state.expiresSoon = expiresAt ? expiresAt - Date.now() < 5 * 60 * 1000 : false // 5 minutes
+
+      log("Session initialized, expires at:", new Date(expiresAt || 0).toISOString())
+
+      // Schedule refresh if needed
+      scheduleRefresh()
+
+      return true
     } catch (error) {
-      console.error("Error initializing token manager:", error)
+      log("Error initializing token manager:", error)
+      state.valid = false
+      return false
     }
   }
 
-  // Schedule a token refresh
+  // Schedule token refresh
   const scheduleRefresh = () => {
-    if (!currentSession) return
-
-    // Clear any existing timer
     if (refreshTimer) {
       clearTimeout(refreshTimer)
       refreshTimer = null
     }
 
-    // Calculate when the token expires
-    const expiresAt = currentSession.expires_at ? currentSession.expires_at * 1000 : null
-    if (!expiresAt) return
+    if (!state.expiresAt) {
+      log("No expiration time, not scheduling refresh")
+      return
+    }
 
-    // Calculate when to refresh (5 minutes before expiry or immediately if already expired)
     const now = Date.now()
-    const refreshAt = Math.max(0, expiresAt - now - DEFAULT_REFRESH_BUFFER)
+    const timeUntilExpiry = state.expiresAt - now
 
-    debug(
-      `Token expires in ${Math.round((expiresAt - now) / 1000 / 60)} minutes, scheduling refresh in ${Math.round(refreshAt / 1000 / 60)} minutes`,
-    )
+    if (timeUntilExpiry <= 0) {
+      log("Token already expired")
+      state.valid = false
+      dispatchEvent(TOKEN_EVENTS.SESSION_EXPIRED, { expiresAt: state.expiresAt })
+      return
+    }
 
-    // Schedule the refresh
+    // Refresh at 80% of the token's lifetime
+    const refreshAt = Math.max(timeUntilExpiry * 0.2, 60000) // At least 1 minute before expiry
+    const refreshIn = timeUntilExpiry - refreshAt
+
+    log(`Scheduling refresh in ${Math.round(refreshIn / 1000)}s (${new Date(now + refreshIn).toISOString()})`)
+
     refreshTimer = setTimeout(() => {
-      debug("Scheduled refresh triggered")
+      log("Executing scheduled token refresh")
       refreshToken()
-    }, refreshAt)
+    }, refreshIn)
   }
 
   // Refresh the token
-  const refreshToken = async (): Promise<boolean> => {
-    // If a refresh is already in progress, queue this request
-    if (refreshInProgress) {
-      debug("Refresh already in progress, queueing request")
-      return new Promise<boolean>((resolve, reject) => {
-        refreshQueue.push({ resolve, reject })
-      })
-    }
-
+  const refreshToken = async () => {
     try {
-      refreshInProgress = true
-      lastRefreshAttempt = Date.now()
-      refreshAttempts++
+      log("Refreshing token")
+      state.telemetry.refreshAttempts++
 
-      // Dispatch refresh started event
-      window.dispatchEvent(
-        new CustomEvent(TOKEN_EVENTS.REFRESH_STARTED, {
-          detail: {
-            timestamp: lastRefreshAttempt,
-            attempt: refreshAttempts,
-          },
-        }),
-      )
-
-      debug("Refreshing token")
-      const { data, error } = await supabaseClient.auth.refreshSession()
+      const { data, error } = await client.auth.refreshSession()
 
       if (error) {
-        debug("Token refresh failed:", error)
-        failureCount++
-
-        // Dispatch refresh failure event
-        window.dispatchEvent(
-          new CustomEvent(TOKEN_EVENTS.REFRESH_FAILURE, {
-            detail: {
-              timestamp: Date.now(),
-              error,
-              attempt: refreshAttempts,
-            },
-          }),
-        )
-
-        // If the session is expired, dispatch session expired event
-        if (error.message?.includes("expired")) {
-          window.dispatchEvent(new CustomEvent(TOKEN_EVENTS.SESSION_EXPIRED))
-        }
-
-        // Process queue with failure
-        processQueue(false)
+        log("Error refreshing token:", error)
+        state.telemetry.failureCount++
+        state.telemetry.lastRefreshFailure = Date.now()
+        dispatchEvent(TOKEN_EVENTS.REFRESH_FAILURE, { error })
         return false
       }
 
-      // Update session and schedule next refresh
-      currentSession = data.session
-      lastRefreshSuccess = Date.now()
-      successCount++
+      if (!data.session) {
+        log("No session returned from refresh")
+        state.telemetry.failureCount++
+        state.telemetry.lastRefreshFailure = Date.now()
+        dispatchEvent(TOKEN_EVENTS.REFRESH_FAILURE, { error: "No session returned" })
+        return false
+      }
 
-      // Dispatch refresh success event
-      window.dispatchEvent(
-        new CustomEvent(TOKEN_EVENTS.REFRESH_SUCCESS, {
-          detail: {
-            timestamp: lastRefreshSuccess,
-            session: currentSession,
-          },
-        }),
-      )
+      // Update state with new session data
+      const { session } = data
+      const expiresAt = session.expires_at ? session.expires_at * 1000 : null // Convert to milliseconds
 
-      debug("Token refreshed successfully")
+      state.valid = true
+      state.expiresAt = expiresAt
+      state.expiresSoon = expiresAt ? expiresAt - Date.now() < 5 * 60 * 1000 : false // 5 minutes
+      state.telemetry.successCount++
+      state.telemetry.lastRefreshSuccess = Date.now()
+
+      log("Token refreshed successfully, new expiry:", new Date(expiresAt || 0).toISOString())
+
+      // Schedule next refresh
       scheduleRefresh()
 
-      // Process queue with success
-      processQueue(true)
+      // Dispatch success event
+      dispatchEvent(TOKEN_EVENTS.REFRESH_SUCCESS, { expiresAt })
+
       return true
     } catch (error) {
-      console.error("Unexpected error refreshing token:", error)
-      failureCount++
-
-      // Dispatch refresh failure event
-      window.dispatchEvent(
-        new CustomEvent(TOKEN_EVENTS.REFRESH_FAILURE, {
-          detail: {
-            timestamp: Date.now(),
-            error,
-            attempt: refreshAttempts,
-          },
-        }),
-      )
-
-      // Process queue with failure
-      processQueue(false)
+      log("Unexpected error refreshing token:", error)
+      state.telemetry.failureCount++
+      state.telemetry.lastRefreshFailure = Date.now()
+      dispatchEvent(TOKEN_EVENTS.REFRESH_FAILURE, { error })
       return false
-    } finally {
-      refreshInProgress = false
     }
   }
 
-  // Process the queue of pending refresh requests
-  const processQueue = (success: boolean) => {
-    const queue = [...refreshQueue]
-    refreshQueue = []
-
-    for (const { resolve } of queue) {
-      resolve(success)
+  // Force a token refresh
+  const forceRefresh = async () => {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer)
+      refreshTimer = null
     }
-  }
 
-  // Force an immediate token refresh
-  const forceRefresh = async (): Promise<boolean> => {
-    debug("Force refresh requested")
     return refreshToken()
   }
 
-  // Check if the token is valid
-  const isTokenValid = (): boolean => {
-    if (!currentSession) return false
+  // Check if token is valid
+  const isTokenValid = () => {
+    if (!state.valid || !state.expiresAt) {
+      return false
+    }
 
-    const expiresAt = currentSession.expires_at ? currentSession.expires_at * 1000 : null
-    if (!expiresAt) return false
-
-    return Date.now() < expiresAt
+    return state.expiresAt > Date.now()
   }
 
   // Get token status
   const getStatus = () => {
-    if (!currentSession) {
-      return {
-        valid: false,
-        expiresSoon: false,
-        expiresAt: null,
-        telemetry: {
-          refreshAttempts,
-          lastRefreshAttempt,
-          lastRefreshSuccess,
-          successCount,
-          failureCount,
-        },
-      }
-    }
-
-    const expiresAt = currentSession.expires_at ? currentSession.expires_at * 1000 : null
-    const now = Date.now()
-    const valid = expiresAt ? now < expiresAt : false
-    const expiresSoon = expiresAt ? now > expiresAt - DEFAULT_REFRESH_BUFFER : false
-
-    return {
-      valid,
-      expiresSoon,
-      expiresAt,
-      telemetry: {
-        refreshAttempts,
-        lastRefreshAttempt,
-        lastRefreshSuccess,
-        successCount,
-        failureCount,
-      },
-    }
+    return { ...state }
   }
 
   // Clean up resources
   const cleanup = () => {
-    debug("Cleaning up token manager")
     if (refreshTimer) {
       clearTimeout(refreshTimer)
       refreshTimer = null
     }
-
-    // Unregister this instance
-    tokenManagerRegistry.delete(instanceId)
   }
 
-  // Initialize
+  // Helper to dispatch custom events
+  const dispatchEvent = (eventName: string, detail: any) => {
+    if (typeof window !== "undefined") {
+      const event = new CustomEvent(eventName, { detail })
+      window.dispatchEvent(event)
+    }
+  }
+
+  // Initialize on creation
   initialize()
 
+  // Return public API
   return {
+    initialize,
     refreshToken,
     forceRefresh,
     isTokenValid,
     getStatus,
     cleanup,
-    instanceId,
   }
 }
 
-// Get the token manager (singleton pattern)
-export function getTokenManager(supabaseClient: SupabaseClient<Database>, debugMode = false) {
-  // If we already have a global instance, return it
-  if (globalTokenManager) {
-    return globalTokenManager
+/**
+ * Get the token manager singleton
+ */
+export function getTokenManager(client: SupabaseClient<Database>, debug = false) {
+  if (!tokenManagerInstance) {
+    tokenManagerInstance = createTokenManager(client, debug)
   }
-
-  // Create a new instance
-  globalTokenManager = createTokenManager(supabaseClient, debugMode)
-  return globalTokenManager
+  return tokenManagerInstance
 }
 
-// Reset the token manager (useful for testing or when auth state changes)
+/**
+ * Reset the token manager singleton
+ */
 export function resetTokenManager() {
-  if (globalTokenManager) {
-    globalTokenManager.cleanup()
-    globalTokenManager = null
-  }
-}
-
-// Get token manager registry info (for debugging)
-export function getTokenManagerRegistry() {
-  return {
-    count: tokenManagerRegistry.size,
-    instances: Array.from(tokenManagerRegistry.entries()).map(([id, info]) => ({
-      id,
-      ...info,
-    })),
+  if (tokenManagerInstance) {
+    tokenManagerInstance.cleanup()
+    tokenManagerInstance = null
   }
 }

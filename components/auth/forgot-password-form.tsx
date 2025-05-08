@@ -35,17 +35,24 @@ export function ForgotPasswordForm() {
         return
       }
 
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      console.log("Attempting to send password reset email to:", email)
+
+      // Add a more robust error handling approach
+      const { error: resetError, data } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/reset-password`,
       })
 
+      console.log("Reset password response:", { error: resetError, data })
+
       if (resetError) {
+        console.error("Password reset error details:", resetError)
         setError(handleAuthError(resetError, "password-reset"))
         return
       }
 
       setSuccess(true)
     } catch (err: any) {
+      console.error("Caught exception during password reset:", err)
       setError(handleAuthError(err, "password-reset"))
     } finally {
       setIsLoading(false)
@@ -57,6 +64,11 @@ export function ForgotPasswordForm() {
       <div className="space-y-4">
         <div className="rounded-md bg-green-50 p-4 text-sm text-green-700">
           Password reset instructions have been sent to your email.
+          {process.env.NEXT_PUBLIC_APP_ENVIRONMENT === "development" && (
+            <p className="mt-2 text-xs">
+              <strong>Note:</strong> In development mode, check the console for the password reset link.
+            </p>
+          )}
         </div>
         <div className="text-center text-sm">
           <Link href="/auth/sign-in" className="text-blue-600 hover:text-blue-500">

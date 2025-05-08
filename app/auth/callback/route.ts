@@ -1,7 +1,8 @@
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
+import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
+import type { Database } from "@/types/database"
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
@@ -9,7 +10,6 @@ export async function GET(request: NextRequest) {
   const next = requestUrl.searchParams.get("next") || "/dashboard"
   const error = requestUrl.searchParams.get("error")
   const error_description = requestUrl.searchParams.get("error_description")
-  const type = requestUrl.searchParams.get("type") || "auth"
 
   // If there's an error, redirect to the sign-in page with the error
   if (error) {
@@ -26,8 +26,29 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // Create a new supabase server client
     const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const supabase = createServerClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value
+          },
+          set(
+            name: string,
+            value: string,
+            options: { path?: string; maxAge?: number; domain?: string; secure?: boolean },
+          ) {
+            cookieStore.set(name, value, options)
+          },
+          remove(name: string, options: { path?: string; domain?: string }) {
+            cookieStore.set(name, "", { ...options, maxAge: 0 })
+          },
+        },
+      },
+    )
 
     // Exchange the code for a session
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
@@ -52,47 +73,58 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // If we don't have a session, something went wrong
+    // If no session was created, redirect to sign-in
     if (!session) {
-      console.error("No session after code exchange")
-      return NextResponse.redirect(
-        new URL("/auth/sign-in?error=Failed to create session. Please try again.", request.url),
-      )
+      console.warn("No session created after code exchange")
+      return NextResponse.redirect(new URL("/auth/sign-in?error=Failed to create session", request.url))
     }
 
-    // If the user is confirmed, redirect to the dashboard or the next URL
+    // Check if the user's email is confirmed
     if (session.user?.email_confirmed_at) {
-      // Try to create a profile if it doesn't exist
-      try {
-        if (session.user.email) {
-          const { error: profileError } = await supabase.from("profiles").upsert(
-            {
-              id: session.user.id,
-              email: session.user.email,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "id", ignoreDuplicates: false },
-          )
+      // If the user is confirmed, check if they have a profile
+      const { data: profile, error: profileError } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", session.user.id)
+        .single()
 
-          if (profileError) {
-            console.warn("Error creating/updating profile during callback:", profileError)
-            // Don't fail the auth flow, just log the error
-          }
-        }
-      } catch (profileError) {
-        console.error("Unexpected error creating profile during callback:", profileError)
-        // Don't fail the auth flow, just log the error
+      if (profileError && profileError.code !== "PGRST116") {
+        console.error("Error checking user profile:", profileError)
       }
 
+      // If the user doesn't have a profile, create one
+      if (!profile) {
+        try {
+          // Create a basic profile
+          await supabase.from("profiles").insert({
+            id: session.user.id,
+            email: session.user.email,
+            updated_at: new Date().toISOString(),
+          })
+
+          // Redirect to profile completion page
+          return NextResponse.redirect(new URL("/profile/complete", request.url))
+        } catch (error) {
+          console.error("Error creating user profile:", error)
+          // Continue to dashboard even if profile creation fails
+          return NextResponse.redirect(new URL(next, request.url))
+        }
+      }
+
+      // Check if the profile is complete
+      const isProfileComplete = Boolean(profile.first_name && profile.last_name && profile.email)
+
+      // If profile is incomplete, redirect to profile completion
+      if (!isProfileComplete) {
+        return NextResponse.redirect(new URL("/profile/complete", request.url))
+      }
+
+      // User has a complete profile, redirect to the next URL or dashboard
       return NextResponse.redirect(new URL(next, request.url))
     }
 
     // If the user is not confirmed, redirect to the verify email page
-    // Include the email to make verification easier
-    const email = session.user?.email
-    const verifyUrl = email ? `/auth/verify-email?email=${encodeURIComponent(email)}` : "/auth/verify-email"
-
-    return NextResponse.redirect(new URL(verifyUrl, request.url))
+    return NextResponse.redirect(new URL("/auth/verify-email", request.url))
   } catch (error) {
     console.error("Unexpected error in auth callback:", error)
     return NextResponse.redirect(new URL("/auth/sign-in?error=An unexpected error occurred", request.url))
