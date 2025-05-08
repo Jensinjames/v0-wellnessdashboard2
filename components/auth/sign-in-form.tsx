@@ -6,15 +6,16 @@ import Link from "next/link"
 import { z } from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Eye, EyeOff, Loader2, AlertTriangle } from "lucide-react"
+import { Eye, EyeOff, Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAuth } from "@/context/auth-context"
 import { createLogger } from "@/utils/logger"
 import { handleAuthError, isSchemaError, getTechnicalErrorDetails } from "@/utils/auth-error-handler"
+import { fixSchemaIssue } from "@/utils/schema-utils" // Import the schema fix utility
 
 // Create a dedicated logger for the sign-in form
 const logger = createLogger("SignInForm")
@@ -37,7 +38,7 @@ export function SignInForm() {
   const [isSchemaIssue, setIsSchemaIssue] = useState(false)
   const [technicalDetails, setTechnicalDetails] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
-  const [bypassSchemaCheck, setBypassSchemaCheck] = useState(false)
+  const [isFixingSchema, setIsFixingSchema] = useState(false)
   const MAX_RETRIES = 2
 
   // Get the redirect URL from the query string
@@ -49,7 +50,6 @@ export function SignInForm() {
     handleSubmit: hookFormSubmit,
     formState: { errors },
     setError: setFieldError,
-    getValues,
   } = useForm<FormData>({
     resolver: zodResolver(formSchema),
     defaultValues: {
@@ -58,20 +58,32 @@ export function SignInForm() {
     },
   })
 
-  // Handle bypass schema check
-  const handleBypassSchemaCheck = async () => {
-    setBypassSchemaCheck(true)
-    setError("Bypassing schema check. Attempting direct sign-in...")
+  // Handle schema fix
+  const handleSchemaFix = async () => {
+    try {
+      setIsFixingSchema(true)
+      setError("Attempting to fix database schema issue...")
 
-    // Get the current form values
-    const data = getValues()
+      // Call the schema fix utility
+      const result = await fixSchemaIssue()
 
-    // Attempt sign-in with bypass flag
-    await handleSubmit(data, true)
+      if (result.success) {
+        setError("Database schema fixed. Please try signing in again.")
+        setIsSchemaIssue(false)
+        setTechnicalDetails(null)
+      } else {
+        setError(`Schema fix failed: ${result.error || "Unknown error"}. Please contact support.`)
+      }
+    } catch (err) {
+      logger.error("Error fixing schema:", err)
+      setError("Failed to fix schema issue. Please contact support.")
+    } finally {
+      setIsFixingSchema(false)
+    }
   }
 
   // Handle form submission
-  const handleSubmit = async (data: FormData, bypass = false) => {
+  const handleSubmit = async (data: FormData) => {
     try {
       setIsLoading(true)
       setError(null)
@@ -82,7 +94,6 @@ export function SignInForm() {
       logger.info("Attempting sign-in", {
         emailProvided: !!data.email,
         passwordProvided: !!data.password,
-        bypassSchemaCheck: bypass,
       })
 
       // Call the signIn function from the auth context
@@ -92,7 +103,6 @@ export function SignInForm() {
           password: data.password,
         },
         redirectTo,
-        bypass, // Pass the bypass flag to the signIn function
       )
 
       // Handle field-specific errors
@@ -109,13 +119,16 @@ export function SignInForm() {
 
       // Handle general errors
       if (signInError) {
-        // Check if this is a schema error based on the flag we added
-        if (signInError.isSchemaError || isSchemaError(signInError)) {
+        // Process the error
+        const authError = handleAuthError(signInError, { email: data.email })
+
+        // Check if it's a schema error
+        if (isSchemaError(signInError)) {
           setIsSchemaIssue(true)
           setTechnicalDetails(getTechnicalErrorDetails(signInError))
 
-          // If we haven't exceeded max retries and we're not bypassing, try again after a delay
-          if (retryCount < MAX_RETRIES && !bypass) {
+          // If we haven't exceeded max retries, try again after a delay
+          if (retryCount < MAX_RETRIES) {
             setRetryCount((prev) => prev + 1)
             setError("Database connection issue. Retrying automatically...")
 
@@ -128,14 +141,10 @@ export function SignInForm() {
             ) // Exponential backoff
 
             return
-          } else if (!bypass) {
-            setError("Database schema issue detected. Please try the bypass option.")
           }
-        } else {
-          // Process other types of errors
-          const authError = handleAuthError(signInError, { email: data.email })
-          setError(authError.message)
         }
+
+        setError(authError.message)
       }
     } catch (err) {
       logger.error("Unexpected error during sign-in:", err)
@@ -157,7 +166,7 @@ export function SignInForm() {
             autoCapitalize="none"
             autoComplete="email"
             autoCorrect="off"
-            disabled={isLoading}
+            disabled={isLoading || isFixingSchema}
             {...register("email")}
           />
           {errors.email && <p className="text-sm text-red-500">{errors.email.message}</p>}
@@ -175,7 +184,7 @@ export function SignInForm() {
               type={showPassword ? "text" : "password"}
               placeholder="••••••••"
               autoComplete="current-password"
-              disabled={isLoading}
+              disabled={isLoading || isFixingSchema}
               {...register("password")}
             />
             <Button
@@ -184,7 +193,7 @@ export function SignInForm() {
               size="sm"
               className="absolute right-2 top-1/2 -translate-y-1/2 px-2"
               onClick={() => setShowPassword(!showPassword)}
-              disabled={isLoading}
+              disabled={isLoading || isFixingSchema}
             >
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
@@ -194,12 +203,11 @@ export function SignInForm() {
         </div>
 
         {error && (
-          <Alert variant={isSchemaIssue ? "warning" : "destructive"}>
-            {isSchemaIssue && <AlertTriangle className="h-4 w-4" />}
-            <AlertTitle>{isSchemaIssue ? "Database Configuration Issue" : "Error"}</AlertTitle>
+          <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>
             {isSchemaIssue && (
               <div className="mt-2">
+                <p className="text-sm font-medium">This appears to be a database configuration issue.</p>
                 <p className="text-xs mt-1">Error code: SCHEMA-001</p>
                 {technicalDetails && (
                   <details className="mt-2">
@@ -207,30 +215,29 @@ export function SignInForm() {
                     <pre className="text-xs mt-1 p-2 bg-gray-100 rounded overflow-x-auto">{technicalDetails}</pre>
                   </details>
                 )}
-                <div className="flex flex-col sm:flex-row gap-2 mt-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    size="sm"
-                    onClick={handleBypassSchemaCheck}
-                    disabled={isLoading || bypassSchemaCheck}
-                  >
-                    {bypassSchemaCheck ? (
-                      <>
-                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                        Bypassing...
-                      </>
-                    ) : (
-                      "Bypass Schema Check"
-                    )}
-                  </Button>
-                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={handleSchemaFix}
+                  disabled={isFixingSchema}
+                >
+                  {isFixingSchema ? (
+                    <>
+                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                      Fixing Schema...
+                    </>
+                  ) : (
+                    "Fix Schema Issue"
+                  )}
+                </Button>
               </div>
             )}
           </Alert>
         )}
 
-        <Button type="submit" className="w-full" disabled={isLoading}>
+        <Button type="submit" className="w-full" disabled={isLoading || isFixingSchema}>
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

@@ -27,7 +27,6 @@ interface AuthContextType {
   signIn: (
     credentials: { email: string; password: string },
     redirectPath?: string,
-    bypassSchemaCheck?: boolean,
   ) => Promise<{
     error: Error | null
     fieldErrors?: { email?: string; password?: string }
@@ -231,11 +230,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const signIn = async (
-    credentials: { email: string; password: string },
-    redirectPath?: string,
-    bypassSchemaCheck?: boolean,
-  ) => {
+  const signIn = async (credentials: { email: string; password: string }, redirectPath?: string) => {
     try {
       // Enhanced validation with detailed logging
       if (!credentials || typeof credentials !== "object") {
@@ -282,104 +277,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      authLogger.info("Attempting sign in", {
-        email: sanitizedEmail,
-        bypassSchemaCheck: !!bypassSchemaCheck,
-      })
+      authLogger.info("Attempting sign in", { email: sanitizedEmail })
 
       // Get the Supabase client using our consolidated implementation
       const supabase = getSupabaseClient()
 
-      // If bypassing schema checks, use a direct approach that skips problematic operations
-      if (bypassSchemaCheck) {
-        authLogger.info("Using direct sign-in approach (bypassing schema checks)")
-
-        try {
-          // Use a more direct approach to sign in
-          const { data, error } = await supabase.auth.signInWithPassword({
-            email: sanitizedEmail,
-            password: credentials.password,
-            options: {
-              // Add options to minimize database operations
-              data: {
-                bypass_schema_checks: true,
-              },
-            },
-          })
-
-          if (error) {
-            // If there's still an error, log it but try to continue with session retrieval
-            authLogger.warn("Error in direct sign-in:", error)
-
-            // Try to get the session directly
-            const sessionResult = await supabase.auth.getSession()
-
-            if (sessionResult.data?.session) {
-              // We have a session despite the error, so we can proceed
-              setSession(sessionResult.data.session)
-              setUser(sessionResult.data.session.user)
-
-              // Handle redirect
-              if (!redirectInProgressRef.current && redirectPath) {
-                redirectInProgressRef.current = true
-                setTimeout(() => {
-                  router.push(redirectPath || "/dashboard")
-                  redirectInProgressRef.current = false
-                }, 100)
-              }
-
-              return { error: null }
-            }
-
-            // If we couldn't get a session, return the original error
-            return { error }
-          }
-
-          // If sign-in was successful, update state and redirect
-          if (data?.session) {
-            setSession(data.session)
-            setUser(data.user)
-
-            // Handle redirect
-            if (!redirectInProgressRef.current && redirectPath) {
-              redirectInProgressRef.current = true
-              setTimeout(() => {
-                router.push(redirectPath || "/dashboard")
-                redirectInProgressRef.current = false
-              }, 100)
-            }
-
-            return { error: null }
-          }
-
-          return { error: new Error("Authentication failed: No session data returned") }
-        } catch (directError) {
-          authLogger.error("Exception in direct sign-in:", directError)
-          return { error: directError instanceof Error ? directError : new Error(String(directError)) }
-        }
-      }
-
-      // Standard sign-in approach (not bypassing schema checks)
+      // Attempt sign-in with validated credentials
       const { data, error } = await supabase.auth.signInWithPassword({
         email: sanitizedEmail,
         password: credentials.password,
       })
 
       if (error) {
-        // Check if this is a schema error
-        if (
-          error.message &&
-          (error.message.includes('relation "user_changes_log" does not exist') ||
-            error.message.includes("Database error granting user"))
-        ) {
-          authLogger.warn("Schema error detected during sign-in:", error)
-
-          // Return the error with a specific flag to indicate it's a schema error
-          return {
-            error: Object.assign(error, { isSchemaError: true }),
-          }
-        }
-
         authLogger.error("Sign in error:", { error, email: sanitizedEmail })
         return { error }
       }

@@ -4,7 +4,6 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@supabase/supabase-js"
 import { createLogger } from "@/utils/logger"
-import { REQUIRED_TABLES, getTableCreationSQL, getMinimalTableSchema, type RequiredTable } from "@/utils/schema-check"
 
 // Create a dedicated logger for schema operations
 const logger = createLogger("SchemaFixAPI")
@@ -17,9 +16,6 @@ export async function POST(request: Request) {
     if (!body.action || body.action !== "fix_schema") {
       return NextResponse.json({ error: "Invalid action" }, { status: 400 })
     }
-
-    // Get tables to fix
-    const tablesToFix = body.tables || REQUIRED_TABLES
 
     // Create Supabase admin client
     if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
@@ -34,114 +30,91 @@ export async function POST(request: Request) {
       },
     })
 
-    // Results tracking
-    const results: Record<string, { success: boolean; message: string }> = {}
+    // Check if user_changes_log table exists
+    const { data: tableExists, error: checkError } = await supabase
+      .from("information_schema.tables")
+      .select("table_name")
+      .eq("table_name", "user_changes_log")
+      .limit(1)
 
-    // Try to create each table
-    for (const tableName of tablesToFix) {
-      logger.info(`Attempting to create table: ${tableName}`)
+    if (checkError) {
+      logger.error("Error checking if table exists:", checkError)
+      return NextResponse.json({ error: "Failed to check table existence" }, { status: 500 })
+    }
 
-      try {
-        // First check if the table already exists
-        const { error: checkError } = await supabase.from(tableName).select("*").limit(1)
+    // If table doesn't exist, create it
+    if (!tableExists || tableExists.length === 0) {
+      logger.info("Creating user_changes_log table")
 
-        // If there's no error, the table already exists
-        if (!checkError) {
-          logger.info(`Table ${tableName} already exists`)
-          results[tableName] = {
-            success: true,
-            message: "Table already exists",
-          }
-          continue
-        }
+      // Create the table
+      const { error: createError } = await supabase.rpc("create_user_changes_log_table")
 
-        // Try to create the table using SQL
-        // This is the preferred method but requires SQL execution privileges
-        try {
-          const tableSchema = getTableCreationSQL(tableName as RequiredTable)
+      if (createError) {
+        logger.error("Error creating table:", createError)
 
-          if (tableSchema) {
-            const { error: sqlError } = await supabase.rpc("execute_sql", {
-              sql_query: `CREATE TABLE IF NOT EXISTS ${tableName} (${tableSchema});`,
-            })
+        // Try direct SQL as fallback
+        const { error: sqlError } = await supabase.rpc("execute_system_sql", {
+          sql: `
+            CREATE TABLE IF NOT EXISTS user_changes_log (
+              id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+              user_id UUID NOT NULL REFERENCES auth.users(id),
+              changed_by UUID REFERENCES auth.users(id),
+              created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+              action VARCHAR(255) NOT NULL,
+              old_values JSONB,
+              new_values JSONB,
+              ip_address VARCHAR(255)
+            );
+            
+            -- Add indexes for performance
+            CREATE INDEX IF NOT EXISTS idx_user_changes_log_user_id ON user_changes_log(user_id);
+            CREATE INDEX IF NOT EXISTS idx_user_changes_log_created_at ON user_changes_log(created_at);
+            
+            -- Add RLS policies
+            ALTER TABLE user_changes_log ENABLE ROW LEVEL SECURITY;
+            
+            -- Only allow admins to view the logs
+            CREATE POLICY admin_all ON user_changes_log 
+              USING (auth.jwt() ->> 'role' = 'service_role');
+          `,
+        })
 
-            if (!sqlError) {
-              logger.info(`Successfully created table ${tableName} using SQL`)
-              results[tableName] = {
-                success: true,
-                message: "Created using SQL",
-              }
-              continue
-            }
-
-            logger.warn(`Failed to create table ${tableName} using SQL:`, sqlError)
-          }
-        } catch (sqlError) {
-          logger.warn(`Exception creating table ${tableName} using SQL:`, sqlError)
-        }
-
-        // Fallback: Try to create the table using REST API
-        try {
-          const minimalSchema = getMinimalTableSchema(tableName as RequiredTable)
-
-          const { error: insertError } = await supabase.from(tableName).insert([minimalSchema])
-
-          if (!insertError) {
-            logger.info(`Successfully created table ${tableName} using REST API`)
-            results[tableName] = {
-              success: true,
-              message: "Created using REST API",
-            }
-            continue
-          }
-
-          if (insertError.message.includes("already exists")) {
-            logger.info(`Table ${tableName} already exists (from insert error)`)
-            results[tableName] = {
-              success: true,
-              message: "Table already exists (from insert error)",
-            }
-            continue
-          }
-
-          logger.warn(`Failed to create table ${tableName} using REST API:`, insertError)
-          results[tableName] = {
-            success: false,
-            message: `Failed to create using REST API: ${insertError.message}`,
-          }
-        } catch (insertError) {
-          logger.warn(`Exception creating table ${tableName} using REST API:`, insertError)
-          results[tableName] = {
-            success: false,
-            message: `Exception creating using REST API: ${insertError instanceof Error ? insertError.message : "Unknown error"}`,
-          }
-        }
-      } catch (error) {
-        logger.error(`Error processing table ${tableName}:`, error)
-        results[tableName] = {
-          success: false,
-          message: `Error processing table: ${error instanceof Error ? error.message : "Unknown error"}`,
+        if (sqlError) {
+          logger.error("Error executing SQL:", sqlError)
+          return NextResponse.json({ error: "Failed to create table" }, { status: 500 })
         }
       }
     }
 
-    // Determine overall success
-    const allSuccess = Object.values(results).every((result) => result.success)
+    // Fix permissions for auth schema
+    logger.info("Fixing auth schema permissions")
+    const { error: permissionError } = await supabase.rpc("execute_system_sql", {
+      sql: `
+        -- Grant necessary permissions to authenticated users
+        GRANT USAGE ON SCHEMA auth TO authenticated;
+        GRANT SELECT ON auth.users TO authenticated;
+        
+        -- Ensure the postgres role has proper permissions
+        GRANT ALL ON SCHEMA auth TO postgres;
+        GRANT ALL ON ALL TABLES IN SCHEMA auth TO postgres;
+        GRANT ALL ON ALL SEQUENCES IN SCHEMA auth TO postgres;
+        GRANT ALL ON ALL FUNCTIONS IN SCHEMA auth TO postgres;
+      `,
+    })
 
+    if (permissionError) {
+      logger.error("Error fixing permissions:", permissionError)
+      return NextResponse.json({ error: "Failed to fix permissions" }, { status: 500 })
+    }
+
+    // Return success
     return NextResponse.json({
-      success: allSuccess,
-      message: allSuccess ? "All tables processed successfully" : "Some tables failed to process",
-      results,
+      success: true,
+      message: "Schema fixed successfully",
       timestamp: new Date().toISOString(),
     })
   } catch (error) {
     logger.error("Unexpected error in fix-schema API:", error)
-    return NextResponse.json(
-      {
-        error: "Internal server error",
-        message: error instanceof Error ? error.message : "Unknown error",
-      },
-      { status: 500 },
-    )
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

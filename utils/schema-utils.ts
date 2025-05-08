@@ -3,7 +3,6 @@
  * Provides functions to fix database schema issues
  */
 import { createLogger } from "@/utils/logger"
-import { getSupabaseClient } from "@/lib/supabase-client"
 
 // Create a dedicated logger for schema operations
 const logger = createLogger("SchemaUtils")
@@ -15,24 +14,6 @@ const logger = createLogger("SchemaUtils")
 export async function fixSchemaIssue(): Promise<{ success: boolean; error?: string }> {
   try {
     logger.info("Attempting to fix schema issues")
-
-    // Since we can't directly execute SQL via RPC, we'll use the API endpoint
-    return await callFixSchemaAPI()
-  } catch (error) {
-    logger.error("Error fixing schema:", error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    }
-  }
-}
-
-/**
- * Call the API endpoint to fix schema issues
- */
-async function callFixSchemaAPI(): Promise<{ success: boolean; error?: string }> {
-  try {
-    logger.info("Calling fix-schema API endpoint")
 
     // Call the API endpoint to fix schema issues
     const response = await fetch("/api/fix-schema", {
@@ -60,7 +41,7 @@ async function callFixSchemaAPI(): Promise<{ success: boolean; error?: string }>
 
     return { success: true }
   } catch (error) {
-    logger.error("Error calling fix-schema API:", error)
+    logger.error("Error fixing schema:", error)
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
@@ -70,36 +51,19 @@ async function callFixSchemaAPI(): Promise<{ success: boolean; error?: string }>
 
 /**
  * Check if a table exists in the database
- * Uses a safer approach that doesn't rely on information_schema
  */
 export async function checkTableExists(tableName: string): Promise<boolean> {
   try {
-    const supabase = getSupabaseClient()
+    const response = await fetch(`/api/check-table?table=${encodeURIComponent(tableName)}`)
 
-    // Use a safer approach to check if table exists
-    try {
-      // Try to select 0 rows from the table - if it doesn't exist, it will error
-      const { error } = await supabase.from(tableName).select("*").limit(0)
-
-      // If there's no error, the table exists
-      if (!error) {
-        return true
-      }
-
-      // Check if the error is because the table doesn't exist
-      if (error.message && error.message.includes("relation") && error.message.includes("does not exist")) {
-        return false
-      }
-
-      // For other errors, log and assume table doesn't exist to be safe
-      logger.error(`Error checking if table ${tableName} exists:`, error)
-      return false
-    } catch (error) {
-      logger.error(`Exception checking if table ${tableName} exists:`, error)
+    if (!response.ok) {
       return false
     }
+
+    const data = await response.json()
+    return data.exists
   } catch (error) {
-    logger.error(`Error in checkTableExists:`, error)
+    logger.error(`Error checking if table ${tableName} exists:`, error)
     return false
   }
 }

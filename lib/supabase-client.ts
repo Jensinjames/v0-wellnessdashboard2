@@ -5,10 +5,6 @@
 
 import { createBrowserClient } from "@supabase/ssr"
 import type { Database } from "@/types/database"
-import { createLogger } from "@/utils/logger"
-
-// Create a dedicated logger for Supabase client operations
-const logger = createLogger("SupabaseClient")
 
 // Track client instances to prevent duplicates
 let supabaseClient: ReturnType<typeof createBrowserClient<Database>> | null = null
@@ -25,12 +21,11 @@ export function getSupabase() {
     try {
       // Check if required environment variables are available
       if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-        logger.error("Missing Supabase environment variables")
+        console.error("Missing Supabase environment variables")
         throw new Error("Supabase configuration is missing. Please check your environment variables.")
       }
 
       // Create a new client if one doesn't exist
-      logger.info("Creating new Supabase client instance")
       supabaseClient = createBrowserClient<Database>(
         process.env.NEXT_PUBLIC_SUPABASE_URL,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
@@ -57,15 +52,11 @@ export function getSupabase() {
       lastInitTime = Date.now()
 
       if (debugMode) {
-        logger.info("Supabase client created successfully")
+        console.log("Supabase client created successfully")
       }
     } catch (error) {
-      logger.error("Error initializing Supabase client:", error)
+      console.error("Error initializing Supabase client:", error)
       throw error
-    }
-  } else {
-    if (debugMode) {
-      logger.info("Reusing existing Supabase client instance")
     }
   }
 
@@ -77,13 +68,10 @@ export const getSupabaseClient = getSupabase
 
 // Reset the client (useful for testing or when auth state changes)
 export function resetSupabaseClient() {
-  if (supabaseClient) {
-    logger.info("Resetting Supabase client")
-    supabaseClient = null
-    lastResetTime = Date.now()
-    if (debugMode) {
-      logger.info("Supabase client reset")
-    }
+  supabaseClient = null
+  lastResetTime = Date.now()
+  if (debugMode) {
+    console.log("Supabase client reset")
   }
 }
 
@@ -98,7 +86,7 @@ export function monitorGoTrueClientInstances(intervalMs = 10000): () => void {
   const intervalId = setInterval(() => {
     // Simple check - we don't need complex monitoring for now
     if (supabaseClient) {
-      logger.info("Supabase client is initialized")
+      console.log("Supabase client is initialized")
     }
   }, intervalMs)
 
@@ -111,19 +99,14 @@ export function monitorGoTrueClientInstances(intervalMs = 10000): () => void {
 // Get the current auth state
 export async function getCurrentSession() {
   const supabase = getSupabase()
-  try {
-    const { data, error } = await supabase.auth.getSession()
+  const { data, error } = await supabase.auth.getSession()
 
-    if (error) {
-      logger.error("Error getting session:", error)
-      return { session: null, error }
-    }
-
-    return { session: data.session, error: null }
-  } catch (sessionError) {
-    logger.error("Exception getting session:", sessionError)
-    return { session: null, error: sessionError instanceof Error ? sessionError : new Error(String(sessionError)) }
+  if (error) {
+    console.error("Error getting session:", error)
+    return { session: null, error }
   }
+
+  return { session: data.session, error: null }
 }
 
 // Get the current user
@@ -133,7 +116,7 @@ export async function getCurrentUser() {
     const { data, error } = await supabase.auth.getUser()
 
     if (error) {
-      logger.error("Error getting user:", error)
+      console.error("Error getting user:", error)
       return { user: null, error }
     }
 
@@ -143,7 +126,7 @@ export async function getCurrentUser() {
 
     return { user: data.user, error: null }
   } catch (error) {
-    logger.error("Unexpected error getting user:", error)
+    console.error("Unexpected error getting user:", error)
     return { user: null, error }
   }
 }
@@ -162,21 +145,16 @@ export async function checkSupabaseConnection(): Promise<boolean> {
     }
 
     // Simple health check query
-    try {
-      const { error } = await supabaseClient.from("profiles").select("count").limit(1)
+    const { error } = await supabaseClient.from("profiles").select("count").limit(1)
 
-      if (error) {
-        logger.error("Supabase connection test error:", error.message)
-        return false
-      }
-
-      return true
-    } catch (queryError) {
-      logger.error("Exception in Supabase connection test:", queryError)
+    if (error) {
+      console.error("Supabase connection test error:", error.message)
       return false
     }
+
+    return true
   } catch (error: any) {
-    logger.error("Supabase connection test exception:", error.message || "Unknown error")
+    console.error("Supabase connection test exception:", error.message || "Unknown error")
     return false
   }
 }
@@ -193,7 +171,7 @@ export function setDebugMode(enabled: boolean): void {
   debugMode = enabled
   if (typeof window !== "undefined") {
     localStorage.setItem("supabase_debug", enabled ? "true" : "false")
-    logger.info(`Supabase client debug mode ${enabled ? "enabled" : "disabled"}`)
+    console.log(`Supabase client debug mode ${enabled ? "enabled" : "disabled"}`)
   }
 }
 
@@ -215,7 +193,7 @@ export function getConnectionHealth() {
  * Cleanup any orphaned Supabase client instances
  */
 export function cleanupOrphanedClients(): void {
-  logger.info("Cleaning up orphaned Supabase client instances")
+  console.log("Cleaning up orphaned Supabase client instances")
 
   // Reset the client
   supabaseClient = null
@@ -229,5 +207,5 @@ export function cleanupOrphanedClients(): void {
     }
   }
 
-  logger.info("Orphaned clients cleanup complete")
+  console.log("Orphaned clients cleanup complete")
 }
