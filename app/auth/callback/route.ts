@@ -25,9 +25,7 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Create a new supabase server client
-    const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const supabase = createRouteHandlerClient({ cookies })
 
     // Exchange the code for a session
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
@@ -42,50 +40,10 @@ export async function GET(request: NextRequest) {
     // Get the user's session
     const {
       data: { session },
-      error: sessionError,
     } = await supabase.auth.getSession()
 
-    if (sessionError) {
-      console.error("Error getting session after code exchange:", sessionError)
-      return NextResponse.redirect(
-        new URL(`/auth/sign-in?error=${encodeURIComponent(sessionError.message)}`, request.url),
-      )
-    }
-
-    // If no session was created, redirect to sign-in
-    if (!session) {
-      console.warn("No session created after code exchange")
-      return NextResponse.redirect(new URL("/auth/sign-in?error=Failed to create session", request.url))
-    }
-
-    // Check if the user's email is confirmed
-    if (session.user?.email_confirmed_at) {
-      // If the user is confirmed, check if they have a profile
-      const { data: profile, error: profileError } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", session.user.id)
-        .single()
-
-      if (profileError && profileError.code !== "PGRST116") {
-        console.error("Error checking user profile:", profileError)
-      }
-
-      // If the user doesn't have a profile, create one
-      if (!profile) {
-        // Redirect to profile completion page
-        return NextResponse.redirect(new URL("/profile/complete", request.url))
-      }
-
-      // Check if the profile is complete
-      const isProfileComplete = Boolean(profile.first_name && profile.last_name && profile.email)
-
-      // If profile is incomplete, redirect to profile completion
-      if (!isProfileComplete) {
-        return NextResponse.redirect(new URL("/profile/complete", request.url))
-      }
-
-      // User has a complete profile, redirect to the next URL or dashboard
+    // If the user is confirmed, redirect to the dashboard or the next URL
+    if (session?.user?.email_confirmed_at) {
       return NextResponse.redirect(new URL(next, request.url))
     }
 

@@ -1,104 +1,68 @@
 /**
- * Authentication Validation Utilities
- * Functions for validating authentication credentials
+ * Validates that a value is a non-empty string
  */
+export function isValidString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0
+}
 
-// Validate email and password
+/**
+ * Validates email format
+ */
+export function isValidEmail(email: unknown): boolean {
+  if (!isValidString(email)) return false
+
+  // RFC 5322 compliant email regex
+  const emailRegex =
+    /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
+  return emailRegex.test(email.trim())
+}
+
+/**
+ * Validates password strength
+ */
+export function isValidPassword(password: unknown): boolean {
+  if (!isValidString(password)) return false
+
+  // Minimum 8 characters
+  return password.length >= 8
+}
+
+/**
+ * Validates authentication credentials
+ */
 export function validateAuthCredentials(
-  email: string,
-  password: string,
-): { valid: boolean; errors: { email?: string; password?: string } } {
+  email: unknown,
+  password: unknown,
+): {
+  valid: boolean
+  errors: { email?: string; password?: string }
+} {
   const errors: { email?: string; password?: string } = {}
-  let valid = true
 
   // Validate email
-  if (!email || typeof email !== "string") {
-    errors.email = "Email is required"
-    valid = false
+  if (!isValidString(email)) {
+    errors.email = "Email must be a non-empty string"
   } else if (!isValidEmail(email)) {
-    errors.email = "Please enter a valid email address"
-    valid = false
+    errors.email = "Invalid email format"
   }
 
   // Validate password
-  if (!password || typeof password !== "string") {
-    errors.password = "Password is required"
-    valid = false
-  } else if (password.length < 8) {
+  if (!isValidString(password)) {
+    errors.password = "Password must be a non-empty string"
+  } else if (!isValidPassword(password)) {
     errors.password = "Password must be at least 8 characters"
-    valid = false
   }
 
-  return { valid, errors }
-}
-
-// Sanitize email
-export function sanitizeEmail(email: string): string | null {
-  if (!email || typeof email !== "string") {
-    return null
-  }
-
-  // Trim whitespace
-  const trimmed = email.trim().toLowerCase()
-
-  // Basic email validation
-  if (!isValidEmail(trimmed)) {
-    return null
-  }
-
-  return trimmed
-}
-
-// Check if email is valid
-export function isValidEmail(email: string): boolean {
-  // Basic email regex
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-  return emailRegex.test(email)
-}
-
-// Validate password strength
-export function validatePasswordStrength(password: string): { valid: boolean; score: number; feedback: string } {
-  if (!password || typeof password !== "string") {
-    return { valid: false, score: 0, feedback: "Password is required" }
-  }
-
-  let score = 0
-  let feedback = ""
-
-  // Length check
-  if (password.length < 8) {
-    feedback = "Password must be at least 8 characters"
-    return { valid: false, score, feedback }
-  } else {
-    score += 1
-  }
-
-  // Complexity checks
-  if (/[A-Z]/.test(password)) score += 1
-  if (/[a-z]/.test(password)) score += 1
-  if (/[0-9]/.test(password)) score += 1
-  if (/[^A-Za-z0-9]/.test(password)) score += 1
-
-  // Determine feedback based on score
-  if (score < 3) {
-    feedback = "Weak password. Consider adding uppercase letters, numbers, or special characters."
-    return { valid: true, score, feedback }
-  } else if (score < 5) {
-    feedback = "Good password strength."
-    return { valid: true, score, feedback }
-  } else {
-    feedback = "Strong password!"
-    return { valid: true, score, feedback }
+  return {
+    valid: Object.keys(errors).length === 0,
+    errors,
   }
 }
 
-// Validate password confirmation
-export function validatePasswordConfirmation(
-  password: string,
-  confirmPassword: string,
-): { valid: boolean; error: string | null } {
-  if (password !== confirmPassword) {
-    return { valid: false, error: "Passwords do not match" }
-  }
-  return { valid: true, error: null }
+/**
+ * Sanitizes email input
+ */
+export function sanitizeEmail(email: unknown): string {
+  if (!isValidString(email)) return ""
+  return email.trim().toLowerCase()
 }

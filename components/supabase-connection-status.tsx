@@ -8,14 +8,12 @@ import { Progress } from "@/components/ui/progress"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { getConnectionHealth, checkSupabaseConnection, resetSupabaseClient } from "@/lib/supabase-client"
 import { RefreshCw, Database, Wifi, WifiOff, AlertTriangle, CheckCircle2 } from "lucide-react"
-import { useSupabaseSingleton } from "@/hooks/use-supabase-singleton"
 
 export function SupabaseConnectionStatus() {
   const [connectionHealth, setConnectionHealth] = useState(getConnectionHealth())
   const [isChecking, setIsChecking] = useState(false)
   const [lastCheck, setLastCheck] = useState<number | null>(null)
   const [showDetails, setShowDetails] = useState(false)
-  const supabase = useSupabaseSingleton()
 
   // Update connection health periodically
   useEffect(() => {

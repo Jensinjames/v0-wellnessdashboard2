@@ -1,15 +1,16 @@
 "use client"
 
 import type React from "react"
+
 import { useState, useEffect } from "react"
-import { useSearchParams } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { useAuth } from "@/context/auth-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertTriangle, Mail } from "lucide-react"
+import { Info, AlertTriangle, Mail } from "lucide-react"
 
 export function SignInForm() {
   const [email, setEmail] = useState("")
@@ -17,9 +18,11 @@ export function SignInForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
+  const [mockSignIn, setMockSignIn] = useState(false)
   const [isEmailVerificationError, setIsEmailVerificationError] = useState(false)
-  const [redirectPath, setRedirectPath] = useState<string | undefined>(undefined)
+  const [redirectPath, setRedirectPath] = useState("/dashboard")
   const { signIn } = useAuth()
+  const router = useRouter()
   const searchParams = useSearchParams()
 
   // Use effect to safely access search params after mount
@@ -28,12 +31,6 @@ export function SignInForm() {
       const redirectTo = searchParams.get("redirectTo")
       if (redirectTo) {
         setRedirectPath(redirectTo)
-      }
-
-      // Check for error parameter from callback
-      const errorParam = searchParams.get("error")
-      if (errorParam) {
-        setError(decodeURIComponent(errorParam))
       }
     }
   }, [searchParams])
@@ -52,11 +49,12 @@ export function SignInForm() {
     setIsLoading(true)
     setError(null)
     setFieldErrors({})
+    setMockSignIn(false)
     setIsEmailVerificationError(false)
 
     try {
       // Pass credentials as a single object with the correct structure
-      const result = await signIn({ email, password }, redirectPath)
+      const result = await signIn({ email, password })
 
       if (result.fieldErrors) {
         setFieldErrors(result.fieldErrors)
@@ -79,11 +77,21 @@ export function SignInForm() {
         return
       }
 
+      if (result.mockSignIn) {
+        setMockSignIn(true)
+        // Wait a moment before redirecting to simulate the sign-in process
+        setTimeout(() => {
+          router.push(redirectPath)
+        }, 2000)
+        return
+      }
+
       // If we get here, sign-in was successful
-      // The redirect will be handled by the auth context
+      router.push(redirectPath)
     } catch (err: any) {
       console.error("Unexpected error during sign-in:", err)
       setError(err.message || "An unexpected error occurred")
+    } finally {
       setIsLoading(false)
     }
   }
@@ -128,6 +136,16 @@ export function SignInForm() {
         </Alert>
       )}
 
+      {mockSignIn && (
+        <Alert className="mb-4" role="status" aria-live="polite">
+          <Info className="h-4 w-4" aria-hidden="true" />
+          <AlertTitle>Demo Mode</AlertTitle>
+          <AlertDescription>
+            You're being signed in with demo credentials. You'll be redirected to the dashboard shortly.
+          </AlertDescription>
+        </Alert>
+      )}
+
       <div className="space-y-2">
         <Label htmlFor="email" id="email-label">
           Email
@@ -138,7 +156,7 @@ export function SignInForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          disabled={isLoading}
+          disabled={isLoading || mockSignIn}
           aria-labelledby="email-label"
           aria-required="true"
           autoComplete="email"
@@ -172,7 +190,7 @@ export function SignInForm() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          disabled={isLoading}
+          disabled={isLoading || mockSignIn}
           aria-labelledby="password-label"
           aria-required="true"
           autoComplete="current-password"
@@ -187,8 +205,14 @@ export function SignInForm() {
         )}
       </div>
 
-      <Button type="submit" className="w-full" disabled={isLoading} aria-busy={isLoading} aria-live="polite">
-        {isLoading ? "Signing in..." : "Sign in"}
+      <Button
+        type="submit"
+        className="w-full"
+        disabled={isLoading || mockSignIn}
+        aria-busy={isLoading}
+        aria-live="polite"
+      >
+        {isLoading ? "Signing in..." : mockSignIn ? "Redirecting..." : "Sign in"}
       </Button>
 
       <div className="text-center text-sm">
