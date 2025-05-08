@@ -7,7 +7,7 @@ import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import type { CookieOptions } from "@supabase/ssr"
 import type { Database } from "@/types/database"
-import { serverEnv, validateEnv } from "@/lib/env"
+import { getSupabaseCredentials } from "@/lib/env"
 
 // Connection health tracking for server
 let lastServerConnectionAttempt = 0
@@ -23,9 +23,20 @@ export function createServerSupabaseClient(
 ) {
   const cookieStore = cookies()
 
+  // Get Supabase credentials
+  const { supabaseUrl, supabaseKey } = getSupabaseCredentials()
+
   // Validate environment variables
-  if (!validateEnv()) {
-    throw new Error("Missing required environment variables for Supabase server client")
+  if (!supabaseUrl || !supabaseKey) {
+    console.error("Missing Supabase credentials:", {
+      hasUrl: !!supabaseUrl,
+      hasKey: !!supabaseKey,
+    })
+    throw new Error(
+      "Your project's URL and Key are required to create a Supabase client!\n\n" +
+        "Check your Supabase project's API settings to find these values\n\n" +
+        "https://supabase.com/dashboard/project/_/settings/api",
+    )
   }
 
   // Calculate timeout with exponential backoff if we've had failed attempts recently
@@ -49,7 +60,7 @@ export function createServerSupabaseClient(
       ? Math.min(SERVER_CONNECTION_BACKOFF_BASE * Math.pow(2, serverConnectionAttempts - 1), 15000)
       : 10000)
 
-  return createServerClient<Database>(serverEnv.SUPABASE_URL!, serverEnv.SUPABASE_ANON_KEY!, {
+  return createServerClient<Database>(supabaseUrl, supabaseKey, {
     cookies: {
       get(name: string) {
         return cookieStore.get(name)?.value
@@ -174,15 +185,26 @@ export function createClient(
     timeout?: number
   } = {},
 ) {
+  // Get Supabase credentials
+  const { supabaseUrl, supabaseKey } = getSupabaseCredentials()
+
   // Validate environment variables
-  if (!validateEnv()) {
-    throw new Error("Missing required environment variables for Supabase server client")
+  if (!supabaseUrl || !supabaseKey) {
+    console.error("Missing Supabase credentials:", {
+      hasUrl: !!supabaseUrl,
+      hasKey: !!supabaseKey,
+    })
+    throw new Error(
+      "Your project's URL and Key are required to create a Supabase client!\n\n" +
+        "Check your Supabase project's API settings to find these values\n\n" +
+        "https://supabase.com/dashboard/project/_/settings/api",
+    )
   }
 
   // Calculate timeout with exponential backoff
   const timeout = options.timeout || 10000
 
-  return createServerClient<Database>(serverEnv.SUPABASE_URL!, serverEnv.SUPABASE_ANON_KEY!, {
+  return createServerClient<Database>(supabaseUrl, supabaseKey, {
     cookies: {
       get(name: string) {
         return cookieGetter(name)
