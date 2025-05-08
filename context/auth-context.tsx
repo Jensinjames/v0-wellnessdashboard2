@@ -1,61 +1,65 @@
+/**
+ * Authentication Context
+ * Provides authentication state and methods throughout the application
+ */
 "use client"
 
+import { useRouter } from "next/navigation"
 import type React from "react"
 import { createContext, useContext, useEffect, useState, useRef } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import { useRouter } from "next/navigation"
 import type { User, Session } from "@supabase/supabase-js"
 import type { UserProfile, ProfileFormData } from "@/types/auth"
 import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
 import { validateAuthCredentials, sanitizeEmail } from "@/utils/auth-validation"
-import { resetSupabaseClient } from "@/lib/supabase-client"
+import { useToast } from "@/hooks/use-toast"
+import { clientEnv } from "@/lib/env"
+import {
+  getSupabase,
+  addAuthListener,
+  signInWithEmail,
+  signUpWithEmail,
+  signOut as supabaseSignOut,
+  resetPassword as supabaseResetPassword,
+  updatePassword as supabaseUpdatePassword,
+} from "@/lib/supabase-manager"
+
+// Debug mode flag
+const DEBUG_MODE = clientEnv.DEBUG_MODE === "true"
+
+// Internal debug logging function
+function debugLog(...args: any[]): void {
+  if (DEBUG_MODE) {
+    console.log("[Auth Context]", ...args)
+  }
+}
 
 interface AuthContextType {
   user: User | null
   profile: UserProfile | null
   session: Session | null
   isLoading: boolean
-  signIn: (credentials: { email: string; password: string }) => Promise<{
+  signIn: (
+    credentials: { email: string; password: string },
+    redirectPath?: string,
+  ) => Promise<{
     error: Error | null
-    mockSignIn?: boolean
     fieldErrors?: { email?: string; password?: string }
   }>
   signUp: (credentials: { email: string; password: string }) => Promise<{
     error: Error | null
-    mockSignUp?: boolean
-    networkIssue?: boolean
     fieldErrors?: { email?: string; password?: string }
     emailVerificationSent?: boolean
   }>
-  signOut: () => Promise<void>
+  signOut: (redirectPath?: string) => Promise<void>
   refreshProfile: () => Promise<UserProfile | null>
   updateProfile: (data: ProfileFormData) => Promise<{ success: boolean; error: Error | null }>
   resetPassword: (email: string) => Promise<{ success: boolean; error: string | null }>
   updatePassword: (password: string) => Promise<{ success: boolean; error: string | null }>
-  getClientInfo: () => any
+  isProfileComplete: boolean
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
-
-// Debug mode flag
-let authDebugMode = process.env.NODE_ENV === "development"
-
-// Enable/disable debug logging
-export function setAuthDebugMode(enabled: boolean): void {
-  authDebugMode = enabled
-  if (typeof window !== "undefined") {
-    localStorage.setItem("auth_debug", enabled ? "true" : "false")
-  }
-  console.log(`Auth debug mode ${enabled ? "enabled" : "disabled"}`)
-}
-
-// Internal debug logging function
-function debugLog(...args: any[]): void {
-  if (authDebugMode) {
-    console.log("[Auth Context]", ...args)
-  }
-}
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
@@ -63,9 +67,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
-  const supabase = createClientComponentClient()
+  const { toast } = useToast()
   const isMounted = useRef(true)
   const isInitialized = useRef(false)
+  const redirectInProgressRef = useRef(false)
+
+  // Compute if profile is complete
+  const isProfileComplete = profile ? Boolean(profile.first_name && profile.last_name && profile.email) : false
 
   // Initialize auth state
   useEffect(() => {
@@ -75,6 +83,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const initializeAuth = async () => {
       try {
         debugLog("Initializing auth state")
+        setIsLoading(true)
+
+        // Get the Supabase client
+        const supabase = getSupabase()
+
         // Get session
         const {
           data: { session: initialSession },
@@ -93,95 +106,48 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setProfile(cachedProfile)
             setIsLoading(false)
           } else {
-            // Fetch profile with a slight delay to allow other components to initialize
-            setTimeout(async () => {
-              if (!isMounted.current) return
+            // Fetch profile
+            try {
+              debugLog("Fetching profile data")
+              const { profile: fetchedProfile, error } = await fetchProfileSafely(initialSession.user.id)
 
-              try {
-                debugLog("Fetching profile data")
-                const { profile: fetchedProfile, error } = await fetchProfileSafely(initialSession.user.id)
+              if (error) {
+                console.error("Error fetching profile:", error)
 
-                if (error) {
-                  console.error("Error fetching profile:", error)
+                // If no profile found, try to create one
+                if (initialSession.user.email) {
+                  debugLog("No profile found, creating one")
+                  const { profile: createdProfile, error: createError } = await createProfileSafely(
+                    initialSession.user.id,
+                    initialSession.user.email,
+                  )
 
-                  // If no profile found, try to create one
-                  if (initialSession.user.email) {
-                    debugLog("No profile found, creating one")
-                    const { profile: createdProfile, error: createError } = await createProfileSafely(
-                      initialSession.user.id,
-                      initialSession.user.email,
-                    )
-
-                    if (createError) {
-                      console.error("Error creating profile:", createError)
-                    } else if (createdProfile) {
-                      debugLog("Profile created successfully")
-                      setProfile(createdProfile)
-                      // Cache the profile
-                      setCacheItem(CACHE_KEYS.PROFILE(initialSession.user.id), createdProfile)
-                    }
+                  if (createError) {
+                    console.error("Error creating profile:", createError)
+                  } else if (createdProfile) {
+                    debugLog("Profile created successfully")
+                    setProfile(createdProfile)
+                    // Cache the profile
+                    setCacheItem(CACHE_KEYS.PROFILE(initialSession.user.id), createdProfile)
                   }
-                } else if (fetchedProfile) {
-                  debugLog("Profile fetched successfully")
-                  setProfile(fetchedProfile)
-                  // Cache the profile
-                  setCacheItem(CACHE_KEYS.PROFILE(initialSession.user.id), fetchedProfile)
                 }
-              } catch (err) {
-                console.error("Unexpected error in profile initialization:", err)
-              } finally {
-                if (isMounted.current) {
-                  setIsLoading(false)
-                }
+              } else if (fetchedProfile) {
+                debugLog("Profile fetched successfully")
+                setProfile(fetchedProfile)
+                // Cache the profile
+                setCacheItem(CACHE_KEYS.PROFILE(initialSession.user.id), fetchedProfile)
               }
-            }, 500)
+            } catch (err) {
+              console.error("Unexpected error in profile initialization:", err)
+            } finally {
+              if (isMounted.current) {
+                setIsLoading(false)
+              }
+            }
           }
         } else {
           debugLog("User is not authenticated")
           setIsLoading(false)
-        }
-
-        // Set up auth state change listener
-        const {
-          data: { subscription },
-        } = supabase.auth.onAuthStateChange((event, newSession) => {
-          debugLog("Auth state change:", event)
-
-          if (event === "SIGNED_OUT") {
-            debugLog("User signed out, clearing state")
-            setUser(null)
-            setProfile(null)
-            setSession(null)
-            // Reset the client to ensure a clean state
-            resetSupabaseClient()
-          } else if (event === "SIGNED_IN" && newSession?.user) {
-            debugLog("User signed in, updating state")
-            setSession(newSession)
-            setUser(newSession.user)
-
-            // Fetch profile on sign in
-            fetchProfileSafely(newSession.user.id).then(({ profile, error }) => {
-              if (error) {
-                console.error("Error fetching profile after sign in:", error)
-              } else if (profile) {
-                debugLog("Profile fetched after sign in")
-                setProfile(profile)
-                // Cache the profile
-                setCacheItem(CACHE_KEYS.PROFILE(newSession.user.id), profile)
-              }
-            })
-          } else if (event === "TOKEN_REFRESHED" && newSession) {
-            debugLog("Token refreshed, updating session")
-            setSession(newSession)
-          }
-
-          // Refresh the page to update server components
-          router.refresh()
-        })
-
-        return () => {
-          debugLog("Cleaning up auth state change listener")
-          subscription.unsubscribe()
         }
       } catch (error) {
         console.error("Error initializing auth:", error)
@@ -194,7 +160,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       isMounted.current = false
     }
-  }, [supabase, router])
+  }, [])
+
+  // Set up auth state change listener
+  useEffect(() => {
+    const removeListener = addAuthListener((event, payload) => {
+      if (!isMounted.current) return
+
+      debugLog("Auth state change:", event)
+
+      if (event === "SIGNED_OUT") {
+        debugLog("User signed out, clearing state")
+        setUser(null)
+        setProfile(null)
+        setSession(null)
+      } else if (event === "SIGNED_IN" && payload.session?.user) {
+        debugLog("User signed in, updating state")
+        setSession(payload.session)
+        setUser(payload.session.user)
+
+        // Fetch profile on sign in
+        fetchProfileSafely(payload.session.user.id).then(({ profile, error }) => {
+          if (error) {
+            console.error("Error fetching profile after sign in:", error)
+          } else if (profile) {
+            debugLog("Profile fetched after sign in")
+            setProfile(profile)
+            // Cache the profile
+            setCacheItem(CACHE_KEYS.PROFILE(payload.session.user.id), profile)
+          }
+        })
+      } else if (event === "TOKEN_REFRESHED" && payload.session) {
+        debugLog("Token refreshed, updating session")
+        setSession(payload.session)
+      }
+
+      // Refresh the page to update server components
+      router.refresh()
+    })
+
+    return () => {
+      removeListener()
+    }
+  }, [router])
 
   // Update profile function that uses server action instead of direct database access
   const updateProfile = async (data: ProfileFormData): Promise<{ success: boolean; error: Error | null }> => {
@@ -235,7 +243,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           updated_at: new Date().toISOString(),
         }
         setProfile(updatedProfile)
-        // Update cache
+        // Cache the profile
         setCacheItem(CACHE_KEYS.PROFILE(user.id), updatedProfile)
       }
 
@@ -249,7 +257,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const signIn = async (credentials: { email: string; password: string }) => {
+  const signIn = async (credentials: { email: string; password: string }, redirectPath?: string) => {
     debugLog("Sign in attempt", { email: credentials.email })
     try {
       // Strictly validate email and password as strings
@@ -273,14 +281,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: sanitizedEmail,
-        password: credentials.password,
-      })
+      const { data, error } = await signInWithEmail(sanitizedEmail, credentials.password)
 
       if (error) {
-        debugLog("Sign-in error from Supabase", error)
-        return { error: new Error(error.message) }
+        debugLog("Sign-in error:", error)
+        return { error }
       }
 
       // Explicitly update the state with the new session data
@@ -298,6 +303,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             // Cache the profile
             setCacheItem(CACHE_KEYS.PROFILE(data.user.id), fetchedProfile)
           }
+        }
+
+        // Handle redirect after successful sign-in
+        if (!redirectInProgressRef.current && redirectPath) {
+          redirectInProgressRef.current = true
+
+          // Redirect to the specified path or dashboard
+          setTimeout(() => {
+            router.push(redirectPath || "/dashboard")
+            redirectInProgressRef.current = false
+          }, 100)
         }
       }
 
@@ -332,17 +348,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const { data, error } = await supabase.auth.signUp({
-        email: sanitizedEmail,
-        password: credentials.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
+      const { data, error } = await signUpWithEmail(sanitizedEmail, credentials.password)
 
       if (error) {
-        debugLog("Sign-up error from Supabase", error)
-        return { error: new Error(error.message) }
+        debugLog("Sign-up error:", error)
+        return { error }
       }
 
       // Explicitly update the state with the new session data if available
@@ -350,9 +360,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (data?.user) {
         debugLog("Sign-up successful, confirmation required")
         // User created but confirmation required, no session yet
-        // We could update UI to show confirmation required message
       }
 
+      // Explicitly indicate that an email verification was sent
       return { error: null, emailVerificationSent: true }
     } catch (error: any) {
       console.error("Sign up error:", error)
@@ -360,21 +370,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const signOut = async () => {
+  const signOut = async (redirectPath = "/auth/sign-in") => {
     debugLog("Sign out attempt")
     try {
-      await supabase.auth.signOut()
+      const { error } = await supabaseSignOut()
+
+      if (error) {
+        console.error("Sign out error:", error)
+      }
 
       // Explicitly clear state
       setUser(null)
       setProfile(null)
       setSession(null)
 
-      // Reset the client to ensure a clean state
-      resetSupabaseClient()
-
       // Redirect to sign-in page
-      router.push("/auth/sign-in")
+      if (!redirectInProgressRef.current) {
+        redirectInProgressRef.current = true
+        setTimeout(() => {
+          router.push(redirectPath)
+          redirectInProgressRef.current = false
+        }, 100)
+      }
 
       debugLog("Sign out successful")
     } catch (error) {
@@ -383,15 +400,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(null)
       setProfile(null)
       setSession(null)
-      router.push("/auth/sign-in")
+
+      if (!redirectInProgressRef.current) {
+        redirectInProgressRef.current = true
+        setTimeout(() => {
+          router.push(redirectPath)
+          redirectInProgressRef.current = false
+        }, 100)
+      }
     }
   }
 
   const resetPassword = async (email: string): Promise<{ success: boolean; error: string | null }> => {
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${window.location.origin}/auth/reset-password`,
-      })
+      const { error } = await supabaseResetPassword(email)
 
       if (error) {
         return { success: false, error: error.message }
@@ -406,9 +428,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updatePassword = async (password: string): Promise<{ success: boolean; error: string | null }> => {
     try {
-      const { error } = await supabase.auth.updateUser({
-        password,
-      })
+      const { error } = await supabaseUpdatePassword(password)
 
       if (error) {
         return { success: false, error: error.message }
@@ -431,6 +451,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       debugLog("Refreshing profile for user", user.id)
       setIsLoading(true)
 
+      const supabase = getSupabase()
       const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).single()
 
       if (error) {
@@ -455,22 +476,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const getClientInfo = () => {
-    return {
-      hasClient: true,
-      isInitializing: false,
-      hasInitPromise: false,
-      clientInstanceCount: 1,
-      goTrueClientCount: 1,
-      clientInitTime: Date.now(),
-      lastResetTime: Date.now(),
-      storageKeys:
-        typeof window !== "undefined"
-          ? Object.keys(localStorage).filter((key) => key.includes("supabase") || key.includes("auth"))
-          : [],
-    }
-  }
-
   const value = {
     user,
     profile,
@@ -483,16 +488,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     updateProfile,
     resetPassword,
     updatePassword,
-    getClientInfo,
+    isProfileComplete,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }
 
+// Export the useAuth hook
 export function useAuth() {
   const context = useContext(AuthContext)
   if (context === undefined) {
     throw new Error("useAuth must be used within an AuthProvider")
   }
   return context
+}
+
+// Debug mode control function
+export function setAuthDebugMode(enabled: boolean): void {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("auth_debug", enabled ? "true" : "false")
+    console.log(`Auth context debug mode ${enabled ? "enabled" : "disabled"}`)
+  }
 }

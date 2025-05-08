@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button"
 import { getConnectionHealth, resetSupabaseClient } from "@/lib/supabase-client"
 import { enableDebugMode, disableDebugMode } from "@/lib/version"
 import { isDebugMode } from "@/lib/env-utils"
+import { RefreshCw, AlertCircle } from "lucide-react"
+import { Link } from "next/link"
 
 export function DebugPanel() {
   const [isOpen, setIsOpen] = useState(false)
@@ -125,6 +127,25 @@ export function DebugPanel() {
               <Button size="sm" variant="outline" onClick={resetClient}>
                 Reset Client
               </Button>
+            </div>
+          </div>
+          <div className="space-y-2">
+            <h3 className="font-medium">Debug Links</h3>
+            <div className="space-y-2">
+              <Link
+                href="/debug/token-refresh"
+                className="flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-muted"
+              >
+                <RefreshCw className="h-4 w-4" />
+                <span>Token Refresh</span>
+              </Link>
+              <Link
+                href="/debug/error-testing"
+                className="flex items-center gap-2 px-3 py-2 text-sm rounded-md hover:bg-muted"
+              >
+                <AlertCircle className="h-4 w-4" />
+                Error Testing
+              </Link>
             </div>
           </div>
         </div>
