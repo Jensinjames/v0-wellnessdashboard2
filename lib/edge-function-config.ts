@@ -1,8 +1,7 @@
-"/**
+/**
  * Edge Function Configuration
- * Provides utilities
-for interacting with Supabase Edge
-Functions * /
+ * Provides utilities for interacting with Supabase Edge Functions
+ */
 
 import { createLogger } from "@/utils/logger"
 
@@ -37,4 +36,3 @@ export const isEdgeFunctionAvailable = async (url: string): Promise<boolean> => 
     return false
   }
 }
-"

@@ -1,184 +1,214 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { RadialChart } from "./radial-chart"
-import { PieChart } from "./pie-chart"
-import { CategoryCard } from "./category-card"
-import { DailyMetrics } from "./daily-metrics"
-import { TrackingHistory } from "./tracking-history"
-import { categoryColors, calculatePercentage } from "@/utils/chart-utils"
+import { useEffect, useState } from "react"
 import { useAuth } from "@/context/auth-context"
-import { setCacheItem, getCacheItem, CACHE_KEYS, CACHE_EXPIRY } from "@/lib/cache-utils"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Info } from "lucide-react"
-
-// Mock data for the dashboard
-const mockData = {
-  totalHours: 11.875,
-  dailyCap: 7,
-  categories: [
-    {
-      name: "Faith",
-      value: 0.63, // 38 minutes
-      goal_hours: 1.5, // 1.5 hours
-      color: categoryColors.faith.primary,
-      description: "Daily prayer, meditation, scripture study",
-    },
-    {
-      name: "Life",
-      value: 1.2, // 1.2 hours
-      goal_hours: 4, // 4 hours
-      color: categoryColors.life.primary,
-      description: "Family time, social activities, hobbies",
-    },
-    {
-      name: "Work",
-      value: 2, // 2 hours
-      goal_hours: 7, // 7 hours
-      color: categoryColors.work.primary,
-      description: "Professional development, career goals",
-    },
-    {
-      name: "Health",
-      value: 8.05, // 8.05 hours
-      goal_hours: 19, // 19 hours
-      color: categoryColors.health.primary,
-      description: "Exercise, sleep, nutrition, mental health",
-    },
-  ],
-  dailyMetrics: {
-    score: 65,
-    motivation: 70,
-    sleep: 7.5,
-  },
-  trackingHistory: [
-    {
-      id: "1",
-      category: "Health",
-      duration: 7,
-      timestamp: new Date().toISOString(),
-      color: categoryColors.health.primary,
-    },
-    {
-      id: "2",
-      category: "Faith",
-      duration: 0.5,
-      timestamp: new Date(Date.now() - 3600000).toISOString(),
-      color: categoryColors.faith.primary,
-    },
-    {
-      id: "3",
-      category: "Work",
-      duration: 2,
-      timestamp: new Date(Date.now() - 7200000).toISOString(),
-      color: categoryColors.work.primary,
-    },
-  ],
-}
+import { getDashboardData } from "@/utils/supabase-functions"
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { PieChart } from "@/components/dashboard/pie-chart"
+import { RadialChart } from "@/components/dashboard/radial-chart"
+import { TrackingHistory } from "@/components/dashboard/tracking-history"
+import { AddEntryForm } from "@/components/dashboard/add-entry-form"
+import { LoadingAnimation } from "@/components/ui/loading-animation"
 
 export function WellnessDashboard() {
-  const [chartType, setChartType] = useState<"radial" | "pie">("radial")
-  const [dashboardData, setDashboardData] = useState(mockData)
-  const [isCached, setIsCached] = useState(false)
   const { user } = useAuth()
+  const [dashboardData, setDashboardData] = useState<any>(null)
+  const [loading, setLoading] = useState(true)
+  const [timeframe, setTimeframe] = useState<"day" | "week" | "month" | "year">("week")
+  const [error, setError] = useState<string | null>(null)
 
-  // Load cached dashboard data on mount
   useEffect(() => {
-    if (user) {
-      const cacheKey = CACHE_KEYS.DASHBOARD_DATA(user.id)
-      const cachedData = getCacheItem<typeof mockData>(cacheKey)
+    if (!user) {
+      setLoading(false)
+      return
+    }
 
-      if (cachedData) {
-        setDashboardData(cachedData)
-        setIsCached(true)
-      } else {
-        // Cache the initial mock data
-        setCacheItem(cacheKey, mockData, CACHE_EXPIRY.SHORT)
+    const fetchData = async () => {
+      setLoading(true)
+      setError(null)
+
+      try {
+        const { success, data, error } = await getDashboardData(user.id, timeframe)
+
+        if (!success || !data) {
+          throw new Error(error || "Failed to fetch dashboard data")
+        }
+
+        setDashboardData(data)
+      } catch (err: any) {
+        console.error("Error fetching dashboard data:", err)
+        setError(err.message || "Failed to fetch dashboard data")
+      } finally {
+        setLoading(false)
       }
     }
-  }, [user])
 
-  // Update the categories array to use goal_hours instead of goal
-  const categoriesWithPercentage = dashboardData.categories.map((category) => ({
-    ...category,
-    percentage: calculatePercentage(category.value, category.goal_hours),
-  }))
+    fetchData()
+  }, [user, timeframe])
 
-  // Calculate total percentage
-  const totalPercentage = calculatePercentage(
-    dashboardData.totalHours,
-    dashboardData.categories.reduce((sum, cat) => sum + cat.goal_hours, 0),
-  )
+  const handleTimeframeChange = (value: string) => {
+    setTimeframe(value as "day" | "week" | "month" | "year")
+  }
 
-  return (
-    <div className="space-y-4">
-      {isCached && (
-        <Alert className="mb-4 bg-blue-50 text-blue-800 border-blue-200">
-          <Info className="h-4 w-4" />
-          <AlertTitle>Cached Data</AlertTitle>
-          <AlertDescription>You're viewing cached dashboard data for better performance.</AlertDescription>
-        </Alert>
-      )}
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center h-64">
+        <LoadingAnimation />
+      </div>
+    )
+  }
 
+  if (error) {
+    return (
       <Card>
-        <CardHeader>
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <CardTitle>Wellness Distribution</CardTitle>
-              <CardDescription>{totalPercentage}% Goal Completion for today</CardDescription>
-            </div>
-            <div className="mt-2 sm:mt-0">
-              <Tabs defaultValue={chartType} onValueChange={(v) => setChartType(v as "radial" | "pie")}>
-                <TabsList>
-                  <TabsTrigger value="pie">Pie Chart</TabsTrigger>
-                  <TabsTrigger value="radial">Radial View</TabsTrigger>
-                </TabsList>
-              </Tabs>
-            </div>
-          </div>
-        </CardHeader>
-        <CardContent>
-          <div className="mb-4 text-center text-sm text-muted-foreground">
-            <p>
-              {dashboardData.totalHours} hours logged today
-              {dashboardData.totalHours > dashboardData.dailyCap && (
-                <span className="ml-1 text-amber-500">(exceeds daily cap of {dashboardData.dailyCap} hours)</span>
-              )}
-            </p>
-          </div>
-
-          {chartType === "radial" ? (
-            <RadialChart data={dashboardData.categories} size={280} />
-          ) : (
-            <PieChart data={dashboardData.categories} size={280} />
-          )}
-
-          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {categoriesWithPercentage.map((category) => (
-              <CategoryCard
-                key={category.name}
-                title={category.name}
-                actual={category.value}
-                goal={category.goal_hours}
-                percentage={category.percentage}
-                color={category.color}
-                description={category.description}
-              />
-            ))}
+        <CardContent className="pt-6">
+          <div className="text-center text-red-500">
+            <p>Error loading dashboard: {error}</p>
+            <button
+              onClick={() => window.location.reload()}
+              className="mt-4 px-4 py-2 bg-primary text-white rounded-md"
+            >
+              Retry
+            </button>
           </div>
         </CardContent>
       </Card>
+    )
+  }
 
-      <div className="grid gap-4 md:grid-cols-2">
-        <DailyMetrics
-          score={dashboardData.dailyMetrics.score}
-          motivation={dashboardData.dailyMetrics.motivation}
-          sleep={dashboardData.dailyMetrics.sleep}
-        />
-        <TrackingHistory entries={dashboardData.trackingHistory} />
-      </div>
+  if (!dashboardData) {
+    return (
+      <Card>
+        <CardContent className="pt-6">
+          <div className="text-center">
+            <p>No dashboard data available. Start tracking your wellness activities!</p>
+          </div>
+        </CardContent>
+      </Card>
+    )
+  }
+
+  const { entries, goals, categories, stats } = dashboardData
+
+  return (
+    <div className="space-y-4">
+      <Tabs defaultValue="week" onValueChange={handleTimeframeChange}>
+        <div className="flex justify-between items-center">
+          <h2 className="text-2xl font-bold">Wellness Dashboard</h2>
+          <TabsList>
+            <TabsTrigger value="day">Today</TabsTrigger>
+            <TabsTrigger value="week">Week</TabsTrigger>
+            <TabsTrigger value="month">Month</TabsTrigger>
+            <TabsTrigger value="year">Year</TabsTrigger>
+          </TabsList>
+        </div>
+
+        <TabsContent value="day" className="space-y-4">
+          <DashboardContent data={dashboardData} timeframe="day" />
+        </TabsContent>
+
+        <TabsContent value="week" className="space-y-4">
+          <DashboardContent data={dashboardData} timeframe="week" />
+        </TabsContent>
+
+        <TabsContent value="month" className="space-y-4">
+          <DashboardContent data={dashboardData} timeframe="month" />
+        </TabsContent>
+
+        <TabsContent value="year" className="space-y-4">
+          <DashboardContent data={dashboardData} timeframe="year" />
+        </TabsContent>
+      </Tabs>
     </div>
+  )
+}
+
+function DashboardContent({ data, timeframe }: { data: any; timeframe: string }) {
+  const { entries, goals, categories, stats } = data
+
+  return (
+    <>
+      {/* Summary Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">Total Entries</p>
+              <h3 className="text-3xl font-bold">{stats?.total_entries || 0}</h3>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">Total Hours</p>
+              <h3 className="text-3xl font-bold">{stats?.total_duration?.toFixed(1) || 0}</h3>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">Categories Tracked</p>
+              <h3 className="text-3xl font-bold">{stats?.categories_count || 0}</h3>
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="pt-6">
+            <div className="text-center">
+              <p className="text-sm text-muted-foreground">Goal Completion</p>
+              <h3 className="text-3xl font-bold">{stats?.completion_rate?.toFixed(0) || 0}%</h3>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Charts and Activity */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <Card className="md:col-span-1">
+          <CardHeader>
+            <CardTitle>Category Distribution</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <PieChart data={categories} entries={entries} />
+          </CardContent>
+        </Card>
+
+        <Card className="md:col-span-1">
+          <CardHeader>
+            <CardTitle>Goal Progress</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <RadialChart goals={goals} entries={entries} />
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* Recent Activity and Add Entry */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <Card className="md:col-span-2">
+          <CardHeader>
+            <CardTitle>Recent Activity</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <TrackingHistory entries={entries} categories={categories} />
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>Add Entry</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <AddEntryForm categories={categories} />
+          </CardContent>
+        </Card>
+      </div>
+    </>
   )
 }

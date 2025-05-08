@@ -55,7 +55,7 @@ export function useBatchedSupabase() {
 
   // Execute a function in a batch
   const executeBatched = useCallback(
-    <T>(executeFunction: () => Promise<T>, options: BatchOptions = {}): Promise<T> => {
+    <T,>(executeFunction: () => Promise<T>, options: BatchOptions = {}): Promise<T> => {
       return batcher.add(executeFunction, options)
     },
     [batcher],
@@ -63,10 +63,7 @@ export function useBatchedSupabase() {
 
   // Execute a Supabase query in a batch
   const executeBatchedQuery = useCallback(
-    async <T>(
-      queryFn: (supabase: any) => Promise<T>,
-      options: BatchOptions = {},
-    ): Promise<T> => {
+    async <T,>(queryFn: (supabase: any) => Promise<T>, options: BatchOptions = {}): Promise<T> => {
       return batcher.add(
         async () => {
           const { getSupabaseClient } = await import("@/lib/supabase-singleton")

@@ -70,6 +70,67 @@ module.exports = {
     "react/prop-types": "off", // We're using TypeScript for prop validation
     "react/react-in-jsx-scope": "off", // Not needed in Next.js
 
+    // JSX-specific rules to catch syntax issues
+    "react/jsx-no-undef": "error",
+    "react/jsx-uses-vars": "error",
+    "react/jsx-uses-react": "error",
+    "react/jsx-closing-bracket-location": ["error", "line-aligned"],
+    "react/jsx-closing-tag-location": "error",
+    "react/jsx-tag-spacing": [
+      "error",
+      {
+        closingSlash: "never",
+        beforeSelfClosing: "always",
+        afterOpening: "never",
+        beforeClosing: "never",
+      },
+    ],
+    "react/jsx-curly-brace-presence": ["error", { props: "never", children: "never" }],
+    "react/jsx-curly-spacing": ["error", { when: "never", children: true }],
+    "react/jsx-equals-spacing": ["error", "never"],
+    "react/jsx-first-prop-new-line": ["error", "multiline"],
+    "react/jsx-max-props-per-line": ["error", { maximum: 1, when: "multiline" }],
+    "react/jsx-no-duplicate-props": "error",
+    "react/jsx-pascal-case": "error",
+    "react/jsx-props-no-multi-spaces": "error",
+    "react/jsx-wrap-multilines": [
+      "error",
+      {
+        declaration: "parens-new-line",
+        assignment: "parens-new-line",
+        return: "parens-new-line",
+        arrow: "parens-new-line",
+        condition: "parens-new-line",
+        logical: "parens-new-line",
+        prop: "parens-new-line",
+      },
+    ],
+    "react/no-danger": "warn",
+    "react/no-deprecated": "error",
+    "react/no-direct-mutation-state": "error",
+    "react/no-typos": "error",
+    "react/no-unknown-property": "error",
+    "react/self-closing-comp": "error",
+    "react/style-prop-object": "error",
+    "react/void-dom-elements-no-children": "error",
+
+    // TypeScript in JSX specific rules
+    "@typescript-eslint/consistent-type-assertions": [
+      "error",
+      {
+        assertionStyle: "as",
+        objectLiteralTypeAssertions: "allow",
+      },
+    ],
+    "@typescript-eslint/naming-convention": [
+      "error",
+      {
+        selector: "typeParameter",
+        format: ["PascalCase"],
+        prefix: ["T"],
+      },
+    ],
+
     // Import rules
     "import/no-unresolved": "error",
     "import/named": "error",
@@ -104,6 +165,32 @@ module.exports = {
       files: ["pages/**/*.tsx", "pages/**/*.ts", "app/**/*.tsx", "app/**/*.ts"],
       rules: {
         "import/no-default-export": "off",
+      },
+    },
+    // Special rules for TypeScript in JSX files
+    {
+      files: ["**/*.tsx"],
+      rules: {
+        // These rules help catch issues with TypeScript generics in JSX
+        "@typescript-eslint/type-annotation-spacing": [
+          "error",
+          {
+            before: true,
+            after: true,
+            overrides: {
+              colon: {
+                before: false,
+                after: true,
+              },
+              arrow: {
+                before: true,
+                after: true,
+              },
+            },
+          },
+        ],
+        "no-unexpected-multiline": "error",
+        "@typescript-eslint/explicit-function-return-type": "off",
       },
     },
   ],
