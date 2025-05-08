@@ -14,6 +14,8 @@ let instanceCount = 0
 // Track client creation for debugging
 const clientCreationTimestamp = new Date().toISOString()
 const clientId = Math.random().toString(36).substring(2, 9)
+const lastInitTime = Date.now()
+const lastResetTime = 0
 
 /**
  * Get the Supabase client for client-side usage
@@ -54,6 +56,28 @@ export function getSupabaseClient(): SupabaseClient<Database> {
   }
 
   return supabaseClient
+}
+
+/**
+ * Create a Supabase client for server components or API routes
+ * Does not use singleton pattern as server components are stateless
+ */
+export function createServerSupabaseClient(): SupabaseClient<Database> {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error("Missing Supabase environment variables for server client")
+  }
+
+  return createClient<Database>(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+    global: {
+      headers: {
+        "x-application-name": "wellness-dashboard-server",
+      },
+    },
+  })
 }
 
 /**
