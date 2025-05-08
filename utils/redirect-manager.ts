@@ -44,6 +44,7 @@ export function validateRedirectUrl(url: string | null | undefined): string | nu
         }
       } catch (e) {
         // Invalid URL, ignore it
+        return null // Add explicit return for invalid URL case
       }
     }
 

@@ -51,6 +51,7 @@ export enum AuthErrorType {
 
   // Unknown errors
   UNKNOWN_ERROR = "unknown_error",
+  UNEXPECTED_AUTH_FAILURE = "unexpected_auth_failure",
 }
 
 // Auth error interface
@@ -276,6 +277,23 @@ export function parseAuthError(error: any, context?: Record<string, any>): AuthE
       category: AuthErrorCategory.SERVER,
       type: AuthErrorType.SERVER_ERROR,
       message: "A server error occurred. Please try again later.",
+      originalError: error,
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
+  // Handle unexpected authentication failures (500 errors)
+  if (
+    error?.__isAuthError &&
+    error?.name === "AuthApiError" &&
+    error?.status === 500 &&
+    error?.code === "unexpected_failure"
+  ) {
+    return {
+      category: AuthErrorCategory.SERVER,
+      type: AuthErrorType.UNEXPECTED_AUTH_FAILURE,
+      message: "The authentication service is temporarily unavailable. Please try again in a few moments.",
       originalError: error,
       timestamp: Date.now(),
       context,

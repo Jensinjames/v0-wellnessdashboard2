@@ -230,6 +230,56 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Helper function to retry authentication with exponential backoff
+  const retryAuthentication = async (email: string, password: string, attempt = 1, maxAttempts = 3): Promise<any> => {
+    try {
+      // Get the Supabase client
+      const supabase = getSupabaseClient()
+
+      // Attempt sign-in
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email,
+        password,
+      })
+
+      // If successful or it's not a 500 unexpected_failure, return the result
+      if (
+        !error ||
+        !(
+          error?.__isAuthError &&
+          error?.name === "AuthApiError" &&
+          error?.status === 500 &&
+          error?.code === "unexpected_failure"
+        )
+      ) {
+        return { data, error }
+      }
+
+      // If we've reached max attempts, return the error
+      if (attempt >= maxAttempts) {
+        authLogger.warn(`Authentication failed after ${maxAttempts} attempts`, { email })
+        return { data, error }
+      }
+
+      // Calculate backoff delay with jitter (100ms, 200ms, 400ms base times with jitter)
+      const delay = Math.floor(2 ** (attempt - 1) * 100 * (0.75 + Math.random() * 0.5))
+
+      // Log retry attempt
+      authLogger.info(`Retrying authentication (attempt ${attempt + 1}/${maxAttempts}) after ${delay}ms delay`, {
+        email,
+      })
+
+      // Wait for the backoff period
+      await new Promise((resolve) => setTimeout(resolve, delay))
+
+      // Retry with incremented attempt counter
+      return retryAuthentication(email, password, attempt + 1, maxAttempts)
+    } catch (error) {
+      authLogger.error("Error in retry mechanism:", error)
+      return { data: null, error }
+    }
+  }
+
   const signIn = async (credentials: { email: string; password: string }, redirectPath?: string) => {
     try {
       // Enhanced validation with detailed logging
@@ -282,11 +332,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Get the Supabase client using our consolidated implementation
       const supabase = getSupabaseClient()
 
-      // Attempt sign-in with validated credentials
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: sanitizedEmail,
-        password: credentials.password,
-      })
+      // Attempt sign-in with validated credentials and retry mechanism
+      const { data, error } = await retryAuthentication(sanitizedEmail, credentials.password)
 
       if (error) {
         authLogger.error("Sign in error:", { error, email: sanitizedEmail })

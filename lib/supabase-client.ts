@@ -17,7 +17,8 @@ let debugMode = false
 
 // Create and return a Supabase client for browser usage
 export function getSupabase() {
-  if (!supabaseClient) {
+  // Only create a new client if we're in the browser and don't already have one
+  if (!supabaseClient && typeof window !== "undefined") {
     try {
       // Check if required environment variables are available
       if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
@@ -68,10 +69,23 @@ export const getSupabaseClient = getSupabase
 
 // Reset the client (useful for testing or when auth state changes)
 export function resetSupabaseClient() {
-  supabaseClient = null
-  lastResetTime = Date.now()
-  if (debugMode) {
-    console.log("Supabase client reset")
+  if (supabaseClient) {
+    // Properly cleanup the client before resetting
+    try {
+      // Remove any auth listeners
+      const { data } = supabaseClient.auth.onAuthStateChange(() => {})
+      if (data && typeof data.subscription?.unsubscribe === "function") {
+        data.subscription.unsubscribe()
+      }
+    } catch (e) {
+      console.error("Error cleaning up Supabase client:", e)
+    }
+
+    supabaseClient = null
+    lastResetTime = Date.now()
+    if (debugMode) {
+      console.log("Supabase client reset")
+    }
   }
 }
 
@@ -99,6 +113,10 @@ export function monitorGoTrueClientInstances(intervalMs = 10000): () => void {
 // Get the current auth state
 export async function getCurrentSession() {
   const supabase = getSupabase()
+  if (!supabase) {
+    return { session: null, error: new Error("Supabase client not initialized") }
+  }
+
   const { data, error } = await supabase.auth.getSession()
 
   if (error) {
@@ -113,6 +131,10 @@ export async function getCurrentSession() {
 export async function getCurrentUser() {
   try {
     const supabase = getSupabase()
+    if (!supabase) {
+      return { user: null, error: new Error("Supabase client not initialized") }
+    }
+
     const { data, error } = await supabase.auth.getUser()
 
     if (error) {
@@ -135,7 +157,7 @@ export async function getCurrentUser() {
 export async function checkSupabaseConnection(): Promise<boolean> {
   try {
     // If we don't have a client yet, create one
-    if (!supabaseClient) {
+    if (!supabaseClient && typeof window !== "undefined") {
       getSupabase()
     }
 
@@ -196,7 +218,7 @@ export function cleanupOrphanedClients(): void {
   console.log("Cleaning up orphaned Supabase client instances")
 
   // Reset the client
-  supabaseClient = null
+  resetSupabaseClient()
 
   // Force garbage collection if possible
   if (typeof window !== "undefined" && (window as any).gc) {
