@@ -13,6 +13,7 @@ import { validateAuthCredentials, sanitizeEmail } from "@/utils/auth-validation"
 import { resetTokenManager } from "@/lib/token-manager"
 import { resetSupabaseClient, cleanupOrphanedClients } from "@/lib/supabase-client"
 import { isDebugMode } from "@/lib/env-utils"
+import { handleAuthError } from "@/utils/auth-error-handler"
 
 interface AuthContextType {
   user: User | null
@@ -36,6 +37,7 @@ interface AuthContextType {
   updateProfile: (data: ProfileFormData) => Promise<{ success: boolean; error: Error | null }>
   getClientInfo: () => any
   refreshSession: () => Promise<boolean>
+  resendVerificationEmail: (email: string) => Promise<{ success: boolean; error: Error | null }>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -69,6 +71,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isInitialized = useRef(false)
   const lastTokenRefresh = useRef<number>(0)
   const refreshInProgress = useRef<boolean>(false)
+  const sessionCheckInterval = useRef<NodeJS.Timeout | null>(null)
 
   // Initialize auth state
   useEffect(() => {
@@ -81,12 +84,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Get session
         const {
           data: { session: initialSession },
+          error: sessionError,
         } = await supabase.auth.getSession()
+
+        if (sessionError) {
+          console.error("Error getting session:", sessionError)
+          setIsLoading(false)
+          return
+        }
 
         if (initialSession?.user) {
           debugLog("User is authenticated, setting session and user")
           setSession(initialSession)
           setUser(initialSession.user)
+          lastTokenRefresh.current = Date.now()
 
           // Check cache first for profile data
           const cachedProfile = getCacheItem<UserProfile>(CACHE_KEYS.PROFILE(initialSession.user.id))
@@ -95,6 +106,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             debugLog("Using cached profile data")
             setProfile(cachedProfile)
             setIsLoading(false)
+
+            // Still fetch profile in background to ensure it's up to date
+            fetchProfileSafely(initialSession.user.id)
+              .then(({ profile: fetchedProfile }) => {
+                if (fetchedProfile && isMounted.current) {
+                  setProfile(fetchedProfile)
+                  setCacheItem(CACHE_KEYS.PROFILE(initialSession.user.id), fetchedProfile)
+                }
+              })
+              .catch((err) => {
+                console.error("Background profile fetch error:", err)
+              })
           } else {
             // Fetch profile with a slight delay to allow other components to initialize
             setTimeout(async () => {
@@ -159,10 +182,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             resetTokenManager()
             // Reset the client to ensure a clean state
             resetSupabaseClient()
+
+            // Clear any session check interval
+            if (sessionCheckInterval.current) {
+              clearInterval(sessionCheckInterval.current)
+              sessionCheckInterval.current = null
+            }
           } else if (event === "SIGNED_IN" && newSession?.user) {
             debugLog("User signed in, updating state")
             setSession(newSession)
             setUser(newSession.user)
+            lastTokenRefresh.current = Date.now()
 
             // Fetch profile on sign in
             fetchProfileSafely(newSession.user.id).then(({ profile, error }) => {
@@ -175,6 +205,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setCacheItem(CACHE_KEYS.PROFILE(newSession.user.id), profile)
               }
             })
+
+            // Set up session check interval
+            setupSessionCheck()
           } else if (event === "TOKEN_REFRESHED" && newSession) {
             debugLog("Token refreshed, updating session")
             setSession(newSession)
@@ -189,9 +222,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           router.refresh()
         })
 
+        // Set up session check interval if user is authenticated
+        if (initialSession?.user) {
+          setupSessionCheck()
+        }
+
         return () => {
           debugLog("Cleaning up auth state change listener")
           subscription.unsubscribe()
+
+          if (sessionCheckInterval.current) {
+            clearInterval(sessionCheckInterval.current)
+            sessionCheckInterval.current = null
+          }
         }
       } catch (error) {
         console.error("Error initializing auth:", error)
@@ -203,14 +246,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       isMounted.current = false
+
+      if (sessionCheckInterval.current) {
+        clearInterval(sessionCheckInterval.current)
+        sessionCheckInterval.current = null
+      }
     }
   }, [supabase, router])
+
+  // Set up periodic session check
+  const setupSessionCheck = useCallback(() => {
+    // Clear any existing interval
+    if (sessionCheckInterval.current) {
+      clearInterval(sessionCheckInterval.current)
+    }
+
+    // Check session every 5 minutes
+    sessionCheckInterval.current = setInterval(() => {
+      if (session) {
+        // Check if token is about to expire (within 10 minutes)
+        const expiresAt = session.expires_at ? session.expires_at * 1000 : 0
+        const now = Date.now()
+        const timeUntilExpiry = expiresAt - now
+
+        if (timeUntilExpiry < 600000) {
+          // Less than 10 minutes
+          debugLog("Session about to expire, refreshing")
+          refreshSession().catch((err) => {
+            console.error("Error refreshing session:", err)
+          })
+        }
+      }
+    }, 300000) // 5 minutes
+  }, [session])
 
   // Add cleanup on unmount
   useEffect(() => {
     return () => {
       // Clean up orphaned clients when the auth provider unmounts
       cleanupOrphanedClients(true)
+
+      if (sessionCheckInterval.current) {
+        clearInterval(sessionCheckInterval.current)
+        sessionCheckInterval.current = null
+      }
     }
   }, [])
 
@@ -228,7 +307,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         .from("profiles")
         .update({
           // Map the ProfileFormData to the actual database column names
-          // This is where we need to ensure the column names match
           first_name: data.first_name,
           last_name: data.last_name,
           full_name: `${data.first_name} ${data.last_name}`, // If your DB uses full_name
@@ -346,9 +424,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Cache the mock profile
         setCacheItem(CACHE_KEYS.PROFILE(mockUserId), mockProfile)
 
+        // Set up session check interval
+        setupSessionCheck()
+
         return { error: null, mockSignIn: true }
       } else {
         debugLog("Attempting real sign-in with Supabase")
+
+        // Clear any existing session first to prevent conflicts
+        try {
+          await supabase.auth.signOut({ scope: "local" })
+        } catch (signOutError) {
+          // Ignore errors during sign-out, just log them
+          console.warn("Error during pre-sign-in cleanup:", signOutError)
+        }
+
         // Use a properly structured object for signInWithPassword
         const { data, error } = await supabase.auth.signInWithPassword({
           email: sanitizedEmail,
@@ -373,6 +463,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               networkIssue: true,
             }
           }
+
+          // Check for database errors
+          if (
+            error.message?.includes("Database error") ||
+            error.message?.includes("database error") ||
+            error.message?.includes("db error")
+          ) {
+            // For database errors, suggest using demo mode
+            return {
+              error: new Error("Database error granting user. Please try again or use demo mode."),
+              mockSignIn: false,
+            }
+          }
+
           return { error: new Error(error.message), mockSignIn: false }
         }
 
@@ -383,15 +487,40 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(data.user)
           lastTokenRefresh.current = Date.now()
 
-          // Fetch and update the profile as well
-          if (data.user) {
-            const { profile: fetchedProfile } = await fetchProfileSafely(data.user.id)
-            if (fetchedProfile) {
-              debugLog("Profile fetched after sign-in")
-              setProfile(fetchedProfile)
-              // Cache the profile
-              setCacheItem(CACHE_KEYS.PROFILE(data.user.id), fetchedProfile)
+          // Set up session check interval
+          setupSessionCheck()
+
+          try {
+            // Fetch and update the profile as well
+            if (data.user) {
+              const { profile: fetchedProfile, error: profileError } = await fetchProfileSafely(data.user.id)
+
+              if (profileError) {
+                debugLog("Error fetching profile after sign-in:", profileError)
+                // Don't fail the sign-in if profile fetch fails
+                // We'll try to create a profile instead
+                if (data.user.email) {
+                  try {
+                    const { profile: createdProfile } = await createProfileSafely(data.user.id, data.user.email)
+                    if (createdProfile) {
+                      setProfile(createdProfile)
+                      setCacheItem(CACHE_KEYS.PROFILE(data.user.id), createdProfile)
+                    }
+                  } catch (createError) {
+                    console.error("Error creating profile after sign-in:", createError)
+                    // Still don't fail the sign-in
+                  }
+                }
+              } else if (fetchedProfile) {
+                debugLog("Profile fetched after sign-in")
+                setProfile(fetchedProfile)
+                // Cache the profile
+                setCacheItem(CACHE_KEYS.PROFILE(data.user.id), fetchedProfile)
+              }
             }
+          } catch (profileError) {
+            // Log but don't fail the sign-in if profile operations fail
+            console.error("Error during profile operations after sign-in:", profileError)
           }
         }
 
@@ -476,6 +605,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         // Cache the mock profile
         setCacheItem(CACHE_KEYS.PROFILE(mockUserId), mockProfile)
 
+        // Set up session check interval
+        setupSessionCheck()
+
         return { error: null, mockSignUp: true }
       } else {
         debugLog("Attempting real sign-up with Supabase")
@@ -526,6 +658,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setUser(data.user)
           lastTokenRefresh.current = Date.now()
 
+          // Set up session check interval
+          setupSessionCheck()
+
           // Create a profile for the new user
           if (data.user && data.user.email) {
             debugLog("Creating profile for new user")
@@ -550,6 +685,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     debugLog("Sign out attempt")
     try {
+      // Clear any session check interval
+      if (sessionCheckInterval.current) {
+        clearInterval(sessionCheckInterval.current)
+        sessionCheckInterval.current = null
+      }
+
       await supabase.auth.signOut()
 
       // Explicitly clear state
@@ -659,6 +800,41 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [session, supabase])
 
+  // Function to resend verification email
+  const resendVerificationEmail = async (email: string): Promise<{ success: boolean; error: Error | null }> => {
+    if (!email) {
+      return { success: false, error: new Error("Email is required") }
+    }
+
+    try {
+      debugLog("Resending verification email to", email)
+
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
+
+      if (error) {
+        debugLog("Error resending verification email:", error)
+        return {
+          success: false,
+          error: new Error(handleAuthError(error, "email-verification")),
+        }
+      }
+
+      return { success: true, error: null }
+    } catch (error) {
+      console.error("Unexpected error resending verification email:", error)
+      return {
+        success: false,
+        error: error instanceof Error ? error : new Error(String(error)),
+      }
+    }
+  }
+
   const getClientInfo = () => {
     return {
       hasClient: true,
@@ -688,6 +864,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     updateProfile,
     getClientInfo,
     refreshSession,
+    resendVerificationEmail,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
