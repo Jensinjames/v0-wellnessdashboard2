@@ -17,6 +17,16 @@ export function handleAuthError(error: any, operation: string): string {
     return "Server returned an invalid response. Please try again later."
   }
 
+  // Handle email verification errors
+  if (
+    error.message?.includes("Email not confirmed") ||
+    error.message?.includes("verify your email") ||
+    error.message?.includes("not confirmed") ||
+    error.message?.includes("verification")
+  ) {
+    return "Please verify your email before signing in. Check your inbox for a verification link or request a new one."
+  }
+
   // Handle database errors - specifically the "Database error granting user" error
   if (
     error.message?.includes("Database error granting user") ||
@@ -24,7 +34,7 @@ export function handleAuthError(error: any, operation: string): string {
     error.message?.includes("Database error") ||
     error.message?.includes("db error")
   ) {
-    if (operation === "sign-in") {
+    if (operation === "sign-in" || operation === "sign-up") {
       return "We encountered a temporary database issue. Please try again or use demo mode."
     }
     return "Database connection issue. Please try again in a moment."
@@ -35,11 +45,6 @@ export function handleAuthError(error: any, operation: string): string {
     if (operation === "sign-in") {
       return "Invalid email or password. Please try again or use demo mode."
     }
-  }
-
-  // Handle email verification errors
-  if (error.message?.includes("Email not confirmed") || error.message?.includes("verify your email")) {
-    return "Please verify your email before signing in. Check your inbox for a verification link."
   }
 
   // Handle rate limiting
@@ -80,6 +85,18 @@ export function handleAuthError(error: any, operation: string): string {
   // Handle account lockout
   if (error.message?.includes("locked") || error.message?.includes("too many attempts")) {
     return "Your account has been temporarily locked due to too many failed attempts. Please try again later."
+  }
+
+  // Handle email sending issues
+  if (
+    error.message?.includes("send email") ||
+    error.message?.includes("sending email") ||
+    error.message?.includes("email delivery")
+  ) {
+    if (operation === "sign-up") {
+      return "We couldn't send the verification email. Please try again or contact support."
+    }
+    return "Email delivery issue. Please try again later."
   }
 
   // Default error message

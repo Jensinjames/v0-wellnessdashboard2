@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Info, AlertTriangle, Mail, Loader2, Database } from "lucide-react"
+import { Info, AlertTriangle, Mail, Loader2, Database, RefreshCw, Wifi } from "lucide-react"
 import { handleAuthError } from "@/utils/auth-error-handler"
 
 export function SignInForm() {
@@ -22,9 +22,10 @@ export function SignInForm() {
   const [mockSignIn, setMockSignIn] = useState(false)
   const [isEmailVerificationError, setIsEmailVerificationError] = useState(false)
   const [networkError, setNetworkError] = useState(false)
+  const [isCheckingNetwork, setIsCheckingNetwork] = useState(false)
   const [databaseError, setDatabaseError] = useState(false)
   const [redirectPath, setRedirectPath] = useState("/dashboard")
-  const { signIn, refreshSession } = useAuth()
+  const { signIn, refreshSession, resendVerificationEmail } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
   const [signInAttempts, setSignInAttempts] = useState(0)
@@ -35,6 +36,12 @@ export function SignInForm() {
       const redirectTo = searchParams.get("redirectTo")
       if (redirectTo) {
         setRedirectPath(redirectTo)
+      }
+
+      // Check for error parameter from callback
+      const errorParam = searchParams.get("error")
+      if (errorParam) {
+        setError(decodeURIComponent(errorParam))
       }
     }
   }, [searchParams])
@@ -64,6 +71,55 @@ export function SignInForm() {
     attemptSessionRefresh()
   }, [refreshSession])
 
+  const handleNetworkCheck = async () => {
+    setIsCheckingNetwork(true)
+
+    try {
+      // Try to fetch a known endpoint
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), 5000)
+
+      const endpoints = [
+        process.env.NEXT_PUBLIC_SUPABASE_URL || "",
+        "https://www.google.com",
+        "https://www.cloudflare.com",
+      ]
+
+      let connected = false
+
+      for (const endpoint of endpoints) {
+        try {
+          await fetch(endpoint, {
+            method: "HEAD",
+            signal: controller.signal,
+            mode: "no-cors",
+            cache: "no-store",
+          })
+          connected = true
+          break
+        } catch (err) {
+          // Try next endpoint
+          console.warn(`Failed to connect to ${endpoint}`)
+        }
+      }
+
+      clearTimeout(timeoutId)
+
+      if (connected) {
+        setNetworkError(false)
+        setError(null)
+      } else {
+        setNetworkError(true)
+        setError("Still unable to connect. Please check your internet connection.")
+      }
+    } catch (err) {
+      setNetworkError(true)
+      setError("Network check failed. Please try again later.")
+    } finally {
+      setIsCheckingNetwork(false)
+    }
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
@@ -74,6 +130,14 @@ export function SignInForm() {
     setNetworkError(false)
     setDatabaseError(false)
     setSignInAttempts((prev) => prev + 1)
+
+    // Check if we're online before attempting sign-in
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      setNetworkError(true)
+      setError("You appear to be offline. Sign-in requires an internet connection.")
+      setIsLoading(false)
+      return
+    }
 
     try {
       // Trim the email to prevent whitespace issues
@@ -112,7 +176,11 @@ export function SignInForm() {
           setError(handleAuthError(result.error, "sign-in"))
         }
         // Check if it's an email verification error
-        else if (errorMessage.includes("verify your email") || errorMessage.includes("Email not confirmed")) {
+        else if (
+          errorMessage.includes("verify your email") ||
+          errorMessage.includes("Email not confirmed") ||
+          errorMessage.includes("not confirmed")
+        ) {
           setIsEmailVerificationError(true)
           setError(errorMessage)
         }
@@ -162,15 +230,17 @@ export function SignInForm() {
     try {
       setIsLoading(true)
 
-      // This would be implemented in your auth context
-      // For now, we'll just show a success message
-      setTimeout(() => {
+      const result = await resendVerificationEmail(email.trim())
+
+      if (result.error) {
+        setError(`Failed to resend verification email: ${result.error.message}`)
+      } else {
         alert(`If an account exists with ${email}, a verification email has been sent.`)
-        setIsLoading(false)
-      }, 1000)
-    } catch (err) {
+      }
+    } catch (err: any) {
       console.error("Error sending verification email:", err)
       setError("Failed to send verification email. Please try again.")
+    } finally {
       setIsLoading(false)
     }
   }
@@ -203,17 +273,52 @@ export function SignInForm() {
           <AlertTriangle className="h-4 w-4" aria-hidden="true" />
           <AlertTitle>Connection Issue</AlertTitle>
           <AlertDescription>
-            {error ||
-              "Unable to connect to the authentication service. Please check your internet connection and try again."}
-            <div className="mt-2">
+            <p className="mb-2">
+              {error || "Unable to connect to the authentication service. Please check your internet connection."}
+            </p>
+            <div className="flex gap-2 mt-2">
               <Button
                 type="button"
                 variant="outline"
                 size="sm"
-                className="bg-orange-100 border-orange-200 text-orange-800 hover:bg-orange-200"
-                onClick={handleDemoSignIn}
+                onClick={handleNetworkCheck}
+                disabled={isCheckingNetwork}
+                className="bg-orange-100/50"
+                aria-label={isCheckingNetwork ? "Checking network connection" : "Check network connection"}
               >
-                Try Demo Mode
+                {isCheckingNetwork ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                    <span>Checking...</span>
+                  </>
+                ) : (
+                  <>
+                    <Wifi className="h-4 w-4 mr-2" aria-hidden="true" />
+                    <span>Check Connection</span>
+                  </>
+                )}
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => window.location.reload()}
+                className="bg-orange-100/50"
+                aria-label="Reload page"
+              >
+                <RefreshCw className="h-4 w-4 mr-2" aria-hidden="true" />
+                <span>Reload Page</span>
+              </Button>
+            </div>
+            <div className="mt-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDemoSignIn}
+                className="bg-orange-100/50 border-orange-200"
+              >
+                Use Demo Mode
               </Button>
             </div>
           </AlertDescription>

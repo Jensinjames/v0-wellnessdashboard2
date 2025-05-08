@@ -198,6 +198,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             fetchProfileSafely(newSession.user.id).then(({ profile, error }) => {
               if (error) {
                 console.error("Error fetching profile after sign in:", error)
+
+                // If no profile found, try to create one
+                if (newSession.user.email) {
+                  createProfileSafely(newSession.user.id, newSession.user.email)
+                    .then(({ profile: createdProfile }) => {
+                      if (createdProfile) {
+                        debugLog("Profile created after sign in")
+                        setProfile(createdProfile)
+                        // Cache the profile
+                        setCacheItem(CACHE_KEYS.PROFILE(newSession.user.id), createdProfile)
+                      }
+                    })
+                    .catch((err) => {
+                      console.error("Error creating profile after sign in:", err)
+                    })
+                }
               } else if (profile) {
                 debugLog("Profile fetched after sign in")
                 setProfile(profile)
@@ -216,6 +232,28 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             debugLog("User updated, updating session and user")
             setSession(newSession)
             setUser(newSession.user)
+          } else if (event === "PASSWORD_RECOVERY" && newSession) {
+            debugLog("Password recovery event received")
+            // Handle password recovery if needed
+          } else if (event === "SIGNED_UP" && newSession?.user) {
+            debugLog("User signed up, updating state")
+            setSession(newSession)
+            setUser(newSession.user)
+            lastTokenRefresh.current = Date.now()
+
+            // Create a profile for the new user
+            if (newSession.user.email) {
+              createProfileSafely(newSession.user.id, newSession.user.email)
+                .then(({ profile: createdProfile }) => {
+                  if (createdProfile) {
+                    setProfile(createdProfile)
+                    setCacheItem(CACHE_KEYS.PROFILE(newSession.user.id), createdProfile)
+                  }
+                })
+                .catch((err) => {
+                  console.error("Error creating profile after sign up:", err)
+                })
+            }
           }
 
           // Refresh the page to update server components
