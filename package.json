@@ -64,7 +64,9 @@
     "framer-motion": "latest",
     "@supabase/auth-helpers-nextjs": "latest",
     "react-colorful": "latest",
-    "@supabase/ssr": "latest"
+    "@supabase/ssr": "latest",
+    "fs": "latest",
+    "path": "latest"
   },
   "devDependencies": {
     "@types/node": "^22",
