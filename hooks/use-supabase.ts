@@ -7,11 +7,14 @@ import { useToast } from "@/hooks/use-toast"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 import { getTokenManager, TOKEN_EVENTS, resetTokenManager } from "@/lib/token-manager"
-import { cachedQuery, type QueryOptions, CACHE_EXPIRY, queryCache } from "@/lib/query-utils"
+import { isomorphicCache, CACHE_EXPIRY } from "./isomorphic-cache"
+import { subscriptionManager } from "@/lib/subscription-manager"
 
 // Network status detection
 const NETWORK_DETECTION_INTERVAL = 10000 // 10 seconds
 const PING_TIMEOUT = 5000 // 5 seconds
+const OFFLINE_MODE_STORAGE_KEY = "supabase_offline_mode"
+const AUTH_DEBUG_STORAGE_KEY = "auth_debug_mode"
 
 // Default to false in production, true in development
 const DEFAULT_DEBUG_MODE = process.env.NODE_ENV === "development"
@@ -25,7 +28,7 @@ interface UseSupabaseOptions {
 }
 
 // Enhanced query options
-export interface EnhancedQueryOptions extends QueryOptions {
+export interface EnhancedQueryOptions {
   retries?: number
   retryDelay?: number
   requiresAuth?: boolean
@@ -33,6 +36,9 @@ export interface EnhancedQueryOptions extends QueryOptions {
   offlineArgs?: any
   columns?: string[]
   cacheKey?: string
+  cacheTTL?: number
+  bypassCache?: boolean
+  debug?: boolean
 }
 
 export function useSupabase(options: UseSupabaseOptions = {}) {
@@ -78,6 +84,16 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
 
     try {
       debug("Initializing Supabase client")
+
+      // Try to read debug mode preference from storage
+      try {
+        const storedDebugMode = localStorage.getItem(AUTH_DEBUG_STORAGE_KEY)
+        if (storedDebugMode === "true") {
+          debug("Debug mode enabled from local storage")
+        }
+      } catch (e) {
+        // Ignore storage errors
+      }
 
       // Create client with enhanced options
       clientRef.current = createClientComponentClient<Database>({
@@ -202,6 +218,11 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
           if (tokenManagerRef.current && user) {
             tokenManagerRef.current.forceRefresh()
           }
+
+          // Reconnect all subscriptions
+          if (clientRef.current) {
+            subscriptionManager.reconnectAll(clientRef.current)
+          }
         } else {
           // We're offline, show notification
           toast({
@@ -253,6 +274,11 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
 
             if (tokenManagerRef.current && user) {
               tokenManagerRef.current.forceRefresh()
+            }
+
+            // Reconnect all subscriptions
+            if (clientRef.current) {
+              subscriptionManager.reconnectAll(clientRef.current)
             }
           }
         }
@@ -361,19 +387,19 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
     } finally {
       setIsRefreshing(false)
     }
-  }, [user, debug])
+  }, [user, debug, tokenManagerRef])
 
   // Function to check if token is valid
   const isTokenValid = useCallback(() => {
     if (!tokenManagerRef.current) return false
     return tokenManagerRef.current.isTokenValid()
-  }, [])
+  }, [tokenManagerRef])
 
   // Enhanced query function with caching and selective columns
   const query = useCallback(
-    async <T>(
+    async <T,>(
       queryFn: (client: SupabaseClient<Database>) => Promise<T>,
-      options: EnhancedQueryOptions = {}
+      options: EnhancedQueryOptions = {},
     ): Promise<T> => {
       const {
         retries = 3,
@@ -413,22 +439,10 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
 
       // Check cache if we have a cache key and aren't bypassing cache
       if (cacheKey && !bypassCache) {
-        const cachedResult = await cachedQuery(
-          clientRef.current,
-          cacheKey,
-          async (query) => {
-            return { data: await queryFn(clientRef.current!), error: null }
-          },
-          {
-            cacheKey,
-            cacheTTL,
-            bypassCache,
-            debug: queryDebug || debugMode,
-          },
-        )
-
+        const cachedResult = isomorphicCache.get<T>(cacheKey)
         if (cachedResult) {
-          return cachedResult as T
+          debug("Cache hit for", cacheKey)
+          return cachedResult
         }
       }
 
@@ -445,19 +459,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
 
           // Cache the result if we have a cache key
           if (cacheKey && !bypassCache) {
-            await cachedQuery(
-              clientRef.current,
-              cacheKey,
-              async () => {
-                return { data: asyncResult, error: null }
-              },
-              {
-                cacheKey,
-                cacheTTL,
-                bypassCache: true, // Don't check cache again
-                debug: queryDebug || debugMode,
-              },
-            )
+            isomorphicCache.set(cacheKey, asyncResult, cacheTTL)
           }
 
           return asyncResult
@@ -504,19 +506,15 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
       // If we've exhausted all retries, throw the last error
       throw lastError
     },
-    [isOnline, debug, debugMode]
+    [isOnline, debug, tokenManagerRef],
   )
 
   // Specialized function for read operations with caching
   const read = useCallback(
-    async <T>(
-      table: string,
-      queryBuilder: (query: any) => any,
-      options: EnhancedQueryOptions = {}
-    ): Promise<T> => {
+    async <T,>(table: string, queryBuilder: (query: any) => any, options: EnhancedQueryOptions = {}): Promise<T> => {
       const { columns = [], cacheKey = `${table}:read` } = options
 
-      return query<T>(
+      return query<T,>(
         async (client) => {
           let baseQuery = client.from(table)
           
@@ -540,21 +538,21 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         }
       )
     },
-    [query]
+    [query],
   )
 
   // Specialized function for write operations that invalidate cache
   const write = useCallback(
-    async <T>(
+    async <T,>(
       table: string,
-      operation: 'insert' | 'update' | 'delete' | 'upsert',
+      operation: "insert" | "update" | "delete" | "upsert",
       data: any,
       queryBuilder: (query: any) => any,
-      options: EnhancedQueryOptions = {}
+      options: EnhancedQueryOptions = {},
     ): Promise<T> => {
       const { requiresAuth = true } = options
 
-      return query<T>(
+      return query<T,>(
         async (client) => {
           let baseQuery = client.from(table)
           
@@ -583,10 +581,10 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
           // Invalidate cache for this table
           if (options.cacheKey) {
             // Clear specific cache key
-            queryCache.remove(options.cacheKey)
+            isomorphicCache.remove(options.cacheKey)
           } else {
             // Clear all cache for this table
-            queryCache.clearPattern(`^${table}:`)
+            isomorphicCache.clearPattern(`^${table}:`)
           }
           
           return result as T
@@ -598,7 +596,28 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         }
       )
     },
-    [query]
+    [query],
+  )
+
+  // Subscribe to real-time changes
+  const subscribe = useCallback(
+    <T = any>(
+      table: string,
+      callback: (payload: T) => void,
+      options: {
+        event?: "INSERT" | "UPDATE" | "DELETE" | "*"
+        filter?: string
+        schema?: string
+        config?: any
+      } = {},
+    ) => {
+      if (!clientRef.current) {
+        throw new Error("Supabase client not initialized")
+      }
+
+      return subscriptionManager.subscribe<T>(clientRef.current, table, callback, options)
+    },
+    [clientRef],
   )
 
   // Get detailed token status
@@ -622,6 +641,14 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
       lastRefresh: status.telemetry.lastRefreshSuccess,
       successRate: status.telemetry.successCount / (status.telemetry.successCount + status.telemetry.failureCount || 1),
     }
+  }, [tokenManagerRef])
+
+  // Get subscription stats
+  const getSubscriptionStats = useCallback(() => {
+    return {
+      subscriptions: subscriptionManager.getSubscriptions(),
+      count: subscriptionManager.getSubscriptions().length,
+    }
   }, [])
 
   // Reset all auth and token state (useful for debugging or troubleshooting)
@@ -640,7 +667,13 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
     if (isOnline && tokenManagerRef.current) {
       tokenManagerRef.current.forceRefresh()
     }
-  }, [debug, debugMode, isOnline])
+  }, [debug, debugMode, isOnline, tokenManagerRef, clientRef])
+
+  // Clean up all subscriptions
+  const cleanupSubscriptions = useCallback(() => {
+    debug("Cleaning up all subscriptions")
+    subscriptionManager.clearAll()
+  }, [debug])
 
   return {
     supabase: clientRef.current,
@@ -651,8 +684,11 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
     query,
     read,
     write,
+    subscribe,
     getTokenStatus,
+    getSubscriptionStats,
     resetAuthState,
+    cleanupSubscriptions,
     tokenStatus,
   }
 }
