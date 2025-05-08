@@ -12,6 +12,14 @@ let currentSession: Session | null = null
 // Track the monitoring status
 let isMonitoring = false
 
+/**
+ * Initialize the auth monitor
+ * This is the main entry point for the auth monitor
+ */
+export function initAuthMonitor(): () => void {
+  return startAuthMonitoring()
+}
+
 // Function to start monitoring
 export function startAuthMonitoring(): () => void {
   if (typeof window === "undefined") return () => {}

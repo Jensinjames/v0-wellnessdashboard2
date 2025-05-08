@@ -1,60 +1,88 @@
-import { createServerSupabaseClient } from "@/lib/supabase-server"
+/**
+ * Schema Utilities
+ * Provides functions to fix database schema issues
+ */
+import { createLogger } from "@/utils/logger"
+
+// Create a dedicated logger for schema operations
+const logger = createLogger("SchemaUtils")
 
 /**
- * Gets the column names for a specific table
- * @param tableName The name of the table to inspect
- * @returns An array of column names
+ * Fix schema issues in the database
+ * This function attempts to create missing tables and fix permissions
  */
-export async function getTableColumns(tableName: string): Promise<string[]> {
+export async function fixSchemaIssue(): Promise<{ success: boolean; error?: string }> {
   try {
-    const supabase = createServerSupabaseClient()
+    logger.info("Attempting to fix schema issues")
 
-    // Fetch a single row to get column names
-    const { data, error } = await supabase.from(tableName).select("*").limit(1)
+    // Call the API endpoint to fix schema issues
+    const response = await fetch("/api/fix-schema", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        action: "fix_schema",
+        tables: ["user_changes_log"],
+      }),
+    })
 
-    if (error) {
-      console.error(`Error fetching columns for table ${tableName}:`, error)
-      return []
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}))
+      logger.error("Schema fix API returned error", { status: response.status, error: errorData })
+      return {
+        success: false,
+        error: errorData.message || `API returned status ${response.status}`,
+      }
     }
 
-    // Extract column names from the first row
-    return data && data.length > 0 ? Object.keys(data[0]) : []
+    const data = await response.json()
+    logger.info("Schema fix completed successfully", data)
+
+    return { success: true }
   } catch (error) {
-    console.error(`Unexpected error inspecting table ${tableName}:`, error)
-    return []
+    logger.error("Error fixing schema:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    }
   }
 }
 
 /**
- * Checks if a column exists in a table
- * @param tableName The name of the table to check
- * @param columnName The name of the column to check for
- * @returns True if the column exists, false otherwise
+ * Check if a table exists in the database
  */
-export async function columnExists(tableName: string, columnName: string): Promise<boolean> {
-  const columns = await getTableColumns(tableName)
-  return columns.includes(columnName)
+export async function checkTableExists(tableName: string): Promise<boolean> {
+  try {
+    const response = await fetch(`/api/check-table?table=${encodeURIComponent(tableName)}`)
+
+    if (!response.ok) {
+      return false
+    }
+
+    const data = await response.json()
+    return data.exists
+  } catch (error) {
+    logger.error(`Error checking if table ${tableName} exists:`, error)
+    return false
+  }
 }
 
 /**
- * Gets the actual database schema for debugging purposes
- * @returns An object mapping table names to arrays of column names
+ * Get schema version from the database
  */
-export async function getDatabaseSchema(): Promise<Record<string, string[]>> {
+export async function getSchemaVersion(): Promise<string> {
   try {
-    const supabase = createServerSupabaseClient()
-    const schema: Record<string, string[]> = {}
+    const response = await fetch("/api/schema-version")
 
-    // List of tables to inspect
-    const tables = ["profiles", "users", "wellness_entries", "categories", "goals"]
-
-    for (const table of tables) {
-      schema[table] = await getTableColumns(table)
+    if (!response.ok) {
+      return "unknown"
     }
 
-    return schema
+    const data = await response.json()
+    return data.version
   } catch (error) {
-    console.error("Error fetching database schema:", error)
-    return {}
+    logger.error("Error getting schema version:", error)
+    return "unknown"
   }
 }

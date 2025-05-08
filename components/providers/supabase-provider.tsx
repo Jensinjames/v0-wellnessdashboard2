@@ -1,66 +1,85 @@
 "use client"
 
-import type React from "react"
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
+import type { Session, User } from "@supabase/supabase-js"
+import { getSupabaseClient, resetSupabaseClient } from "@/lib/supabase-client-core"
+import { createLogger } from "@/utils/logger"
 
-import { createContext, useContext, useEffect, useState, useRef } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Database } from "@/types/database"
-import { CLIENT_ENV } from "@/lib/env-config"
+const logger = createLogger("SupabaseProvider")
 
-// Create a context for the Supabase client
-type SupabaseContext = {
-  supabase: SupabaseClient<Database>
+// Session context type
+type SupabaseContextType = {
+  session: Session | null
+  user: User | null
+  isLoading: boolean
+  refresh: () => Promise<void>
 }
 
-const SupabaseContext = createContext<SupabaseContext | undefined>(undefined)
+// Create the context
+const SupabaseContext = createContext<SupabaseContextType>({
+  session: null,
+  user: null,
+  isLoading: true,
+  refresh: async () => {},
+})
 
-// Provider component that wraps your app and makes Supabase client available
-export function SupabaseProvider({ children }: { children: React.ReactNode }) {
-  // Validate environment variables
-  if (!CLIENT_ENV.SUPABASE_URL || !CLIENT_ENV.SUPABASE_ANON_KEY) {
-    console.error("Missing required Supabase environment variables")
-    // Render an error message or fallback UI
-    return (
-      <div className="p-4 bg-red-50 text-red-800 rounded-md">
-        <h2 className="text-lg font-semibold">Configuration Error</h2>
-        <p>Missing required Supabase environment variables. Please check your configuration.</p>
-      </div>
-    )
+// Provider component
+export function SupabaseProvider({
+  children,
+  initialSession,
+}: { children: ReactNode; initialSession?: Session | null }) {
+  const [session, setSession] = useState<Session | null>(initialSession || null)
+  const [user, setUser] = useState<User | null>(initialSession?.user || null)
+  const [isLoading, setIsLoading] = useState(!initialSession)
+
+  // Function to manually refresh the session
+  const refresh = async () => {
+    try {
+      setIsLoading(true)
+      const supabase = getSupabaseClient()
+      const { data, error } = await supabase.auth.getSession()
+
+      if (error) {
+        throw error
+      }
+
+      setSession(data.session)
+      setUser(data.session?.user || null)
+    } catch (error) {
+      logger.error("Error refreshing session:", error)
+      // If we get an auth error, reset the client to force re-initialization
+      resetSupabaseClient()
+    } finally {
+      setIsLoading(false)
+    }
   }
 
-  // Create a Supabase client for use in the browser
-  const supabaseClient = useRef<SupabaseClient<Database> | null>(null)
-  const [supabase] = useState(() => {
-    supabaseClient.current = createClientComponentClient<Database>()
-    return supabaseClient.current
-  })
-
+  // Listen for auth changes
   useEffect(() => {
-    // Optional: Set up any listeners or initialization logic here
-    const setupClient = async () => {
-      try {
-        // Test the connection
-        const { error } = await supabase.auth.getSession()
-        if (error) {
-          console.error("Error initializing Supabase client:", error.message)
-        }
-      } catch (err) {
-        console.error("Failed to initialize Supabase client:", err)
-      }
+    const supabase = getSupabaseClient()
+
+    // If we don't have an initial session, fetch it
+    if (!initialSession) {
+      refresh()
     }
 
-    setupClient()
-  }, [supabase])
+    // Subscribe to auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, newSession) => {
+      logger.debug(`Auth state changed: ${event}`)
+      setSession(newSession)
+      setUser(newSession?.user || null)
+    })
 
-  return <SupabaseContext.Provider value={{ supabase }}>{children}</SupabaseContext.Provider>
+    // Cleanup on unmount
+    return () => {
+      subscription.unsubscribe()
+    }
+  }, [initialSession])
+
+  return <SupabaseContext.Provider value={{ session, user, isLoading, refresh }}>{children}</SupabaseContext.Provider>
 }
 
-// Hook to use the Supabase client
-export function useSupabase() {
-  const context = useContext(SupabaseContext)
-  if (context === undefined) {
-    throw new Error("useSupabase must be used within a SupabaseProvider")
-  }
-  return context.supabase
-}
+// Custom hook to use the Supabase context
+export const useSupabaseAuth = () => useContext(SupabaseContext)

@@ -15,6 +15,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAuth } from "@/context/auth-context"
 import { createLogger } from "@/utils/logger"
 import { handleAuthError, isSchemaError, getTechnicalErrorDetails } from "@/utils/auth-error-handler"
+import { fixSchemaIssue } from "@/utils/schema-utils" // Import the schema fix utility
 
 // Create a dedicated logger for the sign-in form
 const logger = createLogger("SignInForm")
@@ -37,6 +38,7 @@ export function SignInForm() {
   const [isSchemaIssue, setIsSchemaIssue] = useState(false)
   const [technicalDetails, setTechnicalDetails] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
+  const [isFixingSchema, setIsFixingSchema] = useState(false)
   const MAX_RETRIES = 2
 
   // Get the redirect URL from the query string
@@ -55,6 +57,30 @@ export function SignInForm() {
       password: "",
     },
   })
+
+  // Handle schema fix
+  const handleSchemaFix = async () => {
+    try {
+      setIsFixingSchema(true)
+      setError("Attempting to fix database schema issue...")
+
+      // Call the schema fix utility
+      const result = await fixSchemaIssue()
+
+      if (result.success) {
+        setError("Database schema fixed. Please try signing in again.")
+        setIsSchemaIssue(false)
+        setTechnicalDetails(null)
+      } else {
+        setError(`Schema fix failed: ${result.error || "Unknown error"}. Please contact support.`)
+      }
+    } catch (err) {
+      logger.error("Error fixing schema:", err)
+      setError("Failed to fix schema issue. Please contact support.")
+    } finally {
+      setIsFixingSchema(false)
+    }
+  }
 
   // Handle form submission
   const handleSubmit = async (data: FormData) => {
@@ -140,7 +166,7 @@ export function SignInForm() {
             autoCapitalize="none"
             autoComplete="email"
             autoCorrect="off"
-            disabled={isLoading}
+            disabled={isLoading || isFixingSchema}
             {...register("email")}
           />
           {errors.email && <p className="text-sm text-red-500">{errors.email.message}</p>}
@@ -158,7 +184,7 @@ export function SignInForm() {
               type={showPassword ? "text" : "password"}
               placeholder="••••••••"
               autoComplete="current-password"
-              disabled={isLoading}
+              disabled={isLoading || isFixingSchema}
               {...register("password")}
             />
             <Button
@@ -167,6 +193,7 @@ export function SignInForm() {
               size="sm"
               className="absolute right-2 top-1/2 -translate-y-1/2 px-2"
               onClick={() => setShowPassword(!showPassword)}
+              disabled={isLoading || isFixingSchema}
             >
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
@@ -181,19 +208,36 @@ export function SignInForm() {
             {isSchemaIssue && (
               <div className="mt-2">
                 <p className="text-sm font-medium">This appears to be a database configuration issue.</p>
-                <p className="text-xs mt-1">Please contact support with the following error code: SCHEMA-001</p>
+                <p className="text-xs mt-1">Error code: SCHEMA-001</p>
                 {technicalDetails && (
                   <details className="mt-2">
                     <summary className="text-xs cursor-pointer">Technical Details</summary>
                     <pre className="text-xs mt-1 p-2 bg-gray-100 rounded overflow-x-auto">{technicalDetails}</pre>
                   </details>
                 )}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2"
+                  onClick={handleSchemaFix}
+                  disabled={isFixingSchema}
+                >
+                  {isFixingSchema ? (
+                    <>
+                      <Loader2 className="mr-2 h-3 w-3 animate-spin" />
+                      Fixing Schema...
+                    </>
+                  ) : (
+                    "Fix Schema Issue"
+                  )}
+                </Button>
               </div>
             )}
           </Alert>
         )}
 
-        <Button type="submit" className="w-full" disabled={isLoading}>
+        <Button type="submit" className="w-full" disabled={isLoading || isFixingSchema}>
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

@@ -13,15 +13,7 @@ import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
 import { validateAuthCredentials, sanitizeEmail, validateEmail, validatePassword } from "@/utils/auth-validation"
 import { useToast } from "@/hooks/use-toast"
-import {
-  getSupabase,
-  addAuthListener,
-  signInWithEmail,
-  signUpWithEmail,
-  signOut as supabaseSignOut,
-  resetPassword as supabaseResetPassword,
-  updatePassword as supabaseUpdatePassword,
-} from "@/lib/supabase-manager"
+import { getSupabaseClient } from "@/lib/supabase-client-core"
 import { createLogger } from "@/utils/logger"
 
 // Create a dedicated logger for auth operations
@@ -77,8 +69,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         setIsLoading(true)
 
-        // Get the Supabase client
-        const supabase = getSupabase()
+        // Get the Supabase client using our consolidated implementation
+        const supabase = getSupabaseClient()
 
         // Get session
         const {
@@ -149,29 +141,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Set up auth state change listener
   useEffect(() => {
-    const removeListener = addAuthListener((event, payload) => {
+    const supabase = getSupabaseClient()
+
+    // Set up the auth state change listener
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((event, session) => {
       if (!isMounted.current) return
 
       if (event === "SIGNED_OUT") {
         setUser(null)
         setProfile(null)
         setSession(null)
-      } else if (event === "SIGNED_IN" && payload.session?.user) {
-        setSession(payload.session)
-        setUser(payload.session.user)
+      } else if (event === "SIGNED_IN" && session?.user) {
+        setSession(session)
+        setUser(session.user)
 
         // Fetch profile on sign in
-        fetchProfileSafely(payload.session.user.id).then(({ profile, error }) => {
+        fetchProfileSafely(session.user.id).then(({ profile, error }) => {
           if (error) {
             authLogger.error("Error fetching profile after sign in:", error)
           } else if (profile) {
             setProfile(profile)
             // Cache the profile
-            setCacheItem(CACHE_KEYS.PROFILE(payload.session.user.id), profile)
+            setCacheItem(CACHE_KEYS.PROFILE(session.user.id), profile)
           }
         })
-      } else if (event === "TOKEN_REFRESHED" && payload.session) {
-        setSession(payload.session)
+      } else if (event === "TOKEN_REFRESHED" && session) {
+        setSession(session)
       }
 
       // Refresh the page to update server components
@@ -179,7 +176,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
 
     return () => {
-      removeListener()
+      subscription.unsubscribe()
     }
   }, [router])
 
@@ -282,8 +279,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       authLogger.info("Attempting sign in", { email: sanitizedEmail })
 
+      // Get the Supabase client using our consolidated implementation
+      const supabase = getSupabaseClient()
+
       // Attempt sign-in with validated credentials
-      const { data, error } = await signInWithEmail(sanitizedEmail, credentials.password)
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: sanitizedEmail,
+        password: credentials.password,
+      })
 
       if (error) {
         authLogger.error("Sign in error:", { error, email: sanitizedEmail })
@@ -378,7 +381,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       authLogger.info("Attempting sign up", { email: sanitizedEmail })
-      const { data, error } = await signUpWithEmail(sanitizedEmail, credentials.password)
+
+      // Get the Supabase client using our consolidated implementation
+      const supabase = getSupabaseClient()
+
+      const { data, error } = await supabase.auth.signUp({
+        email: sanitizedEmail,
+        password: credentials.password,
+      })
 
       if (error) {
         authLogger.error("Sign up error:", { error, email: sanitizedEmail })
@@ -402,7 +412,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async (redirectPath = "/auth/sign-in") => {
     try {
       authLogger.info("Attempting sign out")
-      const { error } = await supabaseSignOut()
+
+      // Get the Supabase client using our consolidated implementation
+      const supabase = getSupabaseClient()
+
+      const { error } = await supabase.auth.signOut()
 
       if (error) {
         authLogger.error("Sign out error:", error)
@@ -452,7 +466,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       authLogger.info("Attempting password reset", { email: sanitizedEmail })
-      const { error } = await supabaseResetPassword(sanitizedEmail)
+
+      // Get the Supabase client using our consolidated implementation
+      const supabase = getSupabaseClient()
+
+      const { error } = await supabase.auth.resetPasswordForEmail(sanitizedEmail)
 
       if (error) {
         authLogger.error("Reset password error:", { error, email: sanitizedEmail })
@@ -474,7 +492,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       authLogger.info("Attempting password update")
-      const { error } = await supabaseUpdatePassword(password)
+
+      // Get the Supabase client using our consolidated implementation
+      const supabase = getSupabaseClient()
+
+      const { error } = await supabase.auth.updateUser({
+        password,
+      })
 
       if (error) {
         authLogger.error("Update password error:", error)
@@ -496,7 +520,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setIsLoading(true)
 
-      const supabase = getSupabase()
+      const supabase = getSupabaseClient()
       const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).single()
 
       if (error) {

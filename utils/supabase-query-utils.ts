@@ -1,219 +1,118 @@
-import { useSupabase } from "@/hooks/use-supabase"
-import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Database } from "@/types/database"
+// Supabase Query Utilities
+// Helper functions for working with Supabase queries
 
-// Type for query options
-export interface QueryOptions<T> {
-  retries?: number
-  retryDelay?: number
-  requiresAuth?: boolean
-  offlineAction?: (...args: any[]) => Promise<T>
-  offlineArgs?: any
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import type { PostgrestError } from "@supabase/supabase-js"
+import { createLogger } from "@/utils/logger"
+
+const logger = createLogger("SupabaseQuery")
+
+// Execute a Supabase query with error handling
+export async function executeQuery<T>(
+  queryFn: (supabase: ReturnType<typeof createClientComponentClient>) => Promise<{
+    data: T | null
+    error: PostgrestError | null
+  }>,
+): Promise<{ data: T | null; error: Error | null }> {
+  try {
+    const supabase = createClientComponentClient()
+    const { data, error } = await queryFn(supabase)
+
+    if (error) {
+      logger.error("Supabase query error:", error)
+      return { data: null, error: new Error(error.message) }
+    }
+
+    return { data, error: null }
+  } catch (error: any) {
+    logger.error("Unexpected error executing Supabase query:", error)
+    return { data: null, error: new Error(error.message || "An unexpected error occurred") }
+  }
 }
 
-// Helper function to create a reusable query
-export function createQuery<T>(
-  queryFn: (client: SupabaseClient<Database>) => Promise<T>,
-  options: QueryOptions<T> = {},
-) {
-  const { query } = useSupabase()
+// Execute a Supabase mutation with error handling and retries
+export async function executeMutation<T>(
+  mutationFn: (supabase: ReturnType<typeof createClientComponentClient>) => Promise<{
+    data: T | null
+    error: PostgrestError | null
+  }>,
+  retries = 1,
+): Promise<{ data: T | null; error: Error | null }> {
+  let lastError: Error | null = null
+  let attempts = 0
 
-  return async () => {
+  while (attempts <= retries) {
     try {
-      return await query(queryFn, options)
-    } catch (error) {
-      console.error("Query error:", error)
-      throw error
+      const supabase = createClientComponentClient()
+      const { data, error } = await mutationFn(supabase)
+
+      if (error) {
+        lastError = new Error(error.message)
+        logger.error(`Supabase mutation error (attempt ${attempts + 1}/${retries + 1}):`, error)
+      } else {
+        return { data, error: null }
+      }
+    } catch (error: any) {
+      lastError = new Error(error.message || "An unexpected error occurred")
+      logger.error(`Unexpected error executing Supabase mutation (attempt ${attempts + 1}/${retries + 1}):`, error)
+    }
+
+    attempts++
+    if (attempts <= retries) {
+      // Wait before retrying (exponential backoff)
+      await new Promise((resolve) => setTimeout(resolve, 500 * Math.pow(2, attempts - 1)))
+    }
+  }
+
+  return { data: null, error: lastError }
+}
+
+// Wrap Supabase queries with error handling
+export function withErrorHandling<T, Args extends any[]>(
+  fn: (...args: Args) => Promise<T>,
+): (...args: Args) => Promise<{ result: T | null; error: Error | null }> {
+  return async (...args: Args) => {
+    try {
+      const result = await fn(...args)
+      return { result, error: null }
+    } catch (error: any) {
+      logger.error("Error in Supabase operation:", error)
+      return { result: null, error: new Error(error.message || "An unexpected error occurred") }
     }
   }
 }
 
-// Common queries for profiles
-export const profileQueries = {
-  getProfile: (userId: string) => {
-    const { query } = useSupabase()
-
-    return async () => {
-      return query((client) => client.from("profiles").select("*").eq("user_id", userId).single(), {
-        requiresAuth: true,
-      })
-    }
-  },
-
-  updateProfile: (userId: string, data: any) => {
-    const { query } = useSupabase()
-
-    return async () => {
-      return query((client) => client.from("profiles").update(data).eq("user_id", userId), { requiresAuth: true })
-    }
-  },
+// Check if a Supabase error is a not found error
+export function isNotFoundError(error: PostgrestError | null): boolean {
+  return error?.code === "PGRST116" || error?.message.includes("not found")
 }
 
-// Common queries for goals
-export const goalQueries = {
-  getGoals: (userId: string) => {
-    const { query } = useSupabase()
-
-    return async () => {
-      return query(
-        (client) =>
-          client
-            .from("goals")
-            .select(`
-              id, 
-              title, 
-              description,
-              target_hours,
-              created_at,
-              category_id,
-              categories(id, name, color)
-            `)
-            .eq("user_id", userId)
-            .order("created_at", { ascending: false }),
-        { requiresAuth: true },
-      )
-    }
-  },
-
-  getGoalById: (goalId: string) => {
-    const { query } = useSupabase()
-
-    return async () => {
-      return query(
-        (client) =>
-          client
-            .from("goals")
-            .select(`
-              id, 
-              title, 
-              description,
-              target_hours,
-              created_at,
-              category_id,
-              user_id,
-              categories(id, name, color)
-            `)
-            .eq("id", goalId)
-            .single(),
-        { requiresAuth: true },
-      )
-    }
-  },
-
-  createGoal: (data: any) => {
-    const { query } = useSupabase()
-
-    return async () => {
-      return query((client) => client.from("goals").insert(data).select().single(), { requiresAuth: true })
-    }
-  },
-
-  updateGoal: (goalId: string, data: any) => {
-    const { query } = useSupabase()
-
-    return async () => {
-      return query((client) => client.from("goals").update(data).eq("id", goalId).select().single(), {
-        requiresAuth: true,
-      })
-    }
-  },
-
-  deleteGoal: (goalId: string) => {
-    const { query } = useSupabase()
-
-    return async () => {
-      return query((client) => client.from("goals").delete().eq("id", goalId), { requiresAuth: true })
-    }
-  },
+// Check if a Supabase error is a foreign key violation
+export function isForeignKeyViolation(error: PostgrestError | null): boolean {
+  return error?.code === "23503" || error?.message.includes("foreign key constraint")
 }
 
-// Common queries for time entries
-export const timeEntryQueries = {
-  getTimeEntries: (userId: string, limit = 10) => {
-    const { query } = useSupabase()
-
-    return async () => {
-      return query(
-        (client) =>
-          client
-            .from("time_entries")
-            .select(`
-              id, 
-              start_time, 
-              end_time,
-              duration,
-              notes,
-              goal_id,
-              goals(id, title, category_id, categories(id, name, color))
-            `)
-            .eq("user_id", userId)
-            .order("start_time", { ascending: false })
-            .limit(limit),
-        { requiresAuth: true },
-      )
-    }
-  },
-
-  getTimeEntriesForGoal: (goalId: string) => {
-    const { query } = useSupabase()
-
-    return async () => {
-      return query(
-        (client) =>
-          client
-            .from("time_entries")
-            .select(`
-              id, 
-              start_time, 
-              end_time,
-              duration,
-              notes
-            `)
-            .eq("goal_id", goalId)
-            .order("start_time", { ascending: false }),
-        { requiresAuth: true },
-      )
-    }
-  },
-
-  createTimeEntry: (data: any) => {
-    const { query } = useSupabase()
-
-    return async () => {
-      return query((client) => client.from("time_entries").insert(data).select().single(), { requiresAuth: true })
-    }
-  },
+// Check if a Supabase error is a unique violation
+export function isUniqueViolation(error: PostgrestError | null): boolean {
+  return error?.code === "23505" || error?.message.includes("unique constraint")
 }
 
-// Common queries for categories
-export const categoryQueries = {
-  getCategories: (userId: string) => {
-    const { query } = useSupabase()
+// Get a user-friendly error message for a Supabase error
+export function getFriendlyErrorMessage(error: PostgrestError | null): string {
+  if (!error) return "An unknown error occurred"
 
-    return async () => {
-      return query(
-        (client) =>
-          client
-            .from("categories")
-            .select(`
-              id, 
-              name, 
-              color,
-              description,
-              created_at
-            `)
-            .eq("user_id", userId)
-            .order("name"),
-        { requiresAuth: true },
-      )
-    }
-  },
+  if (isNotFoundError(error)) {
+    return "The requested resource was not found"
+  }
 
-  createCategory: (data: any) => {
-    const { query } = useSupabase()
+  if (isForeignKeyViolation(error)) {
+    return "This operation references a resource that doesn't exist"
+  }
 
-    return async () => {
-      return query((client) => client.from("categories").insert(data).select().single(), { requiresAuth: true })
-    }
-  },
+  if (isUniqueViolation(error)) {
+    return "A resource with this identifier already exists"
+  }
+
+  // Default error message
+  return error.message || "An unexpected database error occurred"
 }
