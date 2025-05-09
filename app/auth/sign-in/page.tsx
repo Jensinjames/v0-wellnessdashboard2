@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { SignInForm } from "@/components/auth/sign-in-form"
+import { EnhancedSignInForm } from "@/components/auth/enhanced-sign-in-form"
 import { AuthLayout } from "@/components/auth/auth-layout"
 import { useAuth } from "@/context/auth-context"
 import { useRouter } from "next/navigation"
@@ -29,7 +29,7 @@ export default function SignInPage() {
   return (
     <AuthLayout title="Sign In" description="Enter your credentials to access your account">
       <Suspense fallback={<div className="p-4 text-center">Loading sign-in form...</div>}>
-        <SignInForm />
+        <EnhancedSignInForm />
       </Suspense>
     </AuthLayout>
   )

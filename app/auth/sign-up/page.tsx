@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { SignUpForm } from "@/components/auth/sign-up-form"
+import { EnhancedSignUpForm } from "@/components/auth/enhanced-sign-up-form"
 import { AuthLayout } from "@/components/auth/auth-layout"
 import { useAuth } from "@/context/auth-context"
 import { useRouter } from "next/navigation"
@@ -29,7 +29,7 @@ export default function SignUpPage() {
   return (
     <AuthLayout title="Sign Up" description="Create a new account to get started">
       <Suspense fallback={<div className="p-4 text-center">Loading sign-up form...</div>}>
-        <SignUpForm />
+        <EnhancedSignUpForm />
       </Suspense>
     </AuthLayout>
   )

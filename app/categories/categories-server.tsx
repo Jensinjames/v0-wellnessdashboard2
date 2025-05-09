@@ -1,11 +1,7 @@
-import { Suspense } from "react"
 import { createServerSupabaseClient } from "@/lib/supabase-server"
-import { CategoriesClient } from "./categories-client"
 import type { WellnessCategory } from "@/types/wellness"
 
-export const dynamic = "force-dynamic"
-
-export default async function CategoriesPage() {
+export async function CategoriesServer() {
   const supabase = createServerSupabaseClient()
 
   // Get the current user
@@ -30,12 +26,18 @@ export default async function CategoriesPage() {
   }
 
   return (
-    <div className="container py-8">
-      <h1 className="text-3xl font-bold mb-6">Wellness Categories</h1>
-
-      <Suspense fallback={<div>Loading categories...</div>}>
-        <CategoriesClient initialCategories={categories as WellnessCategory[]} />
-      </Suspense>
+    <div>
+      <h1>Categories</h1>
+      <ul>
+        {categories.map((category: WellnessCategory) => (
+          <li key={category.id}>
+            <div className="flex items-center">
+              <div className="w-4 h-4 rounded-full mr-2" style={{ backgroundColor: category.color }}></div>
+              {category.name}
+            </div>
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

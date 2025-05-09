@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { createServerSupabaseClient } from "@/lib/supabase-factory"
+import { createServerSupabaseClient } from "@/lib/supabase-server"
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
@@ -24,11 +24,8 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Create a new supabase server client without using next/headers
-    const supabase = createServerSupabaseClient({
-      req: request,
-      res: NextResponse.next(),
-    })
+    // Create a new supabase server client
+    const supabase = await createServerSupabaseClient()
 
     // Exchange the code for a session
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
@@ -81,6 +78,19 @@ export async function GET(request: NextRequest) {
             email: session.user.email,
             updated_at: new Date().toISOString(),
           })
+
+          // Log the profile creation event
+          try {
+            await supabase.from("user_changes_log").insert({
+              user_id: session.user.id,
+              action: "profile_created",
+              new_values: { email: session.user.email },
+              client_info: request.headers.get("user-agent") || "unknown",
+            })
+          } catch (logError) {
+            // Don't fail if logging fails
+            console.error("Error logging profile creation:", logError)
+          }
 
           // Redirect to profile completion page
           return NextResponse.redirect(new URL("/profile/complete", request.url))

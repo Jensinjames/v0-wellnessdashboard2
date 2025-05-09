@@ -13,8 +13,8 @@ import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
 import { validateAuthCredentials, sanitizeEmail, validateEmail, validatePassword } from "@/utils/auth-validation"
 import { useToast } from "@/hooks/use-toast"
-import { getSupabaseClient } from "@/lib/supabase-client-core"
 import { createLogger } from "@/utils/logger"
+import { authService } from "@/lib/auth-service"
 
 // Create a dedicated logger for auth operations
 const authLogger = createLogger("Auth")
@@ -30,6 +30,7 @@ interface AuthContextType {
   ) => Promise<{
     error: Error | null
     fieldErrors?: { email?: string; password?: string }
+    retried?: boolean
   }>
   signUp: (credentials: { email: string; password: string }) => Promise<{
     error: Error | null
@@ -41,6 +42,7 @@ interface AuthContextType {
   updateProfile: (data: ProfileFormData) => Promise<{ success: boolean; error: Error | null }>
   resetPassword: (email: string) => Promise<{ success: boolean; error: string | null }>
   updatePassword: (password: string) => Promise<{ success: boolean; error: string | null }>
+  resendVerificationEmail: (email: string) => Promise<{ success: boolean; error: string | null }>
   isProfileComplete: boolean
 }
 
@@ -69,13 +71,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         setIsLoading(true)
 
-        // Get the Supabase client using our consolidated implementation
-        const supabase = getSupabaseClient()
+        // Get session using our auth service
+        const { session: initialSession, error: sessionError } = await authService.getSession()
 
-        // Get session
-        const {
-          data: { session: initialSession },
-        } = await supabase.auth.getSession()
+        if (sessionError) {
+          authLogger.error("Error getting session:", sessionError)
+          setIsLoading(false)
+          return
+        }
 
         if (initialSession?.user) {
           setSession(initialSession)
@@ -141,34 +144,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Set up auth state change listener
   useEffect(() => {
-    const supabase = getSupabaseClient()
-
-    // Set up the auth state change listener
+    // Set up the auth state change listener using our auth service
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, session) => {
+    } = authService.onAuthStateChange((event, newSession) => {
       if (!isMounted.current) return
 
       if (event === "SIGNED_OUT") {
         setUser(null)
         setProfile(null)
         setSession(null)
-      } else if (event === "SIGNED_IN" && session?.user) {
-        setSession(session)
-        setUser(session.user)
+      } else if (event === "SIGNED_IN" && newSession?.user) {
+        setSession(newSession)
+        setUser(newSession.user)
 
         // Fetch profile on sign in
-        fetchProfileSafely(session.user.id).then(({ profile, error }) => {
+        fetchProfileSafely(newSession.user.id).then(({ profile, error }) => {
           if (error) {
             authLogger.error("Error fetching profile after sign in:", error)
           } else if (profile) {
             setProfile(profile)
             // Cache the profile
-            setCacheItem(CACHE_KEYS.PROFILE(session.user.id), profile)
+            setCacheItem(CACHE_KEYS.PROFILE(newSession.user.id), profile)
           }
         })
-      } else if (event === "TOKEN_REFRESHED" && session) {
-        setSession(session)
+      } else if (event === "TOKEN_REFRESHED" && newSession) {
+        setSession(newSession)
       }
 
       // Refresh the page to update server components
@@ -230,56 +231,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  // Helper function to retry authentication with exponential backoff
-  const retryAuthentication = async (email: string, password: string, attempt = 1, maxAttempts = 3): Promise<any> => {
-    try {
-      // Get the Supabase client
-      const supabase = getSupabaseClient()
-
-      // Attempt sign-in
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
-      // If successful or it's not a 500 unexpected_failure, return the result
-      if (
-        !error ||
-        !(
-          error?.__isAuthError &&
-          error?.name === "AuthApiError" &&
-          error?.status === 500 &&
-          error?.code === "unexpected_failure"
-        )
-      ) {
-        return { data, error }
-      }
-
-      // If we've reached max attempts, return the error
-      if (attempt >= maxAttempts) {
-        authLogger.warn(`Authentication failed after ${maxAttempts} attempts`, { email })
-        return { data, error }
-      }
-
-      // Calculate backoff delay with jitter (100ms, 200ms, 400ms base times with jitter)
-      const delay = Math.floor(2 ** (attempt - 1) * 100 * (0.75 + Math.random() * 0.5))
-
-      // Log retry attempt
-      authLogger.info(`Retrying authentication (attempt ${attempt + 1}/${maxAttempts}) after ${delay}ms delay`, {
-        email,
-      })
-
-      // Wait for the backoff period
-      await new Promise((resolve) => setTimeout(resolve, delay))
-
-      // Retry with incremented attempt counter
-      return retryAuthentication(email, password, attempt + 1, maxAttempts)
-    } catch (error) {
-      authLogger.error("Error in retry mechanism:", error)
-      return { data: null, error }
-    }
-  }
-
   const signIn = async (credentials: { email: string; password: string }, redirectPath?: string) => {
     try {
       // Enhanced validation with detailed logging
@@ -329,35 +280,49 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       authLogger.info("Attempting sign in", { email: sanitizedEmail })
 
-      // Get the Supabase client using our consolidated implementation
-      const supabase = getSupabaseClient()
-
-      // Attempt sign-in with validated credentials and retry mechanism
-      const { data, error } = await retryAuthentication(sanitizedEmail, credentials.password)
+      // Use our auth service to sign in with retry mechanism
+      const {
+        user: signedInUser,
+        session: newSession,
+        error,
+        retried,
+      } = await authService.signIn(sanitizedEmail, credentials.password)
 
       if (error) {
+        // Special handling for 500 unexpected_failure
+        if (error?.__isAuthError && error?.status === 500 && error?.code === "unexpected_failure") {
+          authLogger.error("Authentication service error (500):", { error, email: sanitizedEmail })
+          return {
+            error: new Error("Authentication service temporarily unavailable. Please try again."),
+            retried,
+          }
+        }
+
         authLogger.error("Sign in error:", { error, email: sanitizedEmail })
-        return { error }
+        return { error, retried }
       }
 
       // Check if we have valid user data before proceeding
-      if (!data?.user) {
+      if (!signedInUser) {
         authLogger.error("Sign in error: No user data returned", { email: sanitizedEmail })
-        return { error: new Error("Authentication failed: No user data returned") }
+        return {
+          error: new Error("Authentication failed: No user data returned"),
+          retried,
+        }
       }
 
       // Explicitly update the state with the new session data
-      if (data?.session) {
-        setSession(data.session)
-        setUser(data.user)
+      if (newSession) {
+        setSession(newSession)
+        setUser(signedInUser)
 
         // Fetch and update the profile as well
-        if (data.user) {
-          const { profile: fetchedProfile } = await fetchProfileSafely(data.user.id)
+        if (signedInUser) {
+          const { profile: fetchedProfile } = await fetchProfileSafely(signedInUser.id)
           if (fetchedProfile) {
             setProfile(fetchedProfile)
             // Cache the profile
-            setCacheItem(CACHE_KEYS.PROFILE(data.user.id), fetchedProfile)
+            setCacheItem(CACHE_KEYS.PROFILE(signedInUser.id), fetchedProfile)
           }
         }
 
@@ -373,7 +338,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      return { error: null }
+      return { error: null, retried }
     } catch (error: any) {
       authLogger.error("Sign in error:", error)
       return { error: error instanceof Error ? error : new Error(String(error)) }
@@ -429,27 +394,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       authLogger.info("Attempting sign up", { email: sanitizedEmail })
 
-      // Get the Supabase client using our consolidated implementation
-      const supabase = getSupabaseClient()
-
-      const { data, error } = await supabase.auth.signUp({
-        email: sanitizedEmail,
-        password: credentials.password,
-      })
+      // Use our auth service to sign up
+      const {
+        user: newUser,
+        error,
+        emailVerificationSent,
+      } = await authService.signUp(sanitizedEmail, credentials.password)
 
       if (error) {
         authLogger.error("Sign up error:", { error, email: sanitizedEmail })
         return { error }
       }
 
-      // Explicitly update the state with the new session data if available
-      // Note: For sign-up with email confirmation, there might not be a session yet
-      if (data?.user) {
-        authLogger.info("User created successfully", { userId: data.user.id, email: sanitizedEmail })
+      // Explicitly update the state with the new user data if available
+      if (newUser) {
+        authLogger.info("User created successfully", { userId: newUser.id, email: sanitizedEmail })
       }
 
       // Explicitly indicate that an email verification was sent
-      return { error: null, emailVerificationSent: true }
+      return { error: null, emailVerificationSent }
     } catch (error: any) {
       authLogger.error("Sign up error:", error)
       return { error: error instanceof Error ? error : new Error(String(error)) }
@@ -460,10 +423,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       authLogger.info("Attempting sign out")
 
-      // Get the Supabase client using our consolidated implementation
-      const supabase = getSupabaseClient()
-
-      const { error } = await supabase.auth.signOut()
+      // Use our auth service to sign out
+      const { error } = await authService.signOut()
 
       if (error) {
         authLogger.error("Sign out error:", error)
@@ -514,10 +475,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       authLogger.info("Attempting password reset", { email: sanitizedEmail })
 
-      // Get the Supabase client using our consolidated implementation
-      const supabase = getSupabaseClient()
-
-      const { error } = await supabase.auth.resetPasswordForEmail(sanitizedEmail)
+      // Use our auth service to reset password
+      const { error } = await authService.resetPassword(sanitizedEmail)
 
       if (error) {
         authLogger.error("Reset password error:", { error, email: sanitizedEmail })
@@ -540,12 +499,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       authLogger.info("Attempting password update")
 
-      // Get the Supabase client using our consolidated implementation
-      const supabase = getSupabaseClient()
-
-      const { error } = await supabase.auth.updateUser({
-        password,
-      })
+      // Use our auth service to update password
+      const { error } = await authService.updatePassword(password)
 
       if (error) {
         authLogger.error("Update password error:", error)
@@ -559,6 +514,36 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const resendVerificationEmail = async (email: string): Promise<{ success: boolean; error: string | null }> => {
+    try {
+      // Validate email format
+      if (!validateEmail(email)) {
+        return { success: false, error: "Please enter a valid email address" }
+      }
+
+      // Sanitize email
+      const sanitizedEmail = sanitizeEmail(email)
+      if (!sanitizedEmail) {
+        return { success: false, error: "Invalid email format" }
+      }
+
+      authLogger.info("Attempting to resend verification email", { email: sanitizedEmail })
+
+      // Use our auth service to resend verification email
+      const { error } = await authService.resendVerificationEmail(sanitizedEmail)
+
+      if (error) {
+        authLogger.error("Resend verification email error:", { error, email: sanitizedEmail })
+        return { success: false, error: error.message }
+      }
+
+      return { success: true, error: null }
+    } catch (error: any) {
+      authLogger.error("Resend verification email error:", error)
+      return { success: false, error: error.message || "Failed to resend verification email" }
+    }
+  }
+
   const refreshProfile = async (): Promise<UserProfile | null> => {
     if (!user) {
       return null
@@ -567,19 +552,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setIsLoading(true)
 
-      const supabase = getSupabaseClient()
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+      const { profile: refreshedProfile, error } = await fetchProfileSafely(user.id)
 
       if (error) {
         authLogger.error("Error fetching profile:", error)
         return null
       }
 
-      if (data) {
-        setProfile(data)
+      if (refreshedProfile) {
+        setProfile(refreshedProfile)
         // Cache the refreshed profile
-        setCacheItem(CACHE_KEYS.PROFILE(user.id), data)
-        return data
+        setCacheItem(CACHE_KEYS.PROFILE(user.id), refreshedProfile)
+        return refreshedProfile
       }
 
       return null
@@ -603,6 +587,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     updateProfile,
     resetPassword,
     updatePassword,
+    resendVerificationEmail,
     isProfileComplete,
   }
 

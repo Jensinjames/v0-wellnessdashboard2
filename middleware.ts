@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { createClient } from "@supabase/supabase-js"
+import { createServerClient } from "@supabase/ssr"
 
 // Define route types for better organization
 const ROUTE_TYPES = {
@@ -79,23 +79,6 @@ function getRouteType(pathname: string): string {
   return ROUTE_TYPES.PROTECTED
 }
 
-// Helper function to check if a profile is complete
-function isProfileComplete(profile: any): boolean {
-  return Boolean(profile && profile.first_name && profile.last_name && profile.email)
-}
-
-// Create a Supabase client for middleware
-function createMiddlewareClient() {
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-  if (!supabaseUrl || !supabaseKey) {
-    throw new Error("Missing Supabase environment variables")
-  }
-
-  return createClient(supabaseUrl, supabaseKey)
-}
-
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
   const { pathname } = req.nextUrl
@@ -107,33 +90,41 @@ export async function middleware(req: NextRequest) {
   }
 
   try {
-    // Create a Supabase client
-    const supabase = createMiddlewareClient()
+    // Create a Supabase client using cookies from the request
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return req.cookies.get(name)?.value
+          },
+          set(name: string, value: string, options: any) {
+            res.cookies.set({
+              name,
+              value,
+              ...options,
+            })
+          },
+          remove(name: string, options: any) {
+            res.cookies.set({
+              name,
+              value: "",
+              ...options,
+              maxAge: 0,
+            })
+          },
+        },
+      },
+    )
 
     // Get the user's session
     const {
       data: { session },
-      error: sessionError,
     } = await supabase.auth.getSession()
-
-    // Handle session errors
-    if (sessionError) {
-      console.error("Middleware session error:", sessionError)
-      // Continue as if no session exists
-    }
 
     const isAuthenticated = !!session?.user
     const isEmailVerified = !!session?.user?.email_confirmed_at
-
-    // Special handling for email verification page
-    if (pathname === "/auth/verify-email") {
-      // If user is authenticated and email is verified, redirect to dashboard
-      if (isAuthenticated && isEmailVerified) {
-        return NextResponse.redirect(new URL("/dashboard", req.url))
-      }
-      // Otherwise, allow access to verification page
-      return res
-    }
 
     // Handle auth-only routes (sign-in, sign-up, etc.)
     if (routeType === ROUTE_TYPES.AUTH_ONLY) {
@@ -168,27 +159,14 @@ export async function middleware(req: NextRequest) {
         return NextResponse.redirect(new URL("/auth/verify-email", req.url))
       }
 
-      // Check if the user has a complete profile for routes that require it
+      // For routes requiring complete profile, check profile status
       if (ROUTES_REQUIRING_COMPLETE_PROFILE.some((route) => pathname.startsWith(route))) {
-        try {
-          // Fetch the user's profile
-          const { data: profile, error: profileError } = await supabase
-            .from("profiles")
-            .select("id, first_name, last_name, email")
-            .eq("id", session.user.id)
-            .single()
+        // Use cookies to check profile completion status to avoid database queries
+        const profileComplete = req.cookies.get("profile-complete")?.value === "true"
 
-          if (profileError && profileError.code !== "PGRST116") {
-            console.error("Error fetching profile in middleware:", profileError)
-          }
-
-          // If profile is incomplete, redirect to profile completion page
-          if (!profile || !isProfileComplete(profile)) {
-            return NextResponse.redirect(new URL("/profile/complete", req.url))
-          }
-        } catch (error) {
-          console.error("Error checking profile completeness:", error)
-          // Continue to allow access even if profile check fails
+        if (!profileComplete) {
+          // Redirect to profile completion page
+          return NextResponse.redirect(new URL("/profile/complete", req.url))
         }
       }
 
@@ -200,9 +178,7 @@ export async function middleware(req: NextRequest) {
     return res
   } catch (error) {
     console.error("Middleware error:", error)
-
     // In case of an error, allow the request to proceed
-    // The client-side auth checks will handle authentication
     return res
   }
 }

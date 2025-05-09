@@ -9,18 +9,43 @@ import { PieChart } from "@/components/dashboard/pie-chart"
 import { RadialChart } from "@/components/dashboard/radial-chart"
 import { LoadingAnimation } from "@/components/ui/loading-animation"
 import { Badge } from "@/components/ui/badge"
-import { useOptimisticWellness } from "@/hooks/use-optimistic-wellness"
-import { OptimisticTrackingHistory } from "@/components/dashboard/optimistic-tracking-history"
-import { OptimisticEntryForm } from "@/components/dashboard/optimistic-entry-form"
+import { OptimisticFeedback } from "@/components/ui/optimistic-feedback"
+import { ServerActionTrackingHistory } from "@/components/dashboard/server-action-tracking-history"
+import { OptimisticServerActionEntryForm } from "@/components/dashboard/optimistic-server-action-entry-form"
+import { getOptimisticUpdates } from "@/lib/optimistic-updates"
 
-export function WellnessDashboard() {
+export function ServerActionDashboard() {
   const { user } = useAuth()
   const [dashboardData, setDashboardData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [timeframe, setTimeframe] = useState<"day" | "week" | "month" | "year">("week")
   const [error, setError] = useState<string | null>(null)
-  const { applyOptimisticEntries } = useOptimisticWellness()
+  const [refreshTrigger, setRefreshTrigger] = useState(0)
 
+  // Set up optimistic updates listener
+  useEffect(() => {
+    const optimistic = getOptimisticUpdates()
+
+    const updateListener = () => {
+      // Refresh data when optimistic updates change
+      if (dashboardData) {
+        // Apply optimistic updates to the dashboard data
+        const optimisticEntries = optimistic.applyUpdates("wellness_entries", dashboardData.entries || [])
+        setDashboardData((prev) => ({
+          ...prev,
+          entries: optimisticEntries,
+        }))
+      }
+    }
+
+    optimistic.addListener(updateListener)
+
+    return () => {
+      optimistic.removeListener(updateListener)
+    }
+  }, [dashboardData])
+
+  // Fetch dashboard data
   useEffect(() => {
     if (!user) {
       setLoading(false)
@@ -48,20 +73,21 @@ export function WellnessDashboard() {
     }
 
     fetchData()
-  }, [user, timeframe])
+  }, [user, timeframe, refreshTrigger])
 
   const handleTimeframeChange = (value: string) => {
     setTimeframe(value as "day" | "week" | "month" | "year")
   }
 
   const refreshData = () => {
-    if (user) {
-      getDashboardData(user.id, timeframe).then(({ success, data }) => {
-        if (success && data) {
-          setDashboardData(data)
-        }
-      })
-    }
+    setRefreshTrigger((prev) => prev + 1)
+  }
+
+  // Handle retry for failed operations
+  const handleRetry = (failedIds: string[]) => {
+    // In a real implementation, you would retry the failed operations
+    // For now, we'll just refresh the data
+    refreshData()
   }
 
   if (loading) {
@@ -78,10 +104,7 @@ export function WellnessDashboard() {
         <CardContent className="pt-6">
           <div className="text-center text-red-500">
             <p>Error loading dashboard: {error}</p>
-            <button
-              onClick={() => window.location.reload()}
-              className="mt-4 px-4 py-2 bg-primary text-white rounded-md"
-            >
+            <button onClick={() => refreshData()} className="mt-4 px-4 py-2 bg-primary text-white rounded-md">
               Retry
             </button>
           </div>
@@ -102,14 +125,11 @@ export function WellnessDashboard() {
     )
   }
 
-  // Apply optimistic updates to entries if we have data
-  const optimisticData = {
-    ...dashboardData,
-    entries: dashboardData.entries ? applyOptimisticEntries(dashboardData.entries) : [],
-  }
-
   return (
     <div className="space-y-4">
+      {/* Optimistic feedback component */}
+      <OptimisticFeedback table="wellness_entries" onRetry={handleRetry} />
+
       <Tabs defaultValue="week" onValueChange={handleTimeframeChange}>
         <div className="flex justify-between items-center">
           <h2 className="text-2xl font-bold">Wellness Dashboard</h2>
@@ -122,19 +142,19 @@ export function WellnessDashboard() {
         </div>
 
         <TabsContent value="day" className="space-y-4">
-          <DashboardContent data={optimisticData} timeframe="day" userId={user?.id} />
+          <DashboardContent data={dashboardData} timeframe="day" userId={user?.id} />
         </TabsContent>
 
         <TabsContent value="week" className="space-y-4">
-          <DashboardContent data={optimisticData} timeframe="week" userId={user?.id} />
+          <DashboardContent data={dashboardData} timeframe="week" userId={user?.id} />
         </TabsContent>
 
         <TabsContent value="month" className="space-y-4">
-          <DashboardContent data={optimisticData} timeframe="month" userId={user?.id} />
+          <DashboardContent data={dashboardData} timeframe="month" userId={user?.id} />
         </TabsContent>
 
         <TabsContent value="year" className="space-y-4">
-          <DashboardContent data={optimisticData} timeframe="year" userId={user?.id} />
+          <DashboardContent data={dashboardData} timeframe="year" userId={user?.id} />
         </TabsContent>
       </Tabs>
     </div>
@@ -143,7 +163,18 @@ export function WellnessDashboard() {
 
 function DashboardContent({ data, timeframe, userId }: { data: any; timeframe: string; userId?: string }) {
   const { entries = [], goals = [], categories = [], stats = {} } = data
-  const hasOptimisticEntries = entries.some((entry: any) => entry.__optimistic)
+  const optimistic = getOptimisticUpdates()
+
+  // Apply optimistic updates to entries
+  const optimisticEntries = optimistic.applyUpdates("wellness_entries", entries)
+
+  // Check if there are any optimistic entries
+  const hasOptimisticEntries = optimisticEntries.some((entry: any) => entry.__optimistic)
+
+  // Calculate total hours from optimistic entries
+  const totalHours = optimisticEntries.reduce((acc: number, entry: any) => {
+    return acc + (entry.__deleted ? 0 : entry.duration || 0)
+  }, 0)
 
   return (
     <>
@@ -154,7 +185,7 @@ function DashboardContent({ data, timeframe, userId }: { data: any; timeframe: s
             <div className="text-center">
               <p className="text-sm text-muted-foreground">Total Entries</p>
               <h3 className="text-3xl font-bold">
-                {stats?.total_entries || entries.length || 0}
+                {optimisticEntries.filter((e: any) => !e.__deleted).length || 0}
                 {hasOptimisticEntries && (
                   <Badge variant="outline" className="ml-2 text-xs align-middle border-blue-300 text-blue-500">
                     Updating
@@ -170,9 +201,12 @@ function DashboardContent({ data, timeframe, userId }: { data: any; timeframe: s
             <div className="text-center">
               <p className="text-sm text-muted-foreground">Total Hours</p>
               <h3 className="text-3xl font-bold">
-                {hasOptimisticEntries
-                  ? entries.reduce((acc: number, entry: any) => acc + (entry.duration || 0), 0).toFixed(1)
-                  : stats?.total_duration?.toFixed(1) || 0}
+                {totalHours.toFixed(1)}
+                {hasOptimisticEntries && (
+                  <Badge variant="outline" className="ml-2 text-xs align-middle border-blue-300 text-blue-500">
+                    Updating
+                  </Badge>
+                )}
               </h3>
             </div>
           </CardContent>
@@ -204,7 +238,7 @@ function DashboardContent({ data, timeframe, userId }: { data: any; timeframe: s
             <CardTitle>Category Distribution</CardTitle>
           </CardHeader>
           <CardContent>
-            <PieChart data={categories} entries={entries} />
+            <PieChart data={categories} entries={optimisticEntries.filter((e: any) => !e.__deleted)} />
           </CardContent>
         </Card>
 
@@ -213,7 +247,7 @@ function DashboardContent({ data, timeframe, userId }: { data: any; timeframe: s
             <CardTitle>Goal Progress</CardTitle>
           </CardHeader>
           <CardContent>
-            <RadialChart goals={goals} entries={entries} />
+            <RadialChart goals={goals} entries={optimisticEntries.filter((e: any) => !e.__deleted)} />
           </CardContent>
         </Card>
       </div>
@@ -225,7 +259,7 @@ function DashboardContent({ data, timeframe, userId }: { data: any; timeframe: s
             <CardTitle>Recent Activity</CardTitle>
           </CardHeader>
           <CardContent>
-            <OptimisticTrackingHistory rawEntries={entries} categories={categories} />
+            <ServerActionTrackingHistory entries={entries} categories={categories} />
           </CardContent>
         </Card>
 
@@ -235,7 +269,7 @@ function DashboardContent({ data, timeframe, userId }: { data: any; timeframe: s
           </CardHeader>
           <CardContent>
             {userId ? (
-              <OptimisticEntryForm categories={categories} userId={userId} />
+              <OptimisticServerActionEntryForm categories={categories} userId={userId} />
             ) : (
               <div className="text-center py-4 text-gray-500">Please sign in to add entries</div>
             )}

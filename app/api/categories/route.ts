@@ -13,7 +13,7 @@ export async function GET(request: Request) {
     async () => {
       try {
         // Get the current user session
-        const supabase = createRouteHandlerClient({ cookies })
+        const supabase = await createRouteHandlerClient({ cookies })
         const {
           data: { session },
         } = await supabase.auth.getSession()

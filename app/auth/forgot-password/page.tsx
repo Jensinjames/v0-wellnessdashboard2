@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { ForgotPasswordForm } from "@/components/auth/forgot-password-form"
+import { EnhancedForgotPasswordForm } from "@/components/auth/enhanced-forgot-password-form"
 import { AuthLayout } from "@/components/auth/auth-layout"
 import { useAuth } from "@/context/auth-context"
 import { useRouter } from "next/navigation"
@@ -29,7 +29,7 @@ export default function ForgotPasswordPage() {
   return (
     <AuthLayout title="Forgot Password" description="Enter your email to reset your password">
       <Suspense fallback={<div className="p-4 text-center">Loading form...</div>}>
-        <ForgotPasswordForm />
+        <EnhancedForgotPasswordForm />
       </Suspense>
     </AuthLayout>
   )

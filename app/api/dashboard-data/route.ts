@@ -67,8 +67,8 @@ export async function GET(request: Request) {
                 case "month":
                   startDate = new Date(now)
                   startDate.setMonth(now.getMonth() - 1)
-                  break
-                default:
+                  break\
+                default":
                   startDate = new Date(now)
                   startDate.setDate(now.getDate() - 7)
               }

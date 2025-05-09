@@ -1,10 +1,6 @@
-/**
- * API Route for logging authentication events
- * This provides a server-side way to log events to user_changes_log
- */
-import { createServerClient } from "@supabase/ssr"
-import { cookies } from "next/headers"
-import { type NextRequest, NextResponse } from "next/server"
+import { NextResponse } from "next/server"
+import type { NextRequest } from "next/server"
+import { createServerSupabaseClient } from "@/lib/supabase-server"
 
 export async function POST(request: NextRequest) {
   try {
@@ -18,24 +14,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Create Supabase client
-    const cookieStore = cookies()
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          get(name: string) {
-            return cookieStore.get(name)?.value
-          },
-          set() {
-            // This is a read-only operation
-          },
-          remove() {
-            // This is a read-only operation
-          },
-        },
-      },
-    )
+    const supabase = await createServerSupabaseClient()
 
     // Get client info from request headers
     const userAgent = request.headers.get("user-agent") || "unknown"
