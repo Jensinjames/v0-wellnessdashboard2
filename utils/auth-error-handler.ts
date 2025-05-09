@@ -1,103 +1,72 @@
-export function handleAuthError(error: any, operation: string): string {
-  console.error(`Authentication error during ${operation}:`, error)
+type AuthErrorContext = "sign-in" | "sign-up" | "sign-out" | "reset-password" | "email-verification"
 
-  // Handle undefined client or methods
-  if (error.message?.includes("Cannot read properties of undefined")) {
-    if (error.message.includes("resetPasswordForEmail")) {
-      return "Authentication service is temporarily unavailable. Please try again in a moment."
-    }
-    return "Authentication service error. Please try again later."
-  }
+/**
+ * Handles authentication errors and returns user-friendly error messages
+ */
+export function handleAuthError(error: Error, context: AuthErrorContext = "sign-in"): string {
+  const errorMessage = error.message.toLowerCase()
 
-  // Handle JSON parsing errors (often from rate limiting)
-  if (error instanceof SyntaxError && error.message.includes("Unexpected token")) {
-    if (error.message.includes("Too Many R") || error.message.includes("429")) {
-      return "Too many requests. Please try again in a moment."
-    }
-    return "Server returned an invalid response. Please try again later."
-  }
-
-  // Handle database errors - specifically the "Database error granting user" error
-  if (
-    error.message?.includes("Database error granting user") ||
-    error.message?.includes("database error") ||
-    error.message?.includes("Database error") ||
-    error.message?.includes("db error") ||
-    error.message?.includes("database connection") ||
-    error.message?.includes("connection error") ||
-    error.message?.includes("could not connect to database") ||
-    error.message?.includes("role") ||
-    error.message?.includes("permission denied") ||
-    error.message?.includes("violates foreign key constraint")
-  ) {
-    // Log detailed error information for debugging
-    console.warn("Database error details:", {
-      message: error.message,
-      code: error.code,
-      details: error.details,
-      hint: error.hint,
-      operation,
-    })
-
-    if (operation === "sign-in" || operation === "sign-up") {
-      // For sign-in/sign-up, provide a more specific message and suggest demo mode
-      return "We're experiencing a temporary database issue. Please try using demo mode by clicking the 'Use Demo Mode' button below."
-    }
-    return "Database connection issue. Please try again in a moment."
-  }
-
-  // Handle authentication errors
-  if (error.message?.includes("Invalid login credentials") || error.status === 400) {
-    if (operation === "sign-in") {
-      return "Invalid email or password. Please try again."
-    }
-  }
-
-  // Handle email verification errors
-  if (error.message?.includes("Email not confirmed") || error.message?.includes("verify your email")) {
-    return "Please verify your email before signing in. Check your inbox for a verification link."
-  }
-
-  // Handle rate limiting
-  if (
-    error.status === 429 ||
-    error.message?.includes("Too Many Requests") ||
-    error.message?.includes("Too Many R") ||
-    error.message?.includes("429") ||
-    (error instanceof SyntaxError && error.message.includes("Unexpected token"))
-  ) {
-    return "Too many requests. Please try again in a moment."
-  }
-
-  // Handle specific error codes
-  if (error.status === 400) {
-    if (error.message?.includes("Email already registered")) {
-      return "This email is already registered. Please sign in instead."
-    }
-    if (error.message?.includes("Invalid login credentials")) {
-      return "Invalid email or password. Please try again."
-    }
-  }
-
-  // Handle network errors
-  if (
-    error.message?.includes("Failed to fetch") ||
-    error.message?.includes("Network Error") ||
-    error.message?.includes("network")
-  ) {
+  // Network errors
+  if (errorMessage.includes("network") || errorMessage.includes("fetch") || errorMessage.includes("timeout")) {
     return "Network error. Please check your internet connection and try again."
   }
 
-  // Handle session expiration
-  if (error.message?.includes("JWT expired") || error.message?.includes("token is expired")) {
-    return "Your session has expired. Please sign in again."
+  // Rate limiting
+  if (errorMessage.includes("too many requests") || errorMessage.includes("rate limit")) {
+    return "Too many attempts. Please try again later."
   }
 
-  // Handle account lockout
-  if (error.message?.includes("locked") || error.message?.includes("too many attempts")) {
-    return "Your account has been temporarily locked due to too many failed attempts. Please try again later."
+  // Database errors
+  if (
+    errorMessage.includes("database error") ||
+    errorMessage.includes("db error") ||
+    errorMessage.includes("permission denied")
+  ) {
+    if (context === "sign-in") {
+      return "Database error granting user. Please try again or use demo mode."
+    }
+    return "Database error. Please try again later."
   }
 
-  // Default error message
-  return error.message || `An error occurred during ${operation}. Please try again.`
+  // Context-specific errors
+  switch (context) {
+    case "sign-in":
+      if (errorMessage.includes("invalid login") || errorMessage.includes("invalid credentials")) {
+        return "Invalid email or password. Please try again."
+      }
+      if (errorMessage.includes("email not confirmed")) {
+        return "Please verify your email before signing in. Check your inbox for a verification link."
+      }
+      break
+
+    case "sign-up":
+      if (errorMessage.includes("already registered")) {
+        return "This email is already registered. Try signing in instead."
+      }
+      if (errorMessage.includes("password")) {
+        return "Password is too weak. Please use a stronger password."
+      }
+      break
+
+    case "reset-password":
+      if (errorMessage.includes("user not found")) {
+        return "No account found with this email address."
+      }
+      break
+
+    case "email-verification":
+      if (errorMessage.includes("expired")) {
+        return "Verification link has expired. Please request a new one."
+      }
+      if (errorMessage.includes("invalid")) {
+        return "Invalid verification link. Please request a new one."
+      }
+      break
+
+    default:
+      break
+  }
+
+  // Default error messages
+  return error.message
 }

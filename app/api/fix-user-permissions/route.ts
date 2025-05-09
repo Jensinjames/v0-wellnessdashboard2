@@ -1,70 +1,95 @@
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
-import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
-import type { Database } from "@/types/database"
+import { supabaseAdmin } from "@/lib/supabase-admin"
 
 export async function POST(request: Request) {
   try {
     const { userId } = await request.json()
 
     if (!userId) {
-      return NextResponse.json({ success: false, error: "User ID is required" }, { status: 400 })
+      return NextResponse.json({ error: "User ID is required" }, { status: 400 })
     }
 
-    // Create a Supabase client with admin privileges
-    const supabase = createRouteHandlerClient<Database>({ cookies })
+    // 1. Ensure the user has the authenticated role
+    await ensureUserRole(userId)
 
-    // Verify the user exists
-    const { data: userData, error: userError } = await supabase.auth.admin.getUserById(userId)
+    // 2. Check if the user has a profile and create one if needed
+    await ensureUserProfile(userId)
 
-    if (userError || !userData.user) {
-      console.error("Error getting user:", userError)
-      return NextResponse.json({ success: false, error: userError?.message || "User not found" }, { status: 404 })
+    return NextResponse.json({ success: true })
+  } catch (error) {
+    console.error("Error fixing user permissions:", error)
+    return NextResponse.json({ error: "Failed to fix user permissions" }, { status: 500 })
+  }
+}
+
+// Function to ensure the user has the authenticated role
+async function ensureUserRole(userId: string) {
+  try {
+    // Get the user's current metadata
+    const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId)
+
+    if (userError || !userData) {
+      throw new Error(`Failed to get user: ${userError?.message}`)
     }
 
-    // Ensure the user has the authenticated role
-    // This would typically be done through Supabase's admin API
-    // For this example, we'll simulate it with a direct query
-    const { error: roleError } = await supabase.rpc("ensure_user_role", {
-      user_id: userId,
-      role_name: "authenticated",
-    })
+    // Check if the user already has the authenticated role
+    const currentRoles = userData.user.app_metadata?.roles || []
 
-    if (roleError) {
-      console.error("Error ensuring user role:", roleError)
-      return NextResponse.json({ success: false, error: roleError.message }, { status: 500 })
+    if (!Array.isArray(currentRoles) || !currentRoles.includes("authenticated")) {
+      // Add the authenticated role
+      const newRoles = Array.isArray(currentRoles) ? [...currentRoles, "authenticated"] : ["authenticated"]
+
+      const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+        app_metadata: { ...userData.user.app_metadata, roles: newRoles },
+      })
+
+      if (updateError) {
+        throw new Error(`Failed to update user roles: ${updateError.message}`)
+      }
     }
+  } catch (error) {
+    console.error("Error ensuring user role:", error)
+    throw error
+  }
+}
 
-    // Ensure the user has a profile
-    const { data: profileData, error: profileError } = await supabase
+// Function to ensure the user has a profile
+async function ensureUserProfile(userId: string) {
+  try {
+    // Check if the user already has a profile
+    const { data: profile, error: profileError } = await supabaseAdmin
       .from("profiles")
       .select("id")
       .eq("id", userId)
       .single()
 
-    if (profileError && !profileError.message.includes("No rows found")) {
-      console.error("Error checking profile:", profileError)
-      return NextResponse.json({ success: false, error: profileError.message }, { status: 500 })
+    if (profileError && profileError.code !== "PGRST116") {
+      // PGRST116 is the error code for "no rows returned"
+      throw new Error(`Failed to check user profile: ${profileError.message}`)
     }
 
-    // If no profile exists, create one
-    if (!profileData) {
-      const { error: createError } = await supabase.from("profiles").insert({
+    if (!profile) {
+      // Get the user's email
+      const { data: userData, error: userError } = await supabaseAdmin.auth.admin.getUserById(userId)
+
+      if (userError || !userData) {
+        throw new Error(`Failed to get user: ${userError?.message}`)
+      }
+
+      // Create a profile for the user
+      const { error: insertError } = await supabaseAdmin.from("profiles").insert({
         id: userId,
-        email: userData.user.email || "",
+        email: userData.user.email,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
 
-      if (createError) {
-        console.error("Error creating profile:", createError)
-        return NextResponse.json({ success: false, error: createError.message }, { status: 500 })
+      if (insertError) {
+        throw new Error(`Failed to create user profile: ${insertError.message}`)
       }
     }
-
-    return NextResponse.json({ success: true })
-  } catch (error: any) {
-    console.error("Unexpected error fixing user permissions:", error)
-    return NextResponse.json({ success: false, error: error.message || "Unknown error" }, { status: 500 })
+  } catch (error) {
+    console.error("Error ensuring user profile:", error)
+    throw error
   }
 }
