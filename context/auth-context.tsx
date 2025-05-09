@@ -1,15 +1,14 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useEffect, useState, useRef } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createContext, useContext, useEffect, useState, useRef, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import type { User, Session } from "@supabase/supabase-js"
 import type { UserProfile, ProfileFormData } from "@/types/auth"
 import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
 import { validateAuthCredentials, sanitizeEmail } from "@/utils/auth-validation"
-import { resetSupabaseClient } from "@/lib/supabase-client"
+import { getSupabaseClient, resetSupabaseClient } from "@/lib/supabase-singleton"
 
 interface AuthContextType {
   user: User | null
@@ -63,9 +62,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
-  const supabase = createClientComponentClient()
   const isMounted = useRef(true)
   const isInitialized = useRef(false)
+  const supabaseRef = useRef<Awaited<ReturnType<typeof getSupabaseClient>> | null>(null)
+  const authSubscription = useRef<{ unsubscribe: () => void } | null>(null)
 
   // Initialize auth state
   useEffect(() => {
@@ -75,6 +75,23 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const initializeAuth = async () => {
       try {
         debugLog("Initializing auth state")
+
+        // Get the Supabase client from our singleton
+        const supabasePromise = getSupabaseClient({
+          debugMode: authDebugMode,
+        })
+
+        // Handle both synchronous and asynchronous returns
+        let supabase: Awaited<ReturnType<typeof getSupabaseClient>>
+
+        if (supabasePromise instanceof Promise) {
+          supabase = await supabasePromise
+        } else {
+          supabase = supabasePromise
+        }
+
+        supabaseRef.current = supabase
+
         // Get session
         const {
           data: { session: initialSession },
@@ -179,10 +196,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           router.refresh()
         })
 
-        return () => {
-          debugLog("Cleaning up auth state change listener")
-          subscription.unsubscribe()
-        }
+        // Store the subscription for cleanup
+        authSubscription.current = subscription
       } catch (error) {
         console.error("Error initializing auth:", error)
         setIsLoading(false)
@@ -193,8 +208,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       isMounted.current = false
+      // Clean up subscription if it exists
+      if (authSubscription.current) {
+        authSubscription.current.unsubscribe()
+      }
     }
-  }, [supabase, router])
+  }, [router])
 
   // Update profile function that uses server action instead of direct database access
   const updateProfile = async (data: ProfileFormData): Promise<{ success: boolean; error: Error | null }> => {
@@ -273,7 +292,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const { data, error } = await supabase.auth.signInWithPassword({
+      // Get the Supabase client
+      if (!supabaseRef.current) {
+        const supabasePromise = getSupabaseClient({
+          debugMode: authDebugMode,
+        })
+
+        if (supabasePromise instanceof Promise) {
+          supabaseRef.current = await supabasePromise
+        } else {
+          supabaseRef.current = supabasePromise
+        }
+      }
+
+      const { data, error } = await supabaseRef.current.auth.signInWithPassword({
         email: sanitizedEmail,
         password: credentials.password,
       })
@@ -332,7 +364,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      const { data, error } = await supabase.auth.signUp({
+      // Get the Supabase client
+      if (!supabaseRef.current) {
+        const supabasePromise = getSupabaseClient({
+          debugMode: authDebugMode,
+        })
+
+        if (supabasePromise instanceof Promise) {
+          supabaseRef.current = await supabasePromise
+        } else {
+          supabaseRef.current = supabasePromise
+        }
+      }
+
+      const { data, error } = await supabaseRef.current.auth.signUp({
         email: sanitizedEmail,
         password: credentials.password,
         options: {
@@ -363,7 +408,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     debugLog("Sign out attempt")
     try {
-      await supabase.auth.signOut()
+      // Get the Supabase client
+      if (!supabaseRef.current) {
+        const supabasePromise = getSupabaseClient({
+          debugMode: authDebugMode,
+        })
+
+        if (supabasePromise instanceof Promise) {
+          supabaseRef.current = await supabasePromise
+        } else {
+          supabaseRef.current = supabasePromise
+        }
+      }
+
+      await supabaseRef.current.auth.signOut()
 
       // Explicitly clear state
       setUser(null)
@@ -372,6 +430,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Reset the client to ensure a clean state
       resetSupabaseClient()
+      supabaseRef.current = null
 
       // Redirect to sign-in page
       router.push("/auth/sign-in")
@@ -389,7 +448,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPassword = async (email: string): Promise<{ success: boolean; error: string | null }> => {
     try {
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      // Get the Supabase client
+      if (!supabaseRef.current) {
+        const supabasePromise = getSupabaseClient({
+          debugMode: authDebugMode,
+        })
+
+        if (supabasePromise instanceof Promise) {
+          supabaseRef.current = await supabasePromise
+        } else {
+          supabaseRef.current = supabasePromise
+        }
+      }
+
+      const { error } = await supabaseRef.current.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/reset-password`,
       })
 
@@ -406,7 +478,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updatePassword = async (password: string): Promise<{ success: boolean; error: string | null }> => {
     try {
-      const { error } = await supabase.auth.updateUser({
+      // Get the Supabase client
+      if (!supabaseRef.current) {
+        const supabasePromise = getSupabaseClient({
+          debugMode: authDebugMode,
+        })
+
+        if (supabasePromise instanceof Promise) {
+          supabaseRef.current = await supabasePromise
+        } else {
+          supabaseRef.current = supabasePromise
+        }
+      }
+
+      const { error } = await supabaseRef.current.auth.updateUser({
         password,
       })
 
@@ -421,7 +506,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const refreshProfile = async (): Promise<UserProfile | null> => {
+  const refreshProfile = useCallback(async (): Promise<UserProfile | null> => {
     if (!user) {
       debugLog("Cannot refresh profile: no user")
       return null
@@ -431,7 +516,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       debugLog("Refreshing profile for user", user.id)
       setIsLoading(true)
 
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+      // Get the Supabase client
+      if (!supabaseRef.current) {
+        const supabasePromise = getSupabaseClient({
+          debugMode: authDebugMode,
+        })
+
+        if (supabasePromise instanceof Promise) {
+          supabaseRef.current = await supabasePromise
+        } else {
+          supabaseRef.current = supabasePromise
+        }
+      }
+
+      const { data, error } = await supabaseRef.current.from("profiles").select("*").eq("id", user.id).single()
 
       if (error) {
         console.error("Error fetching profile:", error)
@@ -453,13 +551,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }
+  }, [user])
 
   const getClientInfo = () => {
     return {
-      hasClient: true,
+      hasClient: !!supabaseRef.current,
       isInitializing: false,
-      hasInitPromise: false,
       clientInstanceCount: 1,
       goTrueClientCount: 1,
       clientInitTime: Date.now(),

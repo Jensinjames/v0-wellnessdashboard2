@@ -7,6 +7,9 @@ import { ProfileCompletionProvider } from "@/context/profile-completion-context"
 import { EnvProvider } from "@/components/providers/env-provider"
 import { NavigationProvider } from "@/context/navigation-context"
 
+// Import the initialization utility
+import "@/lib/init-supabase"
+
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {

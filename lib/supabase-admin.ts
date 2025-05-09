@@ -1,3 +1,10 @@
+/**
+ * Supabase Admin Client
+ *
+ * This module provides a Supabase client with admin privileges.
+ * It should ONLY be used in server-side code, never in client components.
+ */
+
 import { createClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 
@@ -14,6 +21,16 @@ if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
 let lastAdminConnectionAttempt = 0
 let adminConnectionAttempts = 0
 const ADMIN_CONNECTION_BACKOFF_BASE = 1000 // ms
+
+// Debug mode flag
+const isDebugMode = process.env.DEBUG_MODE === "true"
+
+// Internal debug logging function
+function debugLog(...args: any[]): void {
+  if (isDebugMode) {
+    console.log("[Supabase Admin]", ...args)
+  }
+}
 
 // Calculate timeout with exponential backoff
 const now = Date.now()
@@ -55,7 +72,23 @@ const supabaseAdmin = createClient<Database>(process.env.SUPABASE_URL, process.e
   },
 })
 
-// Custom fetch implementation with timeout for admin
+/**
+ * Execute a function with the admin client
+ * This provides a clear pattern for admin operations
+ */
+export async function withAdmin<T>(fn: (admin: typeof supabaseAdmin) => Promise<T>): Promise<T> {
+  try {
+    debugLog("Executing admin operation")
+    return await fn(supabaseAdmin)
+  } catch (error) {
+    console.error("Error in admin operation:", error)
+    throw error
+  }
+}
+
+/**
+ * Custom fetch implementation with timeout for admin
+ */
 async function fetchWithAdminTimeout(
   url: RequestInfo | URL,
   options: RequestInit = {},
@@ -95,7 +128,7 @@ async function fetchWithAdminTimeout(
     if (response.status === 429 && retryCount < MAX_RETRIES) {
       // Calculate backoff time - exponential with jitter
       const backoffTime = Math.min(1000 * Math.pow(2, retryCount), 10000) * (0.8 + Math.random() * 0.4)
-      console.log(`[Admin] Rate limited. Retrying in ${backoffTime}ms (attempt ${retryCount + 1})`)
+      debugLog(`Rate limited. Retrying in ${backoffTime}ms (attempt ${retryCount + 1})`)
 
       // Wait for the backoff period
       await new Promise((resolve) => setTimeout(resolve, backoffTime))
@@ -121,7 +154,7 @@ async function fetchWithAdminTimeout(
     ) {
       // Calculate backoff time - exponential with jitter
       const backoffTime = Math.min(1000 * Math.pow(2, retryCount), 10000) * (0.8 + Math.random() * 0.4)
-      console.log(`[Admin] Network error. Retrying in ${backoffTime}ms (attempt ${retryCount + 1})`)
+      debugLog(`Network error. Retrying in ${backoffTime}ms (attempt ${retryCount + 1})`)
 
       // Wait for the backoff period
       await new Promise((resolve) => setTimeout(resolve, backoffTime))
@@ -134,4 +167,4 @@ async function fetchWithAdminTimeout(
   }
 }
 
-export { supabaseAdmin }
+// Export the withAdmin function as the primary way to use the admin client

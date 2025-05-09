@@ -1,65 +1,29 @@
-"use client"
-
 /**
- * Client Monitor Component
- *
- * This component displays information about the Supabase client instances
- * and provides tools for debugging and monitoring.
+ * Component to monitor and display GoTrueClient instances
+ * This is useful for debugging and ensuring only one instance exists
  */
 
-import { useState, useEffect } from "react"
-import { getClientStats, resetSupabaseClient, cleanupOrphanedClients } from "@/lib/supabase-singleton"
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from "@/components/ui/card"
+"use client"
+
+import { useState } from "react"
+import { useClientMonitor } from "@/hooks/use-client-monitor"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { getSupabaseClient, resetSupabaseClient } from "@/lib/supabase-singleton"
 
-interface ClientMonitorProps {
-  autoRefresh?: boolean
-  refreshInterval?: number
-}
-
-export function ClientMonitor({ autoRefresh = true, refreshInterval = 5000 }: ClientMonitorProps) {
-  const [stats, setStats] = useState(getClientStats())
+export function ClientInstanceMonitor() {
+  const { stats, refreshStats, forceCleanup, lastCleanup, hasMultipleInstances } = useClientMonitor()
   const [expanded, setExpanded] = useState(false)
-  const [lastCleanup, setLastCleanup] = useState<Date | null>(null)
-
-  // Function to refresh stats
-  const refreshStats = () => {
-    setStats(getClientStats())
-  }
-
-  // Function to force cleanup
-  const forceCleanup = () => {
-    cleanupOrphanedClients(true)
-    setLastCleanup(new Date())
-    refreshStats()
-  }
 
   // Function to reset the client
   const handleReset = () => {
     resetSupabaseClient()
+    // Create a new client immediately to ensure we have one
+    getSupabaseClient()
     refreshStats()
   }
-
-  // Set up auto-refresh
-  useEffect(() => {
-    if (!autoRefresh) return
-
-    const interval = setInterval(() => {
-      refreshStats()
-
-      // Auto-cleanup if needed
-      if (stats.goTrueClientCount > 1) {
-        cleanupOrphanedClients(true)
-        setLastCleanup(new Date())
-      }
-    }, refreshInterval)
-
-    return () => clearInterval(interval)
-  }, [autoRefresh, refreshInterval, stats.goTrueClientCount])
-
-  const hasMultipleInstances = stats.goTrueClientCount > 1
 
   return (
     <Card className="w-full">
@@ -88,7 +52,7 @@ export function ClientMonitor({ autoRefresh = true, refreshInterval = 5000 }: Cl
         <div className="grid grid-cols-2 gap-2 mb-4">
           <div className="flex flex-col">
             <span className="text-sm text-muted-foreground">Global Client</span>
-            <span className="font-medium">{stats.hasClient ? "Yes" : "No"}</span>
+            <span className="font-medium">{stats.hasGlobalClient ? "Yes" : "No"}</span>
           </div>
           <div className="flex flex-col">
             <span className="text-sm text-muted-foreground">GoTrueClient Count</span>

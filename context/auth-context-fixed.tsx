@@ -66,6 +66,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const isMounted = useRef(true)
   const isInitialized = useRef(false)
+  const authSubscription = useRef<{ unsubscribe: () => void } | null>(null)
 
   // Initialize auth state
   useEffect(() => {
@@ -185,6 +186,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           router.refresh()
         })
 
+        // Store the subscription for cleanup
+        authSubscription.current = subscription
+
         return () => {
           debugLog("Cleaning up auth state change listener")
           subscription.unsubscribe()
@@ -199,6 +203,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       isMounted.current = false
+      // Clean up subscription if it exists
+      if (authSubscription.current) {
+        authSubscription.current.unsubscribe()
+      }
     }
   }, [router])
 
