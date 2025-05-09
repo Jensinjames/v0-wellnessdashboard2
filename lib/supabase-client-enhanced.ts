@@ -1,13 +1,6 @@
 import { createClient } from "@supabase/supabase-js"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
-import {
-  registerGlobalClient,
-  getGlobalClient,
-  hasGlobalClient,
-  clearGlobalClient,
-  setSupabaseDebugMode,
-} from "@/lib/supabase-singleton-manager"
 
 // Global variables for singleton pattern
 let supabaseClient: SupabaseClient<Database> | null = null
@@ -21,10 +14,7 @@ let connectionAttempts = 0
 let consecutiveFailures = 0
 
 // Debug mode flag
-let debugMode = false
-if (typeof window !== "undefined") {
-  debugMode = localStorage.getItem("supabase_debug") === "true" || process.env.NEXT_PUBLIC_DEBUG_MODE === "true"
-}
+let debugMode = process.env.NODE_ENV === "development"
 
 // Global registry to track all GoTrueClient instances
 const goTrueClientRegistry = new Set<any>()
@@ -36,7 +26,9 @@ const MAX_HISTORY_ITEMS = 50
 // Enable/disable debug logging
 export function setDebugMode(enabled: boolean): void {
   debugMode = enabled
-  setSupabaseDebugMode(enabled)
+  if (typeof window !== "undefined") {
+    localStorage.setItem("supabase_debug", enabled ? "true" : "false")
+  }
   console.log(`Supabase client debug mode ${enabled ? "enabled" : "disabled"}`)
 }
 
@@ -65,15 +57,6 @@ export function getSupabaseClient(
 
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     throw new Error("Supabase URL and anon key are required")
-  }
-
-  // Check for existing global client first
-  if (!options.forceNew && hasGlobalClient()) {
-    const globalClient = getGlobalClient()
-    if (globalClient) {
-      debugLog("Returning existing global Supabase client instance")
-      return globalClient
-    }
   }
 
   // If we already have a client and aren't forcing a new one, return it
@@ -175,10 +158,6 @@ export function getSupabaseClient(
           if (isConnected) {
             // Store the client
             supabaseClient = newClient
-
-            // Register as global client
-            registerGlobalClient(newClient)
-
             lastSuccessfulConnection = Date.now()
             consecutiveFailures = 0
 
@@ -416,9 +395,6 @@ export function resetSupabaseClient() {
 
   // Clear the GoTrueClient registry
   goTrueClientRegistry.clear()
-
-  // Clear the global client
-  clearGlobalClient()
 
   debugLog("Supabase client reset complete")
 }

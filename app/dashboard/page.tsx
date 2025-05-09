@@ -1,76 +1,72 @@
 "use client"
 
-import { useEffect, useState } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import { redirect } from "next/navigation"
-import ProfileSection from "@/components/profile-section"
-import AuthStatus from "@/components/auth-status"
+import { useState, useEffect } from "react"
+import { useAuth } from "@/context/auth-context"
+import { Navigation } from "@/components/navigation"
+import { WellnessDashboard } from "@/components/dashboard/wellness-dashboard"
 import { Button } from "@/components/ui/button"
+import { useRouter } from "next/navigation"
 
-export default function Dashboard() {
-  const [user, setUser] = useState(null)
-  const [profile, setProfile] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const supabase = createClientComponentClient()
+export default function DashboardPage() {
+  const { user, isLoading } = useAuth()
+  const [isClient, setIsClient] = useState(false)
+  const router = useRouter()
 
   useEffect(() => {
-    const getUser = async () => {
-      const {
-        data: { user: currentUser },
-      } = await supabase.auth.getUser()
+    setIsClient(true)
+  }, [])
 
-      if (!currentUser) {
-        redirect("/")
-        return
-      }
-
-      setUser(currentUser)
-
-      // Fetch the user's profile
-      const { data: profileData, error } = await supabase.from("profiles").select("*").eq("id", currentUser.id).single()
-
-      if (error) {
-        console.error("Error fetching profile:", error)
-      } else {
-        setProfile(profileData)
-      }
-
-      setLoading(false)
-    }
-
-    getUser()
-  }, [supabase])
-
-  const handleSignOut = async () => {
-    await supabase.auth.signOut()
-    redirect("/")
+  if (!isClient) {
+    return null
   }
 
-  if (loading) {
-    return <div className="flex justify-center items-center min-h-screen">Loading...</div>
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <main className="container py-6">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold">Loading...</h1>
+          </div>
+        </main>
+      </div>
+    )
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <main className="container py-6">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold">Dashboard</h1>
+          </div>
+          <div className="flex flex-col items-center justify-center py-12">
+            <p className="mb-4">Please sign in to view your dashboard.</p>
+            <Button onClick={() => router.push("/auth/sign-in")}>Sign In</Button>
+          </div>
+        </main>
+      </div>
+    )
   }
 
   return (
-    <div className="min-h-screen bg-gray-100">
-      <header className="bg-white shadow-sm">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4 flex justify-between items-center">
-          <h1 className="text-xl font-semibold">Wellness Dashboard</h1>
-          <Button variant="outline" onClick={handleSignOut}>
-            Sign Out
-          </Button>
-        </div>
-      </header>
-
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="md:col-span-1">
-            <AuthStatus user={user} profile={profile} />
-          </div>
-
-          <div className="md:col-span-2">
-            <ProfileSection profile={profile} setProfile={setProfile} />
+    <div className="min-h-screen bg-background">
+      <Navigation />
+      <main className="container py-6">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold">Dashboard</h1>
+          <div className="flex gap-2">
+            <Button onClick={() => router.push("/goals")} variant="outline">
+              Manage Goals
+            </Button>
+            <Button onClick={() => router.push("/categories")} variant="outline">
+              Manage Categories
+            </Button>
           </div>
         </div>
+
+        <WellnessDashboard />
       </main>
     </div>
   )

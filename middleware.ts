@@ -1,32 +1,21 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
 import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs"
-import { extractAuthToken } from "@/utils/auth-redirect"
-
-// Token parameter name
-const TOKEN_PARAM = "__v0_token"
 
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
 
-  try {
-    // Create a new supabase middleware client for each request
-    const supabase = createMiddlewareClient({ req, res })
+  // Create a new supabase middleware client for each request
+  const supabase = createMiddlewareClient({ req, res })
 
+  try {
     // Check if the user is authenticated
     const {
       data: { session },
     } = await supabase.auth.getSession()
 
-    // Get the pathname and search from the URL
-    const { pathname, search } = req.nextUrl
-    const fullUrl = `${pathname}${search}`
-
-    // Log the current request for debugging
-    console.log(`Middleware processing: ${fullUrl}`)
-
-    // Check if the URL contains an authentication token
-    const token = extractAuthToken(fullUrl)
+    // Get the pathname from the URL
+    const { pathname } = req.nextUrl
 
     // Public routes that don't require authentication
     const publicRoutes = [
@@ -56,101 +45,13 @@ export async function middleware(req: NextRequest) {
       return res
     }
 
-    // If there's a token in the URL, let the sign-in page handle it
-    if (token && !pathname.startsWith("/auth/sign-in")) {
-      console.log(`Auth token detected, redirecting to sign-in for processing`)
-
-      // Extract the current path for redirection after token processing
-      let redirectPath = pathname
-      if (search) {
-        // Remove the token from the search parameters
-        const searchParams = new URLSearchParams(search)
-        searchParams.delete(TOKEN_PARAM)
-
-        // Add the remaining search parameters to the redirect path
-        const remainingSearch = searchParams.toString()
-        if (remainingSearch) {
-          redirectPath += `?${remainingSearch}`
-        }
-      }
-
-      // Encode the redirect path
-      const encodedRedirect = encodeURIComponent(redirectPath)
-
-      // Create the sign-in URL with the token and redirect path
-      const signInUrl = new URL(`/auth/sign-in?redirectTo=${encodedRedirect}`, req.url)
-      signInUrl.searchParams.set(TOKEN_PARAM, token)
-
-      return NextResponse.redirect(signInUrl)
-    }
-
-    // Special handling for /app routes
-    if (pathname.startsWith("/app")) {
-      console.log(`Processing /app route: ${pathname}`)
-
-      if (!session) {
-        console.log("No session found for /app route, redirecting to sign-in")
-
-        // Encode the full path including query parameters
-        const encodedPath = encodeURIComponent(`${pathname}${search}`)
-        const redirectUrl = new URL(`/auth/sign-in?redirectTo=${encodedPath}`, req.url)
-
-        console.log(`Redirecting to: ${redirectUrl.toString()}`)
-
-        // Create a response that redirects to the login page
-        const redirectRes = NextResponse.redirect(redirectUrl)
-
-        // Ensure cookies are properly set for the redirect
-        const supabaseCookies = res.headers.getSetCookie()
-        supabaseCookies.forEach((cookie) => {
-          redirectRes.headers.append("Set-Cookie", cookie)
-        })
-
-        return redirectRes
-      }
-
-      console.log("User authenticated for /app route, proceeding")
-      return res
-    }
-
-    // Special handling for root path
-    if (pathname === "/") {
-      console.log("Processing root path")
-
-      if (session) {
-        // If authenticated, redirect to dashboard
-        console.log("User authenticated at root path, redirecting to dashboard")
-        const dashboardUrl = new URL("/dashboard", req.url)
-        return NextResponse.redirect(dashboardUrl)
-      }
-
-      // If not authenticated, let the page handle it
-      return res
-    }
-
     // If the user is not authenticated and trying to access a protected route
     if (!session && !publicRoutes.some((route) => pathname.startsWith(route))) {
-      console.log(`Unauthenticated access to protected route: ${pathname}`)
-
-      // Encode the full path including query parameters
-      const encodedPath = encodeURIComponent(`${pathname}${search}`)
-      const redirectUrl = new URL(`/auth/sign-in?redirectTo=${encodedPath}`, req.url)
-
-      console.log(`Redirecting to: ${redirectUrl.toString()}`)
-
-      // Create a response that redirects to the login page
-      const redirectRes = NextResponse.redirect(redirectUrl)
-
-      // Ensure cookies are properly set for the redirect
-      const supabaseCookies = res.headers.getSetCookie()
-      supabaseCookies.forEach((cookie) => {
-        redirectRes.headers.append("Set-Cookie", cookie)
-      })
-
-      return redirectRes
+      const redirectUrl = new URL("/auth/sign-in", req.url)
+      redirectUrl.searchParams.set("redirectTo", pathname)
+      return NextResponse.redirect(redirectUrl)
     }
 
-    // User is authenticated, proceed with the request
     return res
   } catch (error) {
     console.error("Middleware error:", error)

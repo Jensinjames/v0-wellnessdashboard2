@@ -13,18 +13,13 @@ export function getEnvironment(): string {
   if (isBrowser) {
     return process.env.NEXT_PUBLIC_APP_ENVIRONMENT || "production"
   } else {
-    // Server-side can access NODE_ENV
     return process.env.NODE_ENV || "production"
   }
 }
 
 // Check if we're in development mode
 export function isDevelopment(): boolean {
-  if (isBrowser) {
-    return process.env.NEXT_PUBLIC_APP_ENVIRONMENT === "development" || process.env.NEXT_PUBLIC_DEBUG_MODE === "true"
-  } else {
-    return process.env.NODE_ENV === "development"
-  }
+  return getEnvironment() === "development"
 }
 
 // Check if we're in production mode
@@ -40,11 +35,7 @@ export function isTest(): boolean {
 // Get debug mode status
 export function isDebugMode(): boolean {
   if (isBrowser) {
-    return (
-      process.env.NEXT_PUBLIC_DEBUG_MODE === "true" ||
-      localStorage.getItem("debug_mode") === "true" ||
-      localStorage.getItem("supabase_debug") === "true"
-    )
+    return process.env.NEXT_PUBLIC_DEBUG_MODE === "true" || localStorage.getItem("debug_mode") === "true"
   } else {
     return process.env.DEBUG_MODE === "true"
   }

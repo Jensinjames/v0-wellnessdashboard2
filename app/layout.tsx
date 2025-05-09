@@ -1,28 +1,35 @@
 import type React from "react"
-import "./globals.css"
+import type { Metadata } from "next"
 import { Inter } from "next/font/google"
-import { Providers } from "@/components/providers"
-
-// Import the initialization utility
-import "@/lib/init-supabase"
+import "./globals.css"
+import { AuthProvider } from "@/context/auth-context"
+import { ProfileCompletionProvider } from "@/context/profile-completion-context"
+import { EnvProvider } from "@/components/providers/env-provider"
+import { NavigationProvider } from "@/context/navigation-context"
 
 const inter = Inter({ subsets: ["latin"] })
 
-export const metadata = {
+export const metadata: Metadata = {
   title: "Wellness Dashboard",
   description: "Track and manage your wellness goals",
-  generator: "v0.dev",
+    generator: 'v0.dev'
 }
 
 export default function RootLayout({
   children,
-}: {
+}: Readonly<{
   children: React.ReactNode
-}) {
+}>) {
   return (
     <html lang="en">
       <body className={inter.className}>
-        <Providers>{children}</Providers>
+        <EnvProvider>
+          <AuthProvider>
+            <ProfileCompletionProvider>
+              <NavigationProvider>{children}</NavigationProvider>
+            </ProfileCompletionProvider>
+          </AuthProvider>
+        </EnvProvider>
       </body>
     </html>
   )

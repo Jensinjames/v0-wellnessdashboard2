@@ -1,15 +1,15 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useEffect, useState, useRef, useCallback } from "react"
+import { createContext, useContext, useEffect, useState, useRef } from "react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useRouter } from "next/navigation"
 import type { User, Session } from "@supabase/supabase-js"
 import type { UserProfile, ProfileFormData } from "@/types/auth"
 import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
 import { validateAuthCredentials, sanitizeEmail } from "@/utils/auth-validation"
-import { getSupabaseClient, resetSupabaseClient, cleanupOrphanedClients } from "@/lib/supabase-singleton"
-import { getStoredRedirectPath } from "@/utils/auth-redirect"
+import { resetSupabaseClient } from "@/lib/supabase-client"
 
 interface AuthContextType {
   user: User | null
@@ -34,8 +34,6 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<{ success: boolean; error: string | null }>
   updatePassword: (password: string) => Promise<{ success: boolean; error: string | null }>
   getClientInfo: () => any
-  refreshSession: () => Promise<Session | null>
-  processAuthToken: (token: string) => Promise<{ success: boolean; error: string | null }>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -65,10 +63,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
+  const supabase = createClientComponentClient()
   const isMounted = useRef(true)
   const isInitialized = useRef(false)
-  const supabaseRef = useRef<Awaited<ReturnType<typeof getSupabaseClient>> | null>(null)
-  const authSubscription = useRef<{ unsubscribe: () => void } | null>(null)
 
   // Initialize auth state
   useEffect(() => {
@@ -78,23 +75,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const initializeAuth = async () => {
       try {
         debugLog("Initializing auth state")
-
-        // Get the Supabase client from our singleton
-        const supabasePromise = getSupabaseClient({
-          debugMode: authDebugMode,
-        })
-
-        // Handle both synchronous and asynchronous returns
-        let supabase: Awaited<ReturnType<typeof getSupabaseClient>>
-
-        if (supabasePromise instanceof Promise) {
-          supabase = await supabasePromise
-        } else {
-          supabase = supabasePromise
-        }
-
-        supabaseRef.current = supabase
-
         // Get session
         const {
           data: { session: initialSession },
@@ -172,15 +152,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(null)
             setProfile(null)
             setSession(null)
-
             // Reset the client to ensure a clean state
             resetSupabaseClient()
-
-            // Clean up any orphaned clients
-            cleanupOrphanedClients(true)
-
-            // Clear supabase reference
-            supabaseRef.current = null
           } else if (event === "SIGNED_IN" && newSession?.user) {
             debugLog("User signed in, updating state")
             setSession(newSession)
@@ -197,16 +170,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setCacheItem(CACHE_KEYS.PROFILE(newSession.user.id), profile)
               }
             })
-
-            // Check if we have a stored redirect path
-            const redirectPath = getStoredRedirectPath()
-            if (redirectPath && redirectPath !== "/dashboard") {
-              debugLog(`Redirecting to stored path: ${redirectPath}`)
-              // Use window.location for a hard redirect to ensure session is properly set
-              if (typeof window !== "undefined") {
-                window.location.href = redirectPath
-              }
-            }
           } else if (event === "TOKEN_REFRESHED" && newSession) {
             debugLog("Token refreshed, updating session")
             setSession(newSession)
@@ -216,8 +179,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           router.refresh()
         })
 
-        // Store the subscription for cleanup
-        authSubscription.current = subscription
+        return () => {
+          debugLog("Cleaning up auth state change listener")
+          subscription.unsubscribe()
+        }
       } catch (error) {
         console.error("Error initializing auth:", error)
         setIsLoading(false)
@@ -228,12 +193,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       isMounted.current = false
-      // Clean up subscription if it exists
-      if (authSubscription.current) {
-        authSubscription.current.unsubscribe()
-      }
     }
-  }, [router])
+  }, [supabase, router])
 
   // Update profile function that uses server action instead of direct database access
   const updateProfile = async (data: ProfileFormData): Promise<{ success: boolean; error: Error | null }> => {
@@ -288,22 +249,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const getSupabaseClientInstance = async () => {
-    if (!supabaseRef.current) {
-      const supabasePromise = getSupabaseClient({
-        debugMode: authDebugMode,
-      })
-
-      if (supabasePromise instanceof Promise) {
-        supabaseRef.current = await supabasePromise
-      } else {
-        supabaseRef.current = supabasePromise
-      }
-    }
-
-    return supabaseRef.current
-  }
-
   const signIn = async (credentials: { email: string; password: string }) => {
     debugLog("Sign in attempt", { email: credentials.email })
     try {
@@ -328,17 +273,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Get the Supabase client
-      const supabase = await getSupabaseClientInstance()
-
-      // Add additional options for better session handling
       const { data, error } = await supabase.auth.signInWithPassword({
         email: sanitizedEmail,
         password: credentials.password,
-        options: {
-          // Ensure we get a fresh session
-          captchaToken: undefined,
-        },
       })
 
       if (error) {
@@ -351,9 +288,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         debugLog("Sign-in successful, updating session and user")
         setSession(data.session)
         setUser(data.user)
-
-        // Explicitly refresh the session to ensure it's properly set
-        await supabase.auth.refreshSession()
 
         // Fetch and update the profile as well
         if (data.user) {
@@ -398,9 +332,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // Get the Supabase client
-      const supabase = await getSupabaseClientInstance()
-
       const { data, error } = await supabase.auth.signUp({
         email: sanitizedEmail,
         password: credentials.password,
@@ -432,9 +363,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     debugLog("Sign out attempt")
     try {
-      // Get the Supabase client
-      const supabase = await getSupabaseClientInstance()
-
       await supabase.auth.signOut()
 
       // Explicitly clear state
@@ -444,10 +372,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       // Reset the client to ensure a clean state
       resetSupabaseClient()
-      supabaseRef.current = null
-
-      // Clean up any orphaned clients
-      cleanupOrphanedClients(true)
 
       // Redirect to sign-in page
       router.push("/auth/sign-in")
@@ -465,9 +389,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const resetPassword = async (email: string): Promise<{ success: boolean; error: string | null }> => {
     try {
-      // Get the Supabase client
-      const supabase = await getSupabaseClientInstance()
-
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/reset-password`,
       })
@@ -485,9 +406,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const updatePassword = async (password: string): Promise<{ success: boolean; error: string | null }> => {
     try {
-      // Get the Supabase client
-      const supabase = await getSupabaseClientInstance()
-
       const { error } = await supabase.auth.updateUser({
         password,
       })
@@ -503,7 +421,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const refreshProfile = useCallback(async (): Promise<UserProfile | null> => {
+  const refreshProfile = async (): Promise<UserProfile | null> => {
     if (!user) {
       debugLog("Cannot refresh profile: no user")
       return null
@@ -512,9 +430,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       debugLog("Refreshing profile for user", user.id)
       setIsLoading(true)
-
-      // Get the Supabase client
-      const supabase = await getSupabaseClientInstance()
 
       const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).single()
 
@@ -538,80 +453,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }, [user])
-
-  // Add a function to refresh the session
-  const refreshSession = useCallback(async (): Promise<Session | null> => {
-    try {
-      debugLog("Refreshing session")
-
-      // Get the Supabase client
-      const supabase = await getSupabaseClientInstance()
-
-      // Explicitly refresh the session
-      const { data, error } = await supabase.auth.refreshSession()
-
-      if (error) {
-        console.error("Error refreshing session:", error)
-        return null
-      }
-
-      if (data.session) {
-        debugLog("Session refreshed successfully")
-        setSession(data.session)
-        setUser(data.session.user)
-        return data.session
-      }
-
-      return null
-    } catch (error) {
-      console.error("Unexpected error refreshing session:", error)
-      return null
-    }
-  }, [])
-
-  // Process an authentication token
-  const processAuthToken = useCallback(
-    async (token: string): Promise<{ success: boolean; error: string | null }> => {
-      try {
-        debugLog("Processing authentication token")
-
-        // Make an API call to process the token
-        const response = await fetch("/api/auth/token", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ token }),
-        })
-
-        if (!response.ok) {
-          const errorData = await response.json()
-          return {
-            success: false,
-            error: errorData.error || "Failed to process authentication token",
-          }
-        }
-
-        // Refresh the session after token processing
-        await refreshSession()
-
-        return { success: true, error: null }
-      } catch (error: any) {
-        console.error("Error processing authentication token:", error)
-        return {
-          success: false,
-          error: error.message || "An unexpected error occurred while processing the token",
-        }
-      }
-    },
-    [refreshSession],
-  )
+  }
 
   const getClientInfo = () => {
-    // Get client stats from the singleton
-    const stats = {
-      hasClient: !!supabaseRef.current,
+    return {
+      hasClient: true,
       isInitializing: false,
       hasInitPromise: false,
       clientInstanceCount: 1,
@@ -623,8 +469,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ? Object.keys(localStorage).filter((key) => key.includes("supabase") || key.includes("auth"))
           : [],
     }
-
-    return stats
   }
 
   const value = {
@@ -640,8 +484,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     resetPassword,
     updatePassword,
     getClientInfo,
-    refreshSession,
-    processAuthToken,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
