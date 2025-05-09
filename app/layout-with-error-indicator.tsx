@@ -7,6 +7,7 @@ import { ProfileCompletionProvider } from "@/context/profile-completion-context"
 import { EnvProvider } from "@/components/providers/env-provider"
 import { NavigationProvider } from "@/context/navigation-context"
 import { SupabaseErrorProvider } from "@/context/supabase-error-context"
+import { GlobalErrorIndicator } from "@/components/error-boundary/global-error-indicator"
 
 // Import the initialization utility
 import "@/lib/init-supabase"
@@ -16,7 +17,6 @@ const inter = Inter({ subsets: ["latin"] })
 export const metadata: Metadata = {
   title: "Wellness Dashboard",
   description: "Track and manage your wellness goals",
-    generator: 'v0.dev'
 }
 
 export default function RootLayout({
@@ -31,7 +31,10 @@ export default function RootLayout({
           <AuthProvider>
             <SupabaseErrorProvider>
               <ProfileCompletionProvider>
-                <NavigationProvider>{children}</NavigationProvider>
+                <NavigationProvider>
+                  {children}
+                  <GlobalErrorIndicator />
+                </NavigationProvider>
               </ProfileCompletionProvider>
             </SupabaseErrorProvider>
           </AuthProvider>

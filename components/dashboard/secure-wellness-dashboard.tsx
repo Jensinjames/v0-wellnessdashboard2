@@ -9,10 +9,24 @@ import { AlertCircle, Plus, Clock } from "lucide-react"
 import { Progress } from "@/components/ui/progress"
 import { categoryColors } from "@/utils/chart-utils"
 import { AddEntryForm } from "./add-entry-form"
+import { SupabaseErrorBoundary } from "@/components/error-boundary/supabase-error-boundary"
+import { useSupabaseErrorHandler } from "@/hooks/use-supabase-error-handler"
 
 export function SecureWellnessDashboard() {
   const { entries, goals, categories, loading, error } = useWellnessData()
   const [isAddingEntry, setIsAddingEntry] = useState(false)
+  const {
+    error: handledError,
+    handleError,
+    clearError,
+  } = useSupabaseErrorHandler({
+    context: "SecureWellnessDashboard",
+  })
+
+  // Handle any errors from the hook
+  if (error && !handledError.hasError) {
+    handleError(error)
+  }
 
   // Calculate total hours per category
   const categoryTotals = entries.reduce(
@@ -53,106 +67,115 @@ export function SecureWellnessDashboard() {
     )
   }
 
-  if (error) {
+  if (handledError.hasError) {
     return (
       <Alert variant="destructive" className="mb-4">
         <AlertCircle className="h-4 w-4" />
         <AlertTitle>Error</AlertTitle>
-        <AlertDescription>{error}</AlertDescription>
+        <AlertDescription>{handledError.message}</AlertDescription>
+        <Button variant="outline" size="sm" className="mt-2" onClick={clearError}>
+          Dismiss
+        </Button>
       </Alert>
     )
   }
 
   return (
     <div className="space-y-6">
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <div>
-            <CardTitle>Wellness Dashboard</CardTitle>
-            <CardDescription>Track your progress across wellness categories</CardDescription>
-          </div>
-          <Button onClick={() => setIsAddingEntry(true)} className="flex items-center gap-1">
-            <Plus className="h-4 w-4" /> Add Entry
-          </Button>
-        </CardHeader>
-        <CardContent>
-          <div className="space-y-6">
-            {/* Goals Progress */}
+      <SupabaseErrorBoundary component="SecureWellnessDashboard.main">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
             <div>
-              <h3 className="mb-3 text-lg font-medium">Goal Progress</h3>
-              {goalProgress.length === 0 ? (
-                <p className="text-sm text-muted-foreground">No goals set yet. Add goals to track your progress.</p>
-              ) : (
-                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-                  {goalProgress.map((goal) => (
-                    <Card key={goal.id} className="overflow-hidden">
-                      <div className="h-1" style={{ backgroundColor: goal.color }}></div>
-                      <CardContent className="p-4">
-                        <div className="flex flex-col gap-2">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <div className="h-4 w-4 rounded-full" style={{ backgroundColor: goal.color }}></div>
-                              <span className="font-medium">{goal.name}</span>
-                            </div>
-                            <span className="text-sm">{goal.progress.toFixed(0)}%</span>
-                          </div>
-                          <Progress value={goal.progress} className="h-2" />
-                          <div className="flex items-center justify-between text-sm text-muted-foreground">
-                            <span>{goal.current.toFixed(1)} hours</span>
-                            <span>Goal: {goal.goal_hours} hours</span>
-                          </div>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ))}
-                </div>
-              )}
+              <CardTitle>Wellness Dashboard</CardTitle>
+              <CardDescription>Track your progress across wellness categories</CardDescription>
             </div>
-
-            {/* Recent Entries */}
-            <div>
-              <h3 className="mb-3 text-lg font-medium">Recent Entries</h3>
-              {entries.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No entries yet. Start tracking your wellness activities.
-                </p>
-              ) : (
-                <div className="space-y-4">
-                  {entries.slice(0, 5).map((entry) => {
-                    const categoryDetail = categories.find((c) => c.id === entry.category)
-                    const color = categoryDetail?.color || categoryColors.faith.primary
-
-                    return (
-                      <Card key={entry.id} className="overflow-hidden">
-                        <div className="h-1" style={{ backgroundColor: color }}></div>
+            <Button onClick={() => setIsAddingEntry(true)} className="flex items-center gap-1">
+              <Plus className="h-4 w-4" /> Add Entry
+            </Button>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-6">
+              {/* Goals Progress */}
+              <div>
+                <h3 className="mb-3 text-lg font-medium">Goal Progress</h3>
+                {goalProgress.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No goals set yet. Add goals to track your progress.</p>
+                ) : (
+                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                    {goalProgress.map((goal) => (
+                      <Card key={goal.id} className="overflow-hidden">
+                        <div className="h-1" style={{ backgroundColor: goal.color }}></div>
                         <CardContent className="p-4">
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2">
-                              <div className="h-4 w-4 rounded-full" style={{ backgroundColor: color }}></div>
-                              <span className="font-medium">{entry.activity}</span>
-                              <span className="text-sm text-muted-foreground">
-                                ({categoryDetail?.name || entry.category})
-                              </span>
+                          <div className="flex flex-col gap-2">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="h-4 w-4 rounded-full" style={{ backgroundColor: goal.color }}></div>
+                                <span className="font-medium">{goal.name}</span>
+                              </div>
+                              <span className="text-sm">{goal.progress.toFixed(0)}%</span>
                             </div>
-                            <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                              <Clock className="h-4 w-4" />
-                              <span>{(entry.duration / 60).toFixed(1)} hours</span>
+                            <Progress value={goal.progress} className="h-2" />
+                            <div className="flex items-center justify-between text-sm text-muted-foreground">
+                              <span>{goal.current.toFixed(1)} hours</span>
+                              <span>Goal: {goal.goal_hours} hours</span>
                             </div>
                           </div>
-                          {entry.notes && <p className="mt-2 text-sm text-muted-foreground">{entry.notes}</p>}
                         </CardContent>
                       </Card>
-                    )
-                  })}
-                </div>
-              )}
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Recent Entries */}
+              <div>
+                <h3 className="mb-3 text-lg font-medium">Recent Entries</h3>
+                {entries.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No entries yet. Start tracking your wellness activities.
+                  </p>
+                ) : (
+                  <div className="space-y-4">
+                    {entries.slice(0, 5).map((entry) => {
+                      const categoryDetail = categories.find((c) => c.id === entry.category)
+                      const color = categoryDetail?.color || categoryColors.faith.primary
+
+                      return (
+                        <Card key={entry.id} className="overflow-hidden">
+                          <div className="h-1" style={{ backgroundColor: color }}></div>
+                          <CardContent className="p-4">
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center gap-2">
+                                <div className="h-4 w-4 rounded-full" style={{ backgroundColor: color }}></div>
+                                <span className="font-medium">{entry.activity}</span>
+                                <span className="text-sm text-muted-foreground">
+                                  ({categoryDetail?.name || entry.category})
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                                <Clock className="h-4 w-4" />
+                                <span>{(entry.duration / 60).toFixed(1)} hours</span>
+                              </div>
+                            </div>
+                            {entry.notes && <p className="mt-2 text-sm text-muted-foreground">{entry.notes}</p>}
+                          </CardContent>
+                        </Card>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      </SupabaseErrorBoundary>
 
       {/* Add Entry Form Dialog */}
-      {isAddingEntry && <AddEntryForm open={isAddingEntry} onClose={() => setIsAddingEntry(false)} />}
+      {isAddingEntry && (
+        <SupabaseErrorBoundary component="SecureWellnessDashboard.addEntryForm">
+          <AddEntryForm open={isAddingEntry} onClose={() => setIsAddingEntry(false)} />
+        </SupabaseErrorBoundary>
+      )}
     </div>
   )
 }
