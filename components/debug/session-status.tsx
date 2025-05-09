@@ -1,6 +1,6 @@
 "use client"
 
 // This component is removed for production
-export function AuthDebugger() {
+export function SessionStatus() {
   return null
 }

@@ -5,7 +5,7 @@ import "./globals.css"
 import { AuthProvider } from "@/context/auth-context"
 import { ProfileCompletionProvider } from "@/context/profile-completion-context"
 import { EnvProvider } from "@/components/providers/env-provider"
-import { NavigationProvider } from "@/context/navigation-context"
+import { CacheHydration } from "@/components/cache-hydration"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -26,7 +26,8 @@ export default function RootLayout({
         <EnvProvider>
           <AuthProvider>
             <ProfileCompletionProvider>
-              <NavigationProvider>{children}</NavigationProvider>
+              <CacheHydration />
+              {children}
             </ProfileCompletionProvider>
           </AuthProvider>
         </EnvProvider>

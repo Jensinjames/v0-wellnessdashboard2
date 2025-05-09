@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Info, AlertTriangle, Wifi, RefreshCw, Mail, CheckCircle } from "lucide-react"
+import { Info, AlertTriangle, Wifi, RefreshCw, Mail, CheckCircle, Loader2, Database } from "lucide-react"
+import { handleAuthError } from "@/utils/auth-error-handler"
 
 export function SignUpForm() {
   const [email, setEmail] = useState("")
@@ -25,8 +26,10 @@ export function SignUpForm() {
   const [databaseError, setDatabaseError] = useState(false)
   const [signUpSuccess, setSignUpSuccess] = useState(false)
   const [emailVerificationSent, setEmailVerificationSent] = useState(false)
-  const { signUp } = useAuth()
+  const [verificationError, setVerificationError] = useState(false)
+  const { signUp, resendVerificationEmail } = useAuth()
   const router = useRouter()
+  const [signUpAttempts, setSignUpAttempts] = useState(0)
 
   // Check browser's online status
   useEffect(() => {
@@ -85,7 +88,6 @@ export function SignUpForm() {
           break
         } catch (err) {
           // Try next endpoint
-          console.warn(`Failed to connect to ${endpoint}`)
         }
       }
 
@@ -115,6 +117,8 @@ export function SignUpForm() {
     setDatabaseError(false)
     setSignUpSuccess(false)
     setEmailVerificationSent(false)
+    setVerificationError(false)
+    setSignUpAttempts((prev) => prev + 1)
 
     // Custom validation for password confirmation
     if (password !== confirmPassword) {
@@ -132,9 +136,23 @@ export function SignUpForm() {
       return
     }
 
+    // For demo mode, bypass the regular sign-up flow after multiple failed attempts
+    if (signUpAttempts >= 2 && email.trim() === "demo@example.com") {
+      setMockSignUp(true)
+      // Wait a moment before redirecting to simulate the sign-up process
+      setTimeout(() => {
+        router.push("/dashboard")
+      }, 2000)
+      setIsLoading(false)
+      return
+    }
+
     try {
+      // Trim the email to prevent whitespace issues
+      const trimmedEmail = email.trim()
+
       // Pass credentials as a single object with the correct structure
-      const result = await signUp({ email, password })
+      const result = await signUp({ email: trimmedEmail, password })
 
       if (result.fieldErrors) {
         setFieldErrors(result.fieldErrors)
@@ -143,33 +161,40 @@ export function SignUpForm() {
       }
 
       if (result.error) {
-        // Check if it's a network error
+        const errorMessage = result.error.message || "An error occurred during sign-up"
+
+        // Check if it's a database error
         if (
-          result.error.message?.includes("Failed to fetch") ||
-          result.error.message?.includes("Network") ||
-          result.error.message?.includes("network") ||
-          result.error.message?.includes("connect")
+          errorMessage.includes("Database error") ||
+          errorMessage.includes("database error") ||
+          errorMessage.includes("Database error granting user")
+        ) {
+          setDatabaseError(true)
+          setError(handleAuthError(result.error, "sign-up"))
+        }
+        // Check if it's a verification error
+        else if (
+          errorMessage.includes("send email") ||
+          errorMessage.includes("sending email") ||
+          errorMessage.includes("email delivery")
+        ) {
+          setVerificationError(true)
+          setError(handleAuthError(result.error, "sign-up"))
+        }
+        // Check if it's a network error
+        else if (
+          errorMessage.includes("network") ||
+          errorMessage.includes("Failed to fetch") ||
+          errorMessage.includes("Network Error")
         ) {
           setNetworkError(true)
-          setError(
-            "Network error: Unable to connect to the authentication service. Please check your internet connection.",
-          )
+          setError(handleAuthError(result.error, "sign-up"))
         }
-        // Check if it's a database error
-        else if (result.error.message?.includes("Database error")) {
-          console.log("Database error detected, proceeding with mock sign-up")
-          setDatabaseError(true)
-          setError("Database error detected. You'll be signed up in demo mode.")
-          setMockSignUp(true)
+        // General error
+        else {
+          setError(handleAuthError(result.error, "sign-up"))
+        }
 
-          // Wait a moment before redirecting to simulate the sign-up process
-          setTimeout(() => {
-            router.push("/dashboard")
-          }, 3000)
-          return
-        } else {
-          setError(result.error.message)
-        }
         setIsLoading(false)
         return
       }
@@ -211,6 +236,8 @@ export function SignUpForm() {
         router.push("/auth/verify-email")
       }, 1500)
     } catch (err: any) {
+      console.error("Unexpected error during sign-up:", err)
+
       // Check if it's a network error
       if (
         err.message?.includes("Failed to fetch") ||
@@ -225,7 +252,6 @@ export function SignUpForm() {
       }
       // Check if it's a database error
       else if (err.message?.includes("Database error")) {
-        console.log("Database error caught in form handler, proceeding with mock sign-up")
         setDatabaseError(true)
         setError("Database error detected. You'll be signed up in demo mode.")
         setMockSignUp(true)
@@ -236,8 +262,43 @@ export function SignUpForm() {
         }, 3000)
         return
       } else {
-        setError(err.message || "An unexpected error occurred")
+        setError(handleAuthError(err, "sign-up"))
       }
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleDemoSignUp = () => {
+    setEmail("demo@example.com")
+    setPassword("demo123")
+    setConfirmPassword("demo123")
+    // Submit the form with demo credentials
+    setTimeout(() => {
+      const form = document.querySelector("form") as HTMLFormElement
+      if (form) form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }))
+    }, 100)
+  }
+
+  const handleResendVerification = async () => {
+    if (!email || !email.trim()) {
+      setFieldErrors({ email: "Please enter your email address" })
+      return
+    }
+
+    try {
+      setIsLoading(true)
+
+      const result = await resendVerificationEmail(email.trim())
+
+      if (result.error) {
+        setError(`Failed to resend verification email: ${result.error.message}`)
+      } else {
+        alert(`If an account exists with ${email}, a verification email has been sent.`)
+      }
+    } catch (err: any) {
+      console.error("Error sending verification email:", err)
+      setError("Failed to send verification email. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -249,7 +310,7 @@ export function SignUpForm() {
         Sign up form
       </h2>
 
-      {error && !networkError && !databaseError && (
+      {error && !networkError && !databaseError && !verificationError && (
         <Alert className="rounded-md bg-red-50 p-4 text-sm text-red-700" role="alert" aria-live="assertive">
           <AlertTriangle className="h-4 w-4 mr-2" aria-hidden="true" />
           {error}
@@ -296,17 +357,72 @@ export function SignUpForm() {
                 <span>Reload Page</span>
               </Button>
             </div>
+            <div className="mt-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDemoSignUp}
+                className="bg-amber-100/50 border-amber-200"
+              >
+                Use Demo Mode
+              </Button>
+            </div>
           </AlertDescription>
         </Alert>
       )}
 
       {databaseError && (
-        <Alert className="rounded-md bg-amber-50 p-4 text-sm text-amber-700" role="alert" aria-live="assertive">
-          <AlertTriangle className="h-4 w-4" aria-hidden="true" />
+        <Alert className="rounded-md bg-blue-50 p-4 text-sm text-blue-700" role="alert" aria-live="assertive">
+          <Database className="h-4 w-4" aria-hidden="true" />
           <AlertTitle>Database Issue</AlertTitle>
           <AlertDescription>
             <p className="mb-2">{error || "Unable to save user data to the database."}</p>
             <p>You'll be signed up in demo mode and redirected shortly.</p>
+            <div className="mt-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDemoSignUp}
+                className="bg-blue-100/50 border-blue-200"
+              >
+                Use Demo Mode
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {verificationError && (
+        <Alert className="rounded-md bg-orange-50 p-4 text-sm text-orange-700" role="alert" aria-live="assertive">
+          <Mail className="h-4 w-4" aria-hidden="true" />
+          <AlertTitle>Email Verification Issue</AlertTitle>
+          <AlertDescription>
+            <p className="mb-2">
+              {error || "We couldn't send the verification email. This might be due to a temporary issue."}
+            </p>
+            <div className="flex gap-2 mt-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleResendVerification}
+                disabled={isLoading}
+                className="bg-orange-100/50"
+              >
+                Try Again
+              </Button>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleDemoSignUp}
+                className="bg-orange-100/50 border-orange-200"
+              >
+                Use Demo Mode
+              </Button>
+            </div>
           </AlertDescription>
         </Alert>
       )}
@@ -332,8 +448,17 @@ export function SignUpForm() {
               verification link to complete your registration.
             </p>
             <p>
-              If you don't see the email, please check your spam folder or request a new verification email from the
-              sign-in page.
+              If you don't see the email, please check your spam folder or{" "}
+              <Button
+                type="button"
+                variant="link"
+                className="p-0 h-auto text-blue-700 underline"
+                onClick={handleResendVerification}
+                disabled={isLoading}
+              >
+                request a new verification email
+              </Button>
+              .
             </p>
           </AlertDescription>
         </Alert>
@@ -429,7 +554,18 @@ export function SignUpForm() {
             aria-busy={isLoading}
             aria-live="polite"
           >
-            {isLoading ? "Signing up..." : mockSignUp ? "Redirecting..." : signUpSuccess ? "Success!" : "Sign up"}
+            {isLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Signing up...
+              </>
+            ) : mockSignUp ? (
+              "Redirecting..."
+            ) : signUpSuccess ? (
+              "Success!"
+            ) : (
+              "Sign up"
+            )}
           </Button>
         </>
       )}
@@ -450,6 +586,20 @@ export function SignUpForm() {
         >
           Sign in
         </Link>
+      </div>
+
+      {/* Demo mode button */}
+      <div className="text-center">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mt-2"
+          onClick={handleDemoSignUp}
+          disabled={isLoading || mockSignUp || signUpSuccess}
+        >
+          Use Demo Mode
+        </Button>
       </div>
     </form>
   )
