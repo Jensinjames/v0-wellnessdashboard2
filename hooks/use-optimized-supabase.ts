@@ -163,13 +163,13 @@ export function useOptimizedSupabase() {
           }
 
           return result
-        } catch (error: any) {
+        } catch (err: any) {
           // Handle network errors with retry
           if (
             retry &&
             retryCount < maxRetries &&
-            ((error instanceof TypeError && error.message.includes("Failed to fetch")) ||
-              (error instanceof DOMException && error.name === "AbortError"))
+            ((err instanceof TypeError && err.message.includes("Failed to fetch")) ||
+              (err instanceof DOMException && err.name === "AbortError"))
           ) {
             // Calculate backoff time - exponential with jitter
             const backoffTime = Math.min(1000 * Math.pow(2, retryCount), 10000) * (0.8 + Math.random() * 0.4)
@@ -183,10 +183,10 @@ export function useOptimizedSupabase() {
           }
 
           // Handle other errors
-          console.error("Error in optimized query:", error)
-          onError?.(error)
+          console.error("Error in optimized query:", err)
+          onError?.(err)
 
-          return { data: null, error }
+          return { data: null, error: err }
         }
       }
     },
@@ -224,6 +224,11 @@ export function useOptimizedSupabase() {
 
     const refetchIntervalRef = useRef<NodeJS.Timeout | null>(null)
     const isMountedRef = useRef(true)
+    const queryOptionsRef = useRef(options)
+
+    useEffect(() => {
+      queryOptionsRef.current = options
+    }, [options])
 
     const execute = useCallback(async () => {
       if (!enabled) return
@@ -232,18 +237,18 @@ export function useOptimizedSupabase() {
 
       try {
         const result = await executeQuery<T>(queryFn, {
-          ...queryOptions,
+          ...queryOptionsRef.current,
           onNetworkError: () => {
             if (isMountedRef.current) {
               setState((prev) => ({ ...prev, isNetworkError: true }))
             }
-            queryOptions.onNetworkError?.()
+            queryOptionsRef.current.onNetworkError?.()
           },
           onRateLimit: () => {
             if (isMountedRef.current) {
               setState((prev) => ({ ...prev, isRateLimited: true }))
             }
-            queryOptions.onRateLimit?.()
+            queryOptionsRef.current.onRateLimit?.()
           },
         })
 

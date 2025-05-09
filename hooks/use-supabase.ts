@@ -261,7 +261,9 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
     })
 
     if (client instanceof Promise) {
-      supabaseRef.current = await client
+      client.then((newClient) => {
+        supabaseRef.current = newClient
+      })
     } else {
       supabaseRef.current = client
     }
@@ -339,7 +341,8 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   throw lastError
 }
 ,
-    [isOnline, debug, debugMode, user, setLastActivity, setIsOnline])
+    [isOnline, debug, debugMode, user, setLastActivity, setIsOnline]
+  )
 
 // Reset the client and state
 const resetClient = useCallback(() => {
