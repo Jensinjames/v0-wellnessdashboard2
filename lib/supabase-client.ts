@@ -1,14 +1,76 @@
-import { createClient } from "@supabase/supabase-js"
-import type { SupabaseClient } from "@supabase/supabase-js"
+import { createClientComponentClient, type SupabaseClient } from "@supabase/auth-helpers-nextjs"
 import type { Database } from "@/types/database"
 
+// Track client initialization attempts
+let initializationAttempts = 0
+const MAX_INITIALIZATION_ATTEMPTS = 3
+
+// Cache the client instance
+let supabaseClient: ReturnType<typeof createClientComponentClient<Database>> | null = null
+
+export async function getSupabaseClient() {
+  // If we already have a client, return it
+  if (supabaseClient) {
+    return supabaseClient
+  }
+
+  // Check if we've exceeded the maximum number of attempts
+  if (initializationAttempts >= MAX_INITIALIZATION_ATTEMPTS) {
+    console.error("Failed to initialize Supabase client after multiple attempts")
+    throw new Error("Authentication service initialization failed")
+  }
+
+  // Increment the initialization attempts
+  initializationAttempts++
+
+  try {
+    // Check if environment variables are available
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      console.error("Supabase environment variables are missing")
+      throw new Error("Authentication service configuration is missing")
+    }
+
+    // Create the client
+    supabaseClient = createClientComponentClient<Database>({
+      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
+      supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+      options: {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+        },
+      },
+    })
+
+    // Test the client with a simple query
+    await supabaseClient.auth.getSession()
+
+    console.log("Supabase client initialized successfully")
+    return supabaseClient
+  } catch (error) {
+    console.error("Error initializing Supabase client:", error)
+
+    // Clear the client so we can try again
+    supabaseClient = null
+
+    // Re-throw the error
+    throw error
+  }
+}
+
+// Function to reset the client (useful for testing or after errors)
+export function resetSupabaseClient() {
+  supabaseClient = null
+  initializationAttempts = 0
+}
+
 // Global variables for singleton pattern
-let supabaseClient: SupabaseClient<Database> | null = null
-let isInitializing = false
-let initializationPromise: Promise<SupabaseClient<Database>> | null = null
-let clientInitTime: number | null = null
-let clientInstanceCount = 0
-let lastResetTime: number | null = null
+// let supabaseClient: SupabaseClient<Database> | null = null
+const isInitializing = false
+const initializationPromise: Promise<SupabaseClient<Database>> | null = null
+const clientInitTime: number | null = null
+const clientInstanceCount = 0
+const lastResetTime: number | null = null
 
 // Debug mode flag - default to false in production
 const DEFAULT_DEBUG_MODE = false
@@ -46,181 +108,181 @@ function debugLog(...args: any[]): void {
  * Get the Supabase client singleton
  * This ensures only one client instance is created per browser context
  */
-export function getSupabaseClient(
-  options: {
-    forceNew?: boolean
-    timeout?: number
-  } = {},
-): SupabaseClient<Database> | Promise<SupabaseClient<Database>> {
-  if (typeof window === "undefined") {
-    throw new Error("This client should only be used in the browser")
-  }
+// export function getSupabaseClient(
+//   options: {
+//     forceNew?: boolean
+//     timeout?: number
+//   } = {},
+// ): SupabaseClient<Database> | Promise<SupabaseClient<Database>> {
+//   if (typeof window === "undefined") {
+//     throw new Error("This client should only be used in the browser")
+//   }
 
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    throw new Error("Supabase URL and anon key are required")
-  }
+//   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+//     throw new Error("Supabase URL and anon key are required")
+//   }
 
-  // If we already have a client and aren't forcing a new one, return it
-  if (supabaseClient && !options.forceNew) {
-    // Check if the auth object exists and has the expected methods
-    if (!supabaseClient.auth || typeof supabaseClient.auth.resetPasswordForEmail !== "function") {
-      debugLog("Existing client is invalid, creating a new one")
-      resetSupabaseClient()
-    } else {
-      debugLog("Returning existing Supabase client instance")
-      return supabaseClient
-    }
-  }
+//   // If we already have a client and aren't forcing a new one, return it
+//   if (supabaseClient && !options.forceNew) {
+//     // Check if the auth object exists and has the expected methods
+//     if (!supabaseClient.auth || typeof supabaseClient.auth.resetPasswordForEmail !== "function") {
+//       debugLog("Existing client is invalid, creating a new one")
+//       resetSupabaseClient()
+//     } else {
+//       debugLog("Returning existing Supabase client instance")
+//       return supabaseClient
+//     }
+//   }
 
-  // If we're already initializing, return the promise
-  if (isInitializing && initializationPromise && !options.forceNew) {
-    debugLog("Client initialization already in progress, returning promise")
-    return initializationPromise
-  }
+//   // If we're already initializing, return the promise
+//   if (isInitializing && initializationPromise && !options.forceNew) {
+//     debugLog("Client initialization already in progress, returning promise")
+//     return initializationPromise
+//   }
 
-  // Set initializing flag and create a promise
-  isInitializing = true
+//   // Set initializing flag and create a promise
+//   isInitializing = true
 
-  // Create a new initialization promise
-  initializationPromise = new Promise<SupabaseClient<Database>>((resolve, reject) => {
-    try {
-      debugLog("Creating new Supabase client instance")
+//   // Create a new initialization promise
+//   initializationPromise = new Promise<SupabaseClient<Database>>((resolve, reject) => {
+//     try {
+//       debugLog("Creating new Supabase client instance")
 
-      // Track instance count for debugging
-      clientInstanceCount++
+//       // Track instance count for debugging
+//       clientInstanceCount++
 
-      // Record initialization time
-      clientInitTime = Date.now()
+//       // Record initialization time
+//       clientInitTime = Date.now()
 
-      // Create client options
-      const clientOptions = {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true,
-          flowType: "pkce",
-          // Use a consistent storage key to prevent conflicts
-          storageKey: "wellness-dashboard-auth-v2",
-          // Debug flag to help identify issues - read from localStorage
-          debug:
-            typeof window !== "undefined"
-              ? localStorage.getItem("supabase_debug") === "true" || process.env.NEXT_PUBLIC_DEBUG_MODE === "true"
-              : DEFAULT_DEBUG_MODE,
-          // Storage event listener to sync auth state across tabs
-          storage: {
-            getItem: (key: string) => {
-              try {
-                return localStorage.getItem(key)
-              } catch (error) {
-                console.error("Error accessing localStorage:", error)
-                return null
-              }
-            },
-            setItem: (key: string, value: string) => {
-              try {
-                localStorage.setItem(key, value)
-              } catch (error) {
-                console.error("Error writing to localStorage:", error)
-              }
-            },
-            removeItem: (key: string) => {
-              try {
-                localStorage.removeItem(key)
-              } catch (error) {
-                console.error("Error removing from localStorage:", error)
-              }
-            },
-          },
-        },
-        global: {
-          headers: {
-            "x-application-name": "wellness-dashboard",
-            "x-client-instance": `instance-${clientInstanceCount}`,
-            "x-client-init-time": clientInitTime?.toString() || "unknown",
-          },
-          fetch: (url: RequestInfo | URL, fetchOptions: RequestInit = {}) => {
-            const timeout = options.timeout || 10000
-            const controller = new AbortController()
-            const timeoutId = setTimeout(() => {
-              controller.abort()
-              debugLog(`Fetch request to ${url.toString()} timed out after ${timeout}ms`)
-            }, timeout)
+//       // Create client options
+//       const clientOptions = {
+//         auth: {
+//           persistSession: true,
+//           autoRefreshToken: true,
+//           detectSessionInUrl: true,
+//           flowType: "pkce",
+//           // Use a consistent storage key to prevent conflicts
+//           storageKey: "wellness-dashboard-auth-v2",
+//           // Debug flag to help identify issues - read from localStorage
+//           debug:
+//             typeof window !== "undefined"
+//               ? localStorage.getItem("supabase_debug") === "true" || process.env.NEXT_PUBLIC_DEBUG_MODE === "true"
+//               : DEFAULT_DEBUG_MODE,
+//           // Storage event listener to sync auth state across tabs
+//           storage: {
+//             getItem: (key: string) => {
+//               try {
+//                 return localStorage.getItem(key)
+//               } catch (error) {
+//                 console.error("Error accessing localStorage:", error)
+//                 return null
+//               }
+//             },
+//             setItem: (key: string, value: string) => {
+//               try {
+//                 localStorage.setItem(key, value)
+//               } catch (error) {
+//                 console.error("Error writing to localStorage:", error)
+//               }
+//             },
+//             removeItem: (key: string) => {
+//               try {
+//                 localStorage.removeItem(key)
+//               } catch (error) {
+//                 console.error("Error removing from localStorage:", error)
+//               }
+//             },
+//           },
+//         },
+//         global: {
+//           headers: {
+//             "x-application-name": "wellness-dashboard",
+//             "x-client-instance": `instance-${clientInstanceCount}`,
+//             "x-client-init-time": clientInitTime?.toString() || "unknown",
+//           },
+//           fetch: (url: RequestInfo | URL, fetchOptions: RequestInit = {}) => {
+//             const timeout = options.timeout || 10000
+//             const controller = new AbortController()
+//             const timeoutId = setTimeout(() => {
+//               controller.abort()
+//               debugLog(`Fetch request to ${url.toString()} timed out after ${timeout}ms`)
+//             }, timeout)
 
-            return fetch(url, {
-              ...fetchOptions,
-              signal: controller.signal,
-            })
-              .then((response) => {
-                clearTimeout(timeoutId)
-                return response
-              })
-              .catch((error) => {
-                clearTimeout(timeoutId)
-                debugLog(`Fetch error for ${url.toString()}: ${error.message}`)
-                // Rethrow the error to be handled by the caller
-                throw error
-              })
-          },
-        },
-      }
+//             return fetch(url, {
+//               ...fetchOptions,
+//               signal: controller.signal,
+//             })
+//               .then((response) => {
+//                 clearTimeout(timeoutId)
+//                 return response
+//               })
+//               .catch((error) => {
+//                 clearTimeout(timeoutId)
+//                 debugLog(`Fetch error for ${url.toString()}: ${error.message}`)
+//                 // Rethrow the error to be handled by the caller
+//                 throw error
+//               })
+//           },
+//         },
+//       }
 
-      // Create the client
-      const newClient = createClient<Database>(
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        clientOptions,
-      )
+//       // Create the client
+//       const newClient = createClient<Database>(
+//         process.env.NEXT_PUBLIC_SUPABASE_URL,
+//         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+//         clientOptions,
+//       )
 
-      // Before storing the new client, clean up any existing GoTrueClient instances
-      cleanupOrphanedClients()
+//       // Before storing the new client, clean up any existing GoTrueClient instances
+//       cleanupOrphanedClients()
 
-      // Store the client
-      supabaseClient = newClient
+//       // Store the client
+//       supabaseClient = newClient
 
-      // Track the GoTrueClient instance
-      if (newClient.auth && (newClient.auth as any)._goTrueClient) {
-        // Add the new instance
-        goTrueClientRegistry.add((newClient.auth as any)._goTrueClient)
-        debugLog(`Registered GoTrueClient instance. Total instances: ${goTrueClientRegistry.size}`)
+//       // Track the GoTrueClient instance
+//       if (newClient.auth && (newClient.auth as any)._goTrueClient) {
+//         // Add the new instance
+//         goTrueClientRegistry.add((newClient.auth as any)._goTrueClient)
+//         debugLog(`Registered GoTrueClient instance. Total instances: ${goTrueClientRegistry.size}`)
 
-        // If we have multiple instances, log a warning
-        if (goTrueClientRegistry.size > 1) {
-          console.warn(
-            `[CRITICAL] Multiple GoTrueClient instances detected (${goTrueClientRegistry.size}). ` +
-              `This may lead to undefined behavior. Please ensure only one instance is created.`,
-          )
+//         // If we have multiple instances, log a warning
+//         if (goTrueClientRegistry.size > 1) {
+//           console.warn(
+//             `[CRITICAL] Multiple GoTrueClient instances detected (${goTrueClientRegistry.size}). ` +
+//               `This may lead to undefined behavior. Please ensure only one instance is created.`,
+//           )
 
-          // Force cleanup of orphaned instances
-          cleanupOrphanedClients(true)
-        }
-      }
+//           // Force cleanup of orphaned instances
+//           cleanupOrphanedClients(true)
+//         }
+//       }
 
-      // Reset initialization state
-      isInitializing = false
+//       // Reset initialization state
+//       isInitializing = false
 
-      // Add unload event listener to clean up client on page unload
-      if (typeof window !== "undefined") {
-        window.addEventListener("beforeunload", () => {
-          debugLog("Page unloading, cleaning up Supabase client")
-          cleanupOrphanedClients(true)
-        })
-      }
+//       // Add unload event listener to clean up client on page unload
+//       if (typeof window !== "undefined") {
+//         window.addEventListener("beforeunload", () => {
+//           debugLog("Page unloading, cleaning up Supabase client")
+//           cleanupOrphanedClients(true)
+//         })
+//       }
 
-      // Resolve the promise with the client
-      resolve(newClient)
-    } catch (error) {
-      // Reset initialization state
-      isInitializing = false
-      initializationPromise = null
+//       // Resolve the promise with the client
+//       resolve(newClient)
+//     } catch (error) {
+//       // Reset initialization state
+//       isInitializing = false
+//       initializationPromise = null
 
-      // Log and reject the promise
-      console.error("Error creating Supabase client:", error)
-      reject(error)
-    }
-  })
+//       // Log and reject the promise
+//       console.error("Error creating Supabase client:", error)
+//       reject(error)
+//     }
+//   })
 
-  return initializationPromise
-}
+//   return initializationPromise
+// }
 
 // Test the Supabase connection
 export async function checkSupabaseConnection(): Promise<boolean> {
@@ -252,34 +314,34 @@ export async function checkSupabaseConnection(): Promise<boolean> {
 }
 
 // Reset the client (useful for testing or when auth state changes)
-export function resetSupabaseClient() {
-  debugLog("Resetting Supabase client")
+// export function resetSupabaseClient() {
+//   debugLog("Resetting Supabase client")
 
-  // Record reset time
-  lastResetTime = Date.now()
+//   // Record reset time
+//   lastResetTime = Date.now()
 
-  // Clean up any event listeners or timers associated with the client
-  if (supabaseClient && (supabaseClient as any)._closeChannel) {
-    try {
-      ;(supabaseClient as any)._closeChannel()
-    } catch (e) {
-      debugLog("Error closing realtime channel:", e)
-    }
-  }
+//   // Clean up any event listeners or timers associated with the client
+//   if (supabaseClient && (supabaseClient as any)._closeChannel) {
+//     try {
+//       ;(supabaseClient as any)._closeChannel()
+//     } catch (e) {
+//       debugLog("Error closing realtime channel:", e)
+//     }
+//   }
 
-  // Clear the client and initialization state
-  supabaseClient = null
-  isInitializing = false
-  initializationPromise = null
+//   // Clear the client and initialization state
+//   supabaseClient = null
+//   isInitializing = false
+//   initializationPromise = null
 
-  // Clear the GoTrueClient registry
-  goTrueClientRegistry.clear()
+//   // Clear the GoTrueClient registry
+//   goTrueClientRegistry.clear()
 
-  debugLog("Supabase client reset complete")
-}
+//   debugLog("Supabase client reset complete")
+// }
 
 // Get the current client without creating a new one
-export function getCurrentClient(): SupabaseClient<Database> | null {
+export function getCurrentClient(): ReturnType<typeof createClientComponentClient<Database>> | null {
   return supabaseClient
 }
 

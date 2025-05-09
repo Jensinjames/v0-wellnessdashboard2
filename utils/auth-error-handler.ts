@@ -59,6 +59,20 @@ export function handleAuthError(error: any, operation: string): string {
     return "Network error. Please check your internet connection and try again."
   }
 
+  // Handle specific password reset errors
+  if (operation === "password-reset") {
+    if (error.message?.includes("sending recovery email")) {
+      return "Unable to send recovery email. Please verify your email address or try again later."
+    }
+    if (error.message?.includes("User not found")) {
+      // Don't reveal if an email exists or not for security reasons
+      return "If your email is registered, you will receive password reset instructions shortly."
+    }
+    if (error.message?.includes("rate limit")) {
+      return "Too many password reset attempts. Please try again later."
+    }
+  }
+
   // Default error message
   return error.message || `An error occurred during ${operation}. Please try again.`
 }

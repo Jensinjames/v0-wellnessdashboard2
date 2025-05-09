@@ -244,7 +244,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
       window.removeEventListener("scroll", trackActivity)
       window.removeEventListener("mousemove", trackActivity)
     }
-  }, [isInitialized])
+  }, [isInitialized, setLastActivity, setConsecutiveErrors])
 
   // Wrap Supabase queries with error handling and offline support
   const query = useCallback(
@@ -339,7 +339,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   throw lastError
 }
 ,
-    [isOnline, debug, debugMode, user, setLastActivity, setIsOnline, persistSession, autoRefreshToken, toast]
+    [isOnline, debug, debugMode, user, setLastActivity, setIsOnline]
   )
 
 // Reset the client and state
@@ -366,7 +366,7 @@ const resetClient = useCallback(() => {
     supabaseRef.current = client
     setIsInitialized(true)
   }
-}, [debug, debugMode, persistSession, autoRefreshToken, toast])
+}, [debug, debugMode, persistSession, autoRefreshToken, setIsInitialized, setConsecutiveErrors])
 
 return {
     supabase: supabaseRef.current,
