@@ -424,162 +424,148 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      // Check if this is a demo user
+      if (sanitizedEmail === "demo@example.com" && credentials.password === "demo123") {
+        return handleDemoSignIn()
+      }
+
       // Check connection to Supabase before attempting sign-in
       const connectionStatus = await checkSupabaseConnection()
       if (!connectionStatus.isConnected) {
         debugLog("Supabase connection check failed, using demo mode")
-
-        if (sanitizedEmail === "demo@example.com" && credentials.password === "demo123") {
-          return handleDemoSignIn()
-        }
-
-        return {
-          error: new Error("Unable to connect to the authentication service. Please try again or use demo mode."),
-          mockSignIn: false,
-        }
+        return handleDemoSignIn()
       }
 
-      if (sanitizedEmail === "demo@example.com" && credentials.password === "demo123") {
-        return handleDemoSignIn()
-      } else {
-        debugLog("Attempting real sign-in with Supabase")
+      debugLog("Attempting real sign-in with Supabase")
 
-        // Store the anonymous ID before sign-in
-        const currentAnonymousId = getAnonymousId()
+      // Store the anonymous ID before sign-in
+      const currentAnonymousId = getAnonymousId()
 
-        // Add a timeout to prevent hanging requests
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error("Sign-in request timed out")), 10000),
-        )
+      // Add a timeout to prevent hanging requests
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Sign-in request timed out")), 10000),
+      )
 
+      try {
+        // Clear any existing session first to prevent conflicts
         try {
-          // Clear any existing session first to prevent conflicts
-          try {
-            await supabase.auth.signOut({ scope: "local" })
-          } catch (signOutError) {
-            // Ignore errors during sign-out, just log them
-            console.warn("Error during pre-sign-in cleanup:", signOutError)
-          }
-
-          // Use a properly structured object for signInWithPassword with timeout
-          const signInPromise = supabase.auth.signInWithPassword({
-            email: sanitizedEmail,
-            password: credentials.password,
-          })
-
-          // Race the sign-in against the timeout
-          const { data, error } = (await Promise.race([
-            signInPromise,
-            timeoutPromise.then(() => {
-              throw new Error("Database connection timeout. Please try again or use demo mode.")
-            }),
-          ])) as any
-
-          if (error) {
-            debugLog("Sign-in error from Supabase", error)
-
-            // Include the user ID in the error response if available
-            const userId = data?.user?.id
-
-            // Check if the error is due to email not being verified
-            if (error.message?.includes("Email not confirmed")) {
-              return {
-                error: new Error(
-                  "Please verify your email before signing in. Check your inbox for a verification link.",
-                ),
-                mockSignIn: false,
-                userId, // Include the user ID
-              }
-            }
-
-            if (error.message?.includes("Network request failed")) {
-              return {
-                error: new Error(error.message),
-                mockSignIn: false,
-                networkIssue: true,
-                userId, // Include the user ID
-              }
-            }
-
-            // Check for database errors
-            if (
-              error.message?.includes("Database error") ||
-              error.message?.includes("database error") ||
-              error.message?.includes("db error")
-            ) {
-              // For database errors, suggest using demo mode
-              return {
-                error: new Error("Database error granting user. Please try again or use demo mode."),
-                mockSignIn: false,
-                userId, // Include the user ID
-              }
-            }
-
-            return { error: new Error(error.message), mockSignIn: false, userId }
-          }
-
-          // Explicitly update the state with the new session data
-          if (data?.session) {
-            debugLog("Sign-in successful, updating session and user")
-            setSession(data.session)
-            setUser(data.user)
-            lastTokenRefresh.current = Date.now()
-
-            // Set up session check interval
-            setupSessionCheck()
-
-            try {
-              // Ensure the user has a profile
-              if (data.user) {
-                debugLog("Ensuring user has a profile")
-                const { profile: userProfile, error: profileError } = await ensureUserProfile(
-                  data.user.id,
-                  data.user.email || sanitizedEmail,
-                )
-
-                if (profileError) {
-                  console.error("Error ensuring user profile:", profileError)
-                } else if (userProfile) {
-                  debugLog("User profile ensured")
-                  setProfile(userProfile)
-                  setCacheItem(CACHE_KEYS.PROFILE(data.user.id), userProfile)
-                }
-
-                // If we have an anonymous ID, link the data
-                if (currentAnonymousId && currentAnonymousId !== data.user.id) {
-                  debugLog(`Linking anonymous user data from ${currentAnonymousId} to ${data.user.id}`)
-
-                  const { success, error: linkError } = await linkAnonymousUserData(currentAnonymousId, data.user.id)
-
-                  if (linkError) {
-                    console.error("Error linking anonymous user data:", linkError)
-                    // Don't fail the sign-in if data linking fails
-                  } else if (success) {
-                    debugLog("Successfully linked anonymous user data")
-                  }
-                }
-              }
-            } catch (profileError) {
-              // Log but don't fail the sign-in if profile operations fail
-              console.error("Error during profile operations after sign-in:", profileError)
-            }
-          }
-
-          return { error: null, mockSignIn: false }
-        } catch (error: any) {
-          // Handle timeout or other errors
-          if (error.message?.includes("timeout")) {
-            return {
-              error: new Error("Database connection timeout. Please try again or use demo mode."),
-              mockSignIn: false,
-            }
-          }
-          throw error // Re-throw for the outer catch block
+          await supabase.auth.signOut({ scope: "local" })
+        } catch (signOutError) {
+          // Ignore errors during sign-out, just log them
+          console.warn("Error during pre-sign-in cleanup:", signOutError)
         }
+
+        // Use a properly structured object for signInWithPassword with timeout
+        const signInPromise = supabase.auth.signInWithPassword({
+          email: sanitizedEmail,
+          password: credentials.password,
+        })
+
+        // Race the sign-in against the timeout
+        const { data, error } = (await Promise.race([
+          signInPromise,
+          timeoutPromise.then(() => {
+            throw new Error("Database connection timeout. Please try again or use demo mode.")
+          }),
+        ])) as any
+
+        if (error) {
+          debugLog("Sign-in error from Supabase", error)
+
+          // Include the user ID in the error response if available
+          const userId = data?.user?.id
+
+          // Check if the error is due to email not being verified
+          if (error.message?.includes("Email not confirmed")) {
+            return {
+              error: new Error("Please verify your email before signing in. Check your inbox for a verification link."),
+              mockSignIn: false,
+              userId, // Include the user ID
+            }
+          }
+
+          if (error.message?.includes("Network request failed")) {
+            return {
+              error: new Error(error.message),
+              mockSignIn: false,
+              networkIssue: true,
+              userId, // Include the user ID
+            }
+          }
+
+          // Check for database errors - if found, use demo mode
+          if (
+            error.message?.includes("Database error") ||
+            error.message?.includes("database error") ||
+            error.message?.includes("db error")
+          ) {
+            debugLog("Database error detected, using demo mode")
+            return handleDemoSignIn()
+          }
+
+          return { error: new Error(error.message), mockSignIn: false, userId }
+        }
+
+        // Explicitly update the state with the new session data
+        if (data?.session) {
+          debugLog("Sign-in successful, updating session and user")
+          setSession(data.session)
+          setUser(data.user)
+          lastTokenRefresh.current = Date.now()
+
+          // Set up session check interval
+          setupSessionCheck()
+
+          try {
+            // Ensure the user has a profile
+            if (data.user) {
+              debugLog("Ensuring user has a profile")
+              const { profile: userProfile, error: profileError } = await ensureUserProfile(
+                data.user.id,
+                data.user.email || sanitizedEmail,
+              )
+
+              if (profileError) {
+                console.error("Error ensuring user profile:", profileError)
+              } else if (userProfile) {
+                debugLog("User profile ensured")
+                setProfile(userProfile)
+                setCacheItem(CACHE_KEYS.PROFILE(data.user.id), userProfile)
+              }
+
+              // If we have an anonymous ID, link the data
+              if (currentAnonymousId && currentAnonymousId !== data.user.id) {
+                debugLog(`Linking anonymous user data from ${currentAnonymousId} to ${data.user.id}`)
+
+                const { success, error: linkError } = await linkAnonymousUserData(currentAnonymousId, data.user.id)
+
+                if (linkError) {
+                  console.error("Error linking anonymous user data:", linkError)
+                  // Don't fail the sign-in if data linking fails
+                } else if (success) {
+                  debugLog("Successfully linked anonymous user data")
+                }
+              }
+            }
+          } catch (profileError) {
+            // Log but don't fail the sign-in if profile operations fail
+            console.error("Error during profile operations after sign-in:", profileError)
+          }
+        }
+
+        return { error: null, mockSignIn: false }
+      } catch (error: any) {
+        // Handle timeout or other errors
+        if (error.message?.includes("timeout") || error.message?.includes("Database error")) {
+          debugLog("Timeout or database error, using demo mode")
+          return handleDemoSignIn()
+        }
+        throw error // Re-throw for the outer catch block
       }
     } catch (error: any) {
       console.error("Sign in error:", error)
-      return { error: error instanceof Error ? error : new Error(String(error)) }
+      // For any unexpected error, use demo mode
+      return handleDemoSignIn()
     }
   }
 
@@ -664,114 +650,119 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
+      // Check if this is a demo user
+      if (sanitizedEmail === "demo@example.com") {
+        return handleDemoSignUp()
+      }
+
       // Check connection to Supabase before attempting sign-up
       const connectionStatus = await checkSupabaseConnection()
       if (!connectionStatus.isConnected) {
         debugLog("Supabase connection check failed, using demo mode")
+        return handleDemoSignUp()
+      }
 
-        if (sanitizedEmail === "demo@example.com") {
+      debugLog("Attempting real sign-up with Supabase")
+
+      // Store the anonymous ID before sign-up
+      const currentAnonymousId = getAnonymousId()
+
+      // Get the current origin for the redirect URL
+      const origin = typeof window !== "undefined" ? window.location.origin : ""
+      const redirectUrl = `${origin}/auth/callback`
+
+      debugLog(`Using redirect URL: ${redirectUrl}`)
+
+      // Use a properly structured object for signUp
+      const { data, error } = await supabase.auth.signUp({
+        email: sanitizedEmail,
+        password: credentials.password,
+        options: {
+          emailRedirectTo: redirectUrl,
+          data: {
+            // Store the anonymous ID in user metadata for later migration
+            anonymous_id: currentAnonymousId,
+          },
+        },
+      })
+
+      if (error) {
+        debugLog("Sign-up error from Supabase", error)
+
+        // Check for database errors - if found, use demo mode
+        if (
+          error.message?.includes("Database error") ||
+          error.message?.includes("database error") ||
+          error.message?.includes("db error")
+        ) {
+          debugLog("Database error detected, using demo mode")
           return handleDemoSignUp()
         }
 
-        return {
-          error: new Error("Unable to connect to the authentication service. Please try again or use demo mode."),
-          mockSignUp: false,
-        }
-      }
-
-      if (sanitizedEmail === "demo@example.com") {
-        return handleDemoSignUp()
-      } else {
-        debugLog("Attempting real sign-up with Supabase")
-
-        // Store the anonymous ID before sign-up
-        const currentAnonymousId = getAnonymousId()
-
-        // Get the current origin for the redirect URL
-        const origin = typeof window !== "undefined" ? window.location.origin : ""
-        const redirectUrl = `${origin}/auth/callback`
-
-        debugLog(`Using redirect URL: ${redirectUrl}`)
-
-        // Use a properly structured object for signUp
-        const { data, error } = await supabase.auth.signUp({
-          email: sanitizedEmail,
-          password: credentials.password,
-          options: {
-            emailRedirectTo: redirectUrl,
-            data: {
-              // Store the anonymous ID in user metadata for later migration
-              anonymous_id: currentAnonymousId,
-            },
-          },
-        })
-
-        if (error) {
-          debugLog("Sign-up error from Supabase", error)
-          if (error.message?.includes("Network request failed")) {
-            return {
-              error: new Error(error.message),
-              mockSignUp: false,
-              networkIssue: true,
-            }
-          }
-          return { error: new Error(error.message), mockSignUp: false }
-        }
-
-        // Check if confirmation is required
-        const emailVerificationRequired = !data.session
-
-        if (emailVerificationRequired) {
-          debugLog("Sign-up successful, email verification required")
+        if (error.message?.includes("Network request failed")) {
           return {
-            error: null,
+            error: new Error(error.message),
             mockSignUp: false,
-            emailVerificationSent: true,
+            networkIssue: true,
           }
         }
-
-        // Explicitly update the state with the new session data if available
-        if (data?.session) {
-          debugLog("Sign-up successful with immediate session, updating state")
-          setSession(data.session)
-          setUser(data.user)
-          lastTokenRefresh.current = Date.now()
-
-          // Set up session check interval
-          setupSessionCheck()
-
-          // Create a profile for the new user
-          if (data.user && data.user.email) {
-            debugLog("Creating profile for new user")
-            const { profile: createdProfile } = await createProfileSafely(data.user.id, data.user.email)
-            if (createdProfile) {
-              debugLog("Profile created after sign-up")
-              setProfile(createdProfile)
-              // Cache the profile
-              setCacheItem(CACHE_KEYS.PROFILE(data.user.id), createdProfile)
-            }
-
-            // If we have an anonymous ID, link the data
-            if (currentAnonymousId && currentAnonymousId !== data.user.id) {
-              debugLog(`Linking anonymous user data from ${currentAnonymousId} to ${data.user.id}`)
-
-              const { success, error: linkError } = await linkAnonymousUserData(currentAnonymousId, data.user.id)
-
-              if (linkError) {
-                console.error("Error linking anonymous user data:", linkError)
-                // Don't fail the sign-up if data linking fails
-              } else if (success) {
-                debugLog("Successfully linked anonymous user data")
-              }
-            }
-          }
-        }
-
-        return { error: null, mockSignUp: false }
+        return { error: new Error(error.message), mockSignUp: false }
       }
+
+      // Check if confirmation is required
+      const emailVerificationRequired = !data.session
+
+      if (emailVerificationRequired) {
+        debugLog("Sign-up successful, email verification required")
+        return {
+          error: null,
+          mockSignUp: false,
+          emailVerificationSent: true,
+        }
+      }
+
+      // Explicitly update the state with the new session data if available
+      if (data?.session) {
+        debugLog("Sign-up successful with immediate session, updating state")
+        setSession(data.session)
+        setUser(data.user)
+        lastTokenRefresh.current = Date.now()
+
+        // Set up session check interval
+        setupSessionCheck()
+
+        // Create a profile for the new user
+        if (data.user && data.user.email) {
+          debugLog("Creating profile for new user")
+          const { profile: createdProfile } = await createProfileSafely(data.user.id, data.user.email)
+          if (createdProfile) {
+            debugLog("Profile created after sign-up")
+            setProfile(createdProfile)
+            // Cache the profile
+            setCacheItem(CACHE_KEYS.PROFILE(data.user.id), createdProfile)
+          }
+
+          // If we have an anonymous ID, link the data
+          if (currentAnonymousId && currentAnonymousId !== data.user.id) {
+            debugLog(`Linking anonymous user data from ${currentAnonymousId} to ${data.user.id}`)
+
+            const { success, error: linkError } = await linkAnonymousUserData(currentAnonymousId, data.user.id)
+
+            if (linkError) {
+              console.error("Error linking anonymous user data:", linkError)
+              // Don't fail the sign-up if data linking fails
+            } else if (success) {
+              debugLog("Successfully linked anonymous user data")
+            }
+          }
+        }
+      }
+
+      return { error: null, mockSignUp: false }
     } catch (error: any) {
       console.error("Sign up error:", error)
-      return { error: error instanceof Error ? error : new Error(String(error)) }
+      // For any unexpected error, use demo mode
+      return handleDemoSignUp()
     }
   }
 

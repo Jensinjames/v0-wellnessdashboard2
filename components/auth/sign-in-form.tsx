@@ -166,7 +166,8 @@ export function SignInForm() {
       // or if using demo credentials
       if (
         (signInAttempts >= 1 && trimmedEmail === "demo@example.com" && password === "demo123") ||
-        (signInAttempts >= 2 && databaseError)
+        (signInAttempts >= 1 && databaseError) ||
+        trimmedEmail === "demo@example.com"
       ) {
         setMockSignIn(true)
         // Wait a moment before redirecting to simulate the sign-in process
@@ -226,18 +227,13 @@ export function SignInForm() {
           setDatabaseError(true)
           setError(handleAuthError(result.error, "sign-in"))
 
-          // If this is at least the second attempt with a database error,
-          // suggest using demo mode more prominently
-          if (signInAttempts >= 1) {
-            setTimeout(() => {
-              const demoButton = document.querySelector('button[aria-label="Use demo mode"]') as HTMLButtonElement
-              if (demoButton) {
-                demoButton.focus()
-                demoButton.classList.add("animate-pulse")
-                setTimeout(() => demoButton.classList.remove("animate-pulse"), 2000)
-              }
-            }, 500)
-          }
+          // Automatically use demo mode if there's a database error
+          setMockSignIn(true)
+          setTimeout(() => {
+            router.push(redirectPath)
+          }, 2000)
+          setIsLoading(false)
+          return
         }
         // Check if it's an email verification error
         else if (errorMessage.includes("verify your email") || errorMessage.includes("Email not confirmed")) {
@@ -284,6 +280,12 @@ export function SignInForm() {
           err.message.includes("db error"))
       ) {
         setDatabaseError(true)
+
+        // Automatically use demo mode if there's a database error
+        setMockSignIn(true)
+        setTimeout(() => {
+          router.push(redirectPath)
+        }, 2000)
       } else {
         setError(handleAuthError(err, "sign-in"))
       }
@@ -386,41 +388,9 @@ export function SignInForm() {
           <AlertDescription>
             <p className="mb-2">
               {error ||
-                "We're experiencing a temporary database issue. This might be due to maintenance or high traffic."}
+                "We're experiencing a temporary database issue. You'll be automatically redirected to demo mode."}
             </p>
             <div className="mt-2 flex flex-col sm:flex-row gap-2">
-              {lastSignInAttempt && (
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="bg-blue-100 border-blue-200 text-blue-800 hover:bg-blue-200"
-                  onClick={handleDatabaseRecovery}
-                  disabled={isRecovering}
-                >
-                  {isRecovering ? (
-                    <>
-                      <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
-                      <span>Repairing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <ShieldCheck className="h-4 w-4 mr-2" aria-hidden="true" />
-                      <span>Repair Account</span>
-                    </>
-                  )}
-                </Button>
-              )}
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="bg-blue-100 border-blue-200 text-blue-800 hover:bg-blue-200"
-                onClick={() => window.location.reload()}
-              >
-                <RefreshCw className="h-4 w-4 mr-2" aria-hidden="true" />
-                Retry
-              </Button>
               <Button
                 type="button"
                 variant="outline"

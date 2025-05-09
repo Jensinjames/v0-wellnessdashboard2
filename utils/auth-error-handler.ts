@@ -40,19 +40,8 @@ export function handleAuthError(error: any, operation: string): string {
     })
 
     if (operation === "sign-in" || operation === "sign-up") {
-      // For sign-in/sign-up, provide a more specific message based on error details
-      if (error.message?.includes("foreign key constraint")) {
-        return "Account setup issue. Please contact support or try again later."
-      }
-      if (error.message?.includes("permission denied")) {
-        return "Permission issue with your account. Please try again or contact support."
-      }
-      if (error.message?.includes("role")) {
-        return "User role assignment failed. Please try again later."
-      }
-
-      // Default database error message for sign-in/sign-up
-      return "We encountered a temporary database issue. Please try again in a moment."
+      // For sign-in/sign-up, provide a more specific message and suggest demo mode
+      return "We're experiencing a temporary database issue. Please try using demo mode by clicking the 'Use Demo Mode' button below."
     }
     return "Database connection issue. Please try again in a moment."
   }
