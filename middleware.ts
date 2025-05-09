@@ -5,10 +5,10 @@ import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs"
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
 
-  try {
-    // Create a new supabase middleware client for each request
-    const supabase = createMiddlewareClient({ req, res })
+  // Create a new supabase middleware client for each request
+  const supabase = createMiddlewareClient({ req, res })
 
+  try {
     // Check if the user is authenticated
     const {
       data: { session },
@@ -31,6 +31,7 @@ export async function middleware(req: NextRequest) {
     const bypassAllChecks = [
       "/api/", // All API routes
       "/api/create-profile", // Explicitly allow profile creation API
+      "/api/migrate-user-data", // Allow data migration API
       "/api/auth/", // All auth-related APIs
       "/api/health-check", // Health check endpoint
       "/_next/", // Next.js assets
@@ -45,6 +46,32 @@ export async function middleware(req: NextRequest) {
       return res
     }
 
+    // Check if this is an anonymous user
+    const isAnonymous =
+      session?.user?.app_metadata?.provider === "anonymous" ||
+      session?.user?.id.startsWith("mock-") ||
+      session?.user?.email === "demo@example.com"
+
+    // For anonymous users, we'll skip the onboarding check
+    if (session && isAnonymous) {
+      // Set a cookie to indicate this is an anonymous session
+      res.cookies.set("anonymous-session", "true", {
+        maxAge: 60 * 60 * 24, // 1 day
+        path: "/",
+      })
+
+      // Store the anonymous ID in a cookie for potential migration later
+      if (session.user.id) {
+        res.cookies.set("anonymous-user-id", session.user.id, {
+          maxAge: 60 * 60 * 24 * 30, // 30 days
+          path: "/",
+        })
+      }
+
+      // Allow anonymous users to access protected routes
+      return res
+    }
+
     // If the user is not authenticated and trying to access a protected route
     if (!session && !publicRoutes.some((route) => pathname.startsWith(route))) {
       const redirectUrl = new URL("/auth/sign-in", req.url)
@@ -52,14 +79,11 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(redirectUrl)
     }
 
-    // Check if this is an anonymous user
-    const isAnonymous = session?.user?.app_metadata?.provider === "anonymous"
-
     // Routes that should bypass onboarding check
     const bypassOnboardingCheck = ["/onboarding", ...bypassAllChecks]
 
-    // If the user is authenticated and not anonymous, check if they've completed onboarding
-    if (session && !isAnonymous && !bypassOnboardingCheck.some((route) => pathname.startsWith(route))) {
+    // If the user is authenticated, check if they've completed onboarding
+    if (session && !bypassOnboardingCheck.some((route) => pathname.startsWith(route))) {
       // Check if the user has completed onboarding
       // We'll use cookies for this check
       const onboardingCompleted = req.cookies.get("onboarding-completed")?.value === "true"
@@ -97,21 +121,6 @@ export async function middleware(req: NextRequest) {
           return res
         }
       }
-    }
-
-    // For anonymous users, we'll skip the onboarding check
-    if (session && isAnonymous) {
-      // Set a cookie to indicate this is an anonymous session
-      res.cookies.set("anonymous-session", "true", {
-        maxAge: 60 * 60 * 24, // 1 day
-        path: "/",
-      })
-
-      // Also set onboarding as completed for anonymous users
-      res.cookies.set("onboarding-completed", "true", {
-        maxAge: 60 * 60 * 24, // 1 day
-        path: "/",
-      })
     }
 
     return res

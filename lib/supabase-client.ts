@@ -10,13 +10,35 @@ let clientInitTime: number | null = null
 let clientInstanceCount = 0
 let lastResetTime: number | null = null
 
+// Debug mode flag - default to false in production
+const DEFAULT_DEBUG_MODE = false
+
 // Global registry to track all GoTrueClient instances
 const goTrueClientRegistry = new Set<any>()
 
-// Declare debugLog variable
-const debugLog = (message: string, ...args: any[]) => {
-  if (process.env.NODE_ENV === "development") {
-    console.debug(message, ...args)
+// Enable/disable debug logging
+export function setDebugMode(enabled: boolean): void {
+  if (typeof window !== "undefined") {
+    localStorage.setItem("supabase_debug", enabled ? "true" : "false")
+  }
+  console.log(`Supabase client debug mode ${enabled ? "enabled" : "disabled"}`)
+}
+
+// Internal debug logging function
+function debugLog(...args: any[]): void {
+  // Read from localStorage to allow dynamic toggling
+  let debugMode = DEFAULT_DEBUG_MODE
+  if (typeof window !== "undefined") {
+    debugMode = localStorage.getItem("supabase_debug") === "true"
+
+    // Use NEXT_PUBLIC prefixed variable instead of NODE_ENV directly
+    if (process.env.NEXT_PUBLIC_DEBUG_MODE === "true") {
+      debugMode = true
+    }
+  }
+
+  if (debugMode) {
+    console.log("[Supabase Client]", ...args)
   }
 }
 
@@ -41,16 +63,18 @@ export function getSupabaseClient(
   // If we already have a client and aren't forcing a new one, return it
   if (supabaseClient && !options.forceNew) {
     // Check if the auth object exists and has the expected methods
-    if (!supabaseClient.auth || typeof supabaseClient.auth.signInWithPassword !== "function") {
-      console.warn("Existing client is invalid, creating a new one")
+    if (!supabaseClient.auth || typeof supabaseClient.auth.resetPasswordForEmail !== "function") {
+      debugLog("Existing client is invalid, creating a new one")
       resetSupabaseClient()
     } else {
+      debugLog("Returning existing Supabase client instance")
       return supabaseClient
     }
   }
 
   // If we're already initializing, return the promise
   if (isInitializing && initializationPromise && !options.forceNew) {
+    debugLog("Client initialization already in progress, returning promise")
     return initializationPromise
   }
 
@@ -60,6 +84,8 @@ export function getSupabaseClient(
   // Create a new initialization promise
   initializationPromise = new Promise<SupabaseClient<Database>>((resolve, reject) => {
     try {
+      debugLog("Creating new Supabase client instance")
+
       // Track instance count for debugging
       clientInstanceCount++
 
@@ -75,6 +101,8 @@ export function getSupabaseClient(
           flowType: "pkce",
           // Use a consistent storage key to prevent conflicts
           storageKey: "wellness-dashboard-auth-v2",
+          // Debug flag to help identify issues - read from localStorage
+          debug: typeof window !== "undefined" ? localStorage.getItem("supabase_debug") === "true" : DEFAULT_DEBUG_MODE,
           // Storage event listener to sync auth state across tabs
           storage: {
             getItem: (key: string) => {
@@ -107,6 +135,29 @@ export function getSupabaseClient(
             "x-client-instance": `instance-${clientInstanceCount}`,
             "x-client-init-time": clientInitTime?.toString() || "unknown",
           },
+          fetch: (url: RequestInfo | URL, fetchOptions: RequestInit = {}) => {
+            const timeout = options.timeout || 10000
+            const controller = new AbortController()
+            const timeoutId = setTimeout(() => {
+              controller.abort()
+              debugLog(`Fetch request to ${url.toString()} timed out after ${timeout}ms`)
+            }, timeout)
+
+            return fetch(url, {
+              ...fetchOptions,
+              signal: controller.signal,
+            })
+              .then((response) => {
+                clearTimeout(timeoutId)
+                return response
+              })
+              .catch((error) => {
+                clearTimeout(timeoutId)
+                debugLog(`Fetch error for ${url.toString()}: ${error.message}`)
+                // Rethrow the error to be handled by the caller
+                throw error
+              })
+          },
         },
       }
 
@@ -127,6 +178,18 @@ export function getSupabaseClient(
       if (newClient.auth && (newClient.auth as any)._goTrueClient) {
         // Add the new instance
         goTrueClientRegistry.add((newClient.auth as any)._goTrueClient)
+        debugLog(`Registered GoTrueClient instance. Total instances: ${goTrueClientRegistry.size}`)
+
+        // If we have multiple instances, log a warning
+        if (goTrueClientRegistry.size > 1) {
+          console.warn(
+            `[CRITICAL] Multiple GoTrueClient instances detected (${goTrueClientRegistry.size}). ` +
+              `This may lead to undefined behavior. Please ensure only one instance is created.`,
+          )
+
+          // Force cleanup of orphaned instances
+          cleanupOrphanedClients(true)
+        }
       }
 
       // Reset initialization state
@@ -135,6 +198,7 @@ export function getSupabaseClient(
       // Add unload event listener to clean up client on page unload
       if (typeof window !== "undefined") {
         window.addEventListener("beforeunload", () => {
+          debugLog("Page unloading, cleaning up Supabase client")
           cleanupOrphanedClients(true)
         })
       }
@@ -160,11 +224,13 @@ export async function checkSupabaseConnection(): Promise<boolean> {
   try {
     // If we don't have a client yet, create one
     if (!supabaseClient) {
+      debugLog("No client exists, creating one for connection check")
       await getSupabaseClient()
     }
 
     // If we still don't have a client, return false
     if (!supabaseClient) {
+      debugLog("Failed to create client for connection check")
       return false
     }
 
@@ -184,6 +250,8 @@ export async function checkSupabaseConnection(): Promise<boolean> {
 
 // Reset the client (useful for testing or when auth state changes)
 export function resetSupabaseClient() {
+  debugLog("Resetting Supabase client")
+
   // Record reset time
   lastResetTime = Date.now()
 
@@ -192,7 +260,7 @@ export function resetSupabaseClient() {
     try {
       ;(supabaseClient as any)._closeChannel()
     } catch (e) {
-      console.error("Error closing realtime channel:", e)
+      debugLog("Error closing realtime channel:", e)
     }
   }
 
@@ -203,6 +271,8 @@ export function resetSupabaseClient() {
 
   // Clear the GoTrueClient registry
   goTrueClientRegistry.clear()
+
+  debugLog("Supabase client reset complete")
 }
 
 // Get the current client without creating a new one
@@ -274,6 +344,8 @@ export function getClientDebugInfo() {
 // Clear any orphaned GoTrueClient instances
 export function cleanupOrphanedClients(forceCleanup = false) {
   if (goTrueClientRegistry.size > 1 || forceCleanup) {
+    debugLog(`Cleaning up orphaned GoTrueClient instances. Before: ${goTrueClientRegistry.size}`)
+
     // Keep only the current client's GoTrueClient
     if (supabaseClient && (supabaseClient.auth as any)._goTrueClient) {
       const currentGoTrueClient = (supabaseClient.auth as any)._goTrueClient
@@ -283,6 +355,8 @@ export function cleanupOrphanedClients(forceCleanup = false) {
       // If we don't have a current client, clear all
       goTrueClientRegistry.clear()
     }
+
+    debugLog(`Cleanup complete. After: ${goTrueClientRegistry.size}`)
 
     // Force garbage collection if possible
     if (typeof window !== "undefined" && (window as any).gc) {

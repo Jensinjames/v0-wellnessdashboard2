@@ -228,9 +228,9 @@ export function getSupabaseClient(
 
 // Create an enhanced fetch implementation with timeout, retries, and telemetry
 function createEnhancedFetch(options: any = {}) {
-  return (url: RequestInfo | URL, fetchOptions: RequestInit = {}) => {
+  return async (url: RequestInfo | URL, fetchOptions: RequestInit = {}) => {
     const timeout = options.timeout || 15000
-    const maxRetries = options.maxRetries || 2
+    const maxRetries = options.maxRetries || 3
     const controller = new AbortController()
     const startTime = Date.now()
 
@@ -329,8 +329,8 @@ function recordConnectionHealth(success: boolean, latency: number): void {
 async function testConnection(client: SupabaseClient<Database>): Promise<boolean> {
   try {
     const startTime = Date.now()
-    // Simple health check query
-    const { error } = await client.from("profiles").select("count(*)", { count: "exact" }).limit(0)
+    // Simple health check query - use a simpler query without count(*)
+    const { error } = await client.from("profiles").select("id").limit(1)
 
     const latency = Date.now() - startTime
     recordConnectionHealth(!error, latency)
@@ -364,7 +364,7 @@ export async function checkSupabaseConnection(): Promise<{ isConnected: boolean;
     }
 
     const startTime = Date.now()
-    const { data, error } = await supabaseClient.from("profiles").select("count(*)", { count: "exact" }).limit(0)
+    const { data, error } = await supabaseClient.from("profiles").select("id").limit(1)
 
     const latency = Date.now() - startTime
 
@@ -488,8 +488,8 @@ export function getClientDebugInfo() {
 }
 
 // Clear any orphaned GoTrueClient instances
-export function cleanupOrphanedClients() {
-  if (goTrueClientRegistry.size > 1) {
+export function cleanupOrphanedClients(force = false) {
+  if (goTrueClientRegistry.size > 1 || force) {
     debugLog(`Cleaning up orphaned GoTrueClient instances. Before: ${goTrueClientRegistry.size}`)
 
     // Keep only the current client's GoTrueClient
@@ -503,5 +503,48 @@ export function cleanupOrphanedClients() {
     }
 
     debugLog(`Cleanup complete. After: ${goTrueClientRegistry.size}`)
+  }
+}
+
+// New function to migrate anonymous user data to authenticated user
+export async function migrateAnonymousUserData(
+  anonymousId: string,
+  authenticatedId: string,
+): Promise<{
+  success: boolean
+  error: Error | null
+}> {
+  if (!supabaseClient) {
+    return {
+      success: false,
+      error: new Error("Supabase client not initialized"),
+    }
+  }
+
+  try {
+    debugLog(`Attempting to migrate data from anonymous user ${anonymousId} to authenticated user ${authenticatedId}`)
+
+    // Call a stored procedure to handle the migration
+    const { data, error } = await supabaseClient.rpc("migrate_user_data", {
+      anonymous_id: anonymousId,
+      authenticated_id: authenticatedId,
+    })
+
+    if (error) {
+      console.error("Error migrating user data:", error)
+      return {
+        success: false,
+        error: new Error(`Failed to migrate user data: ${error.message}`),
+      }
+    }
+
+    debugLog(`Successfully migrated data from anonymous user ${anonymousId} to authenticated user ${authenticatedId}`)
+    return { success: true, error: null }
+  } catch (error: any) {
+    console.error("Unexpected error during user data migration:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error : new Error(String(error)),
+    }
   }
 }

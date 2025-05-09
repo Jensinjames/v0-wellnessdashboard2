@@ -3,6 +3,7 @@ import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import type { Database } from "@/types/database"
 import type { UserProfile, ProfileFormData } from "@/types/auth"
 import { getCacheItem, setCacheItem, CACHE_KEYS, CACHE_EXPIRY } from "@/lib/cache-utils"
+import { getSupabaseClient } from "@/lib/supabase-client-enhanced"
 
 // Create a Supabase client
 const supabase = createClientComponentClient<Database>()
@@ -217,5 +218,96 @@ export function createMinimalProfile(userId: string, email?: string | null): Use
     avatar_url: null,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+  }
+}
+
+/**
+ * Ensures a user profile exists, creating one if it doesn't
+ * @param userId - The user ID to ensure a profile for
+ * @param email - The email address for the profile
+ * @returns A promise resolving to the profile result
+ */
+export async function ensureUserProfile(userId: string, email: string): Promise<ProfileResult> {
+  try {
+    // First try to fetch the profile
+    const { profile, error } = await fetchProfileSafely(userId)
+
+    // If profile exists, return it
+    if (profile) {
+      return { profile, error: null }
+    }
+
+    // If error is not "not found", return the error
+    if (error && !error.message.includes("not found")) {
+      return { profile: null, error }
+    }
+
+    // Profile doesn't exist, create it
+    return await createProfileSafely(userId, email)
+  } catch (error: any) {
+    console.error("Error ensuring user profile:", error)
+    return {
+      profile: null,
+      error: error instanceof Error ? error : new Error(String(error)),
+    }
+  }
+}
+
+/**
+ * Links anonymous user data to an authenticated user
+ * @param anonymousId - The anonymous user ID
+ * @param authenticatedId - The authenticated user ID
+ * @returns A promise resolving to the result of the operation
+ */
+export async function linkAnonymousUserData(
+  anonymousId: string,
+  authenticatedId: string,
+): Promise<{ success: boolean; error: Error | null }> {
+  try {
+    // Get the enhanced Supabase client
+    const client = await getSupabaseClient()
+
+    console.log(`Linking anonymous user ${anonymousId} data to authenticated user ${authenticatedId}`)
+
+    // First, check if the anonymous user has any data
+    const { data: anonymousData, error: checkError } = await client
+      .from("user_data")
+      .select("id")
+      .eq("user_id", anonymousId)
+      .limit(1)
+
+    if (checkError) {
+      console.error("Error checking for anonymous user data:", checkError)
+      return { success: false, error: new Error(checkError.message) }
+    }
+
+    // If no data, nothing to migrate
+    if (!anonymousData || anonymousData.length === 0) {
+      console.log("No anonymous data found to migrate")
+      return { success: true, error: null }
+    }
+
+    // Call a database function to handle the migration
+    const { error: migrationError } = await client.rpc("migrate_user_data", {
+      source_id: anonymousId,
+      target_id: authenticatedId,
+    })
+
+    if (migrationError) {
+      console.error("Error migrating user data:", migrationError)
+      return {
+        success: false,
+        error: new Error(`Failed to migrate user data: ${migrationError.message}`),
+      }
+    }
+
+    console.log("Successfully migrated anonymous user data")
+    return { success: true, error: null }
+  } catch (error: any) {
+    console.error("Unexpected error during user data migration:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error : new Error(String(error)),
+    }
   }
 }

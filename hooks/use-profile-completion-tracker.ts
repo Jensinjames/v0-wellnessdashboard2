@@ -1,65 +1,50 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useEffect } from "react"
 import { useAuth } from "@/context/auth-context"
-import type { ProfileCompletionStatus } from "@/types/auth"
-import { isAnonymousProfile } from "@/utils/auth-utils"
+import { useProfileCompletion } from "@/hooks/use-profile-validation"
+import { useRouter, usePathname } from "next/navigation"
 
-export function useProfileCompletionTracker() {
-  const { profile } = useAuth()
-  const [completionStatus, setCompletionStatus] = useState<ProfileCompletionStatus>({
-    isComplete: false,
-    missingFields: [],
-    completionPercentage: 0,
-  })
+interface ProfileCompletionTrackerOptions {
+  redirectIncomplete?: boolean
+  redirectTo?: string
+  excludePaths?: string[]
+  onlyCheckOnMount?: boolean
+}
+
+/**
+ * Hook to track profile completion status and optionally redirect
+ * incomplete profiles to the profile page
+ */
+export function useProfileCompletionTracker({
+  redirectIncomplete = false,
+  redirectTo = "/profile",
+  excludePaths = ["/profile", "/auth"],
+  onlyCheckOnMount = true,
+}: ProfileCompletionTrackerOptions = {}) {
+  const { profile, isLoading } = useAuth()
+  const { isComplete, completionPercentage, missingFields } = useProfileCompletion(profile)
+  const router = useRouter()
+  const pathname = usePathname()
 
   useEffect(() => {
-    if (!profile) {
-      setCompletionStatus({
-        isComplete: false,
-        missingFields: ["first_name", "last_name"],
-        completionPercentage: 0,
-      })
-      return
+    // Skip if still loading or if we only check on mount and this isn't the first render
+    if (isLoading || (onlyCheckOnMount && !isComplete)) return
+
+    // Skip if on an excluded path
+    const isExcludedPath = excludePaths.some((path) => pathname?.startsWith(path))
+    if (isExcludedPath) return
+
+    // Redirect if profile is incomplete and redirectIncomplete is true
+    if (!isComplete && redirectIncomplete) {
+      router.push(redirectTo)
     }
+  }, [isComplete, isLoading, redirectIncomplete, redirectTo, router, pathname, excludePaths, onlyCheckOnMount])
 
-    // Anonymous users are considered to have completed profiles
-    if (isAnonymousProfile(profile)) {
-      setCompletionStatus({
-        isComplete: true,
-        missingFields: [],
-        completionPercentage: 100,
-      })
-      return
-    }
-
-    const missingFields: string[] = []
-
-    if (!profile.first_name) {
-      missingFields.push("first_name")
-    }
-
-    if (!profile.last_name) {
-      missingFields.push("last_name")
-    }
-
-    // Optional fields that contribute to completion percentage
-    const optionalFields = ["avatar_url", "phone"]
-    const optionalMissing = optionalFields.filter((field) => !profile[field as keyof typeof profile])
-
-    // Calculate completion percentage
-    const requiredFields = ["first_name", "last_name"]
-    const totalFields = requiredFields.length + optionalFields.length
-    const missingCount = missingFields.length + optionalMissing.length
-    const completedCount = totalFields - missingCount
-    const completionPercentage = Math.round((completedCount / totalFields) * 100)
-
-    setCompletionStatus({
-      isComplete: missingFields.length === 0,
-      missingFields,
-      completionPercentage,
-    })
-  }, [profile])
-
-  return completionStatus
+  return {
+    isComplete,
+    completionPercentage,
+    missingFields,
+    isLoading,
+  }
 }
