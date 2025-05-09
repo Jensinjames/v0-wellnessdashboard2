@@ -4,7 +4,7 @@ import { useEffect, useState } from "react"
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { Auth } from "@supabase/auth-ui-react"
 import { ThemeSupa } from "@supabase/auth-ui-shared"
-import { redirect } from "next/navigation"
+import { Loader2 } from "lucide-react"
 
 export default function Home() {
   const [session, setSession] = useState(null)
@@ -13,15 +13,22 @@ export default function Home() {
 
   useEffect(() => {
     const checkSession = async () => {
-      const {
-        data: { session: activeSession },
-      } = await supabase.auth.getSession()
-      setSession(activeSession)
-      setLoading(false)
+      try {
+        const {
+          data: { session: activeSession },
+        } = await supabase.auth.getSession()
+        setSession(activeSession)
 
-      if (activeSession) {
-        // If user is logged in, redirect to dashboard
-        redirect("/dashboard")
+        if (activeSession) {
+          // If user is logged in, redirect to dashboard
+          window.location.href = "/dashboard"
+          return
+        }
+
+        setLoading(false)
+      } catch (error) {
+        console.error("Error checking session:", error)
+        setLoading(false)
       }
     }
 
@@ -32,7 +39,7 @@ export default function Home() {
     } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session)
       if (session) {
-        redirect("/dashboard")
+        window.location.href = "/dashboard"
       }
     })
 
@@ -40,7 +47,12 @@ export default function Home() {
   }, [supabase.auth])
 
   if (loading) {
-    return <div className="flex justify-center items-center min-h-screen">Loading...</div>
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+        <span className="ml-2 text-gray-700">Loading...</span>
+      </div>
+    )
   }
 
   return (

@@ -113,6 +113,21 @@ export async function middleware(req: NextRequest) {
       return res
     }
 
+    // Special handling for root path
+    if (pathname === "/") {
+      console.log("Processing root path")
+
+      if (session) {
+        // If authenticated, redirect to dashboard
+        console.log("User authenticated at root path, redirecting to dashboard")
+        const dashboardUrl = new URL("/dashboard", req.url)
+        return NextResponse.redirect(dashboardUrl)
+      }
+
+      // If not authenticated, let the page handle it
+      return res
+    }
+
     // If the user is not authenticated and trying to access a protected route
     if (!session && !publicRoutes.some((route) => pathname.startsWith(route))) {
       console.log(`Unauthenticated access to protected route: ${pathname}`)

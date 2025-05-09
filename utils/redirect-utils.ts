@@ -26,6 +26,10 @@ export function isValidRedirectPath(path: string): boolean {
   // Path must not contain protocol or domain
   if (path.includes("://") || path.includes("//")) return false
 
+  // Root path is valid but should redirect to dashboard
+  if (path === "/") return true
+
+  // Allow all internal paths that start with /
   return true
 }
 
@@ -61,7 +65,12 @@ export function clearStoredRedirectPath(): void {
  * Gets a safe redirect path - either the provided path if valid,
  * or the stored path, or the default path
  */
-export function getSafeRedirectPath(path: string | null, defaultPath = "/"): string {
+export function getSafeRedirectPath(path: string | null, defaultPath = "/dashboard"): string {
+  // Special case for root path
+  if (path === "/") {
+    return defaultPath
+  }
+
   // Check the provided path first
   if (path && isValidRedirectPath(path)) {
     return path

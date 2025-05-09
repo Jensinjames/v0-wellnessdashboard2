@@ -38,7 +38,13 @@ export function SignInForm() {
 
     // Get and process the redirectTo parameter
     const redirectParam = searchParams.get("redirectTo")
-    const cleanRedirectPath = extractRedirectPath(redirectParam)
+    let cleanRedirectPath = extractRedirectPath(redirectParam)
+
+    // Special case for root path
+    if (cleanRedirectPath === "/") {
+      cleanRedirectPath = "/dashboard"
+    }
+
     setRedirectPath(cleanRedirectPath)
 
     // If we have a token, process it
@@ -87,8 +93,11 @@ export function SignInForm() {
     try {
       console.log(`Attempting sign in with redirect to: ${redirectPath}`)
 
+      // Special case for root path
+      const finalRedirectPath = redirectPath === "/" ? "/dashboard" : redirectPath
+
       // Store the redirect path before authentication
-      storeRedirectPath(redirectPath)
+      storeRedirectPath(finalRedirectPath)
 
       // Pass credentials as a single object with the correct structure
       const result = await signIn({ email, password })

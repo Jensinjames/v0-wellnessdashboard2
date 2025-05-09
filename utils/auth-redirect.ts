@@ -24,6 +24,11 @@ export function extractRedirectPath(redirectParam: string | null): string {
     const urlParts = decodedParam.split("?")
     const path = urlParts[0]
 
+    // Special case for root path
+    if (path === "/") {
+      return "/dashboard"
+    }
+
     // Validate the path
     if (isValidRedirectPath(path)) {
       return path
@@ -51,8 +56,11 @@ export function isValidRedirectPath(path: string): boolean {
   if (path.startsWith("//")) return false
   if (path.includes("://")) return false
 
+  // Root path is valid
+  if (path === "/") return true
+
   // Allow specific application paths
-  const allowedPrefixes = ["/app", "/dashboard", "/profile", "/settings", "/goals", "/categories"]
+  const allowedPrefixes = ["/", "/app", "/dashboard", "/profile", "/settings", "/goals", "/categories"]
   return allowedPrefixes.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
 }
 
