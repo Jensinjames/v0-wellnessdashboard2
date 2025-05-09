@@ -6,7 +6,6 @@ import { AuthProvider } from "@/context/auth-context"
 import { ProfileCompletionProvider } from "@/context/profile-completion-context"
 import { EnvProvider } from "@/components/providers/env-provider"
 import { NavigationProvider } from "@/context/navigation-context"
-import { SupabaseErrorProvider } from "@/context/supabase-error-context"
 
 // Import the initialization utility
 import "@/lib/init-supabase"
@@ -29,11 +28,9 @@ export default function RootLayout({
       <body className={inter.className}>
         <EnvProvider>
           <AuthProvider>
-            <SupabaseErrorProvider>
-              <ProfileCompletionProvider>
-                <NavigationProvider>{children}</NavigationProvider>
-              </ProfileCompletionProvider>
-            </SupabaseErrorProvider>
+            <ProfileCompletionProvider>
+              <NavigationProvider>{children}</NavigationProvider>
+            </ProfileCompletionProvider>
           </AuthProvider>
         </EnvProvider>
       </body>

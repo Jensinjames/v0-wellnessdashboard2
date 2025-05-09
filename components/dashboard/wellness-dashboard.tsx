@@ -13,8 +13,6 @@ import { useAuth } from "@/context/auth-context"
 import { setCacheItem, getCacheItem, CACHE_KEYS, CACHE_EXPIRY } from "@/lib/cache-utils"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Info } from "lucide-react"
-import { SupabaseErrorBoundary } from "@/components/error-boundary/supabase-error-boundary"
-import { useSupabaseErrorContext } from "@/context/supabase-error-context"
 
 // Mock data for the dashboard
 const mockData = {
@@ -85,28 +83,22 @@ export function WellnessDashboard() {
   const [dashboardData, setDashboardData] = useState(mockData)
   const [isCached, setIsCached] = useState(false)
   const { user } = useAuth()
-  const { setLastError } = useSupabaseErrorContext()
 
   // Load cached dashboard data on mount
   useEffect(() => {
     if (user) {
-      try {
-        const cacheKey = CACHE_KEYS.DASHBOARD_DATA(user.id)
-        const cachedData = getCacheItem<typeof mockData>(cacheKey)
+      const cacheKey = CACHE_KEYS.DASHBOARD_DATA(user.id)
+      const cachedData = getCacheItem<typeof mockData>(cacheKey)
 
-        if (cachedData) {
-          setDashboardData(cachedData)
-          setIsCached(true)
-        } else {
-          // Cache the initial mock data
-          setCacheItem(cacheKey, mockData, CACHE_EXPIRY.SHORT)
-        }
-      } catch (error) {
-        console.error("Error loading dashboard data:", error)
-        setLastError(error, "WellnessDashboard.loadData")
+      if (cachedData) {
+        setDashboardData(cachedData)
+        setIsCached(true)
+      } else {
+        // Cache the initial mock data
+        setCacheItem(cacheKey, mockData, CACHE_EXPIRY.SHORT)
       }
     }
-  }, [user, setLastError])
+  }, [user])
 
   // Update the categories array to use goal_hours instead of goal
   const categoriesWithPercentage = dashboardData.categories.map((category) => ({
@@ -130,69 +122,62 @@ export function WellnessDashboard() {
         </Alert>
       )}
 
-      <SupabaseErrorBoundary component="WellnessDashboard.charts">
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <CardTitle>Wellness Distribution</CardTitle>
-                <CardDescription>{totalPercentage}% Goal Completion for today</CardDescription>
-              </div>
-              <div className="mt-2 sm:mt-0">
-                <Tabs defaultValue={chartType} onValueChange={(v) => setChartType(v as "radial" | "pie")}>
-                  <TabsList>
-                    <TabsTrigger value="pie">Pie Chart</TabsTrigger>
-                    <TabsTrigger value="radial">Radial View</TabsTrigger>
-                  </TabsList>
-                </Tabs>
-              </div>
+      <Card>
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <CardTitle>Wellness Distribution</CardTitle>
+              <CardDescription>{totalPercentage}% Goal Completion for today</CardDescription>
             </div>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-4 text-center text-sm text-muted-foreground">
-              <p>
-                {dashboardData.totalHours} hours logged today
-                {dashboardData.totalHours > dashboardData.dailyCap && (
-                  <span className="ml-1 text-amber-500">(exceeds daily cap of {dashboardData.dailyCap} hours)</span>
-                )}
-              </p>
+            <div className="mt-2 sm:mt-0">
+              <Tabs defaultValue={chartType} onValueChange={(v) => setChartType(v as "radial" | "pie")}>
+                <TabsList>
+                  <TabsTrigger value="pie">Pie Chart</TabsTrigger>
+                  <TabsTrigger value="radial">Radial View</TabsTrigger>
+                </TabsList>
+              </Tabs>
             </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="mb-4 text-center text-sm text-muted-foreground">
+            <p>
+              {dashboardData.totalHours} hours logged today
+              {dashboardData.totalHours > dashboardData.dailyCap && (
+                <span className="ml-1 text-amber-500">(exceeds daily cap of {dashboardData.dailyCap} hours)</span>
+              )}
+            </p>
+          </div>
 
-            {chartType === "radial" ? (
-              <RadialChart data={dashboardData.categories} size={280} />
-            ) : (
-              <PieChart data={dashboardData.categories} size={280} />
-            )}
+          {chartType === "radial" ? (
+            <RadialChart data={dashboardData.categories} size={280} />
+          ) : (
+            <PieChart data={dashboardData.categories} size={280} />
+          )}
 
-            <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-              {categoriesWithPercentage.map((category) => (
-                <CategoryCard
-                  key={category.name}
-                  title={category.name}
-                  actual={category.value}
-                  goal={category.goal_hours}
-                  percentage={category.percentage}
-                  color={category.color}
-                  description={category.description}
-                />
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </SupabaseErrorBoundary>
+          <div className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {categoriesWithPercentage.map((category) => (
+              <CategoryCard
+                key={category.name}
+                title={category.name}
+                actual={category.value}
+                goal={category.goal_hours}
+                percentage={category.percentage}
+                color={category.color}
+                description={category.description}
+              />
+            ))}
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <SupabaseErrorBoundary component="WellnessDashboard.dailyMetrics">
-          <DailyMetrics
-            score={dashboardData.dailyMetrics.score}
-            motivation={dashboardData.dailyMetrics.motivation}
-            sleep={dashboardData.dailyMetrics.sleep}
-          />
-        </SupabaseErrorBoundary>
-
-        <SupabaseErrorBoundary component="WellnessDashboard.trackingHistory">
-          <TrackingHistory entries={dashboardData.trackingHistory} />
-        </SupabaseErrorBoundary>
+        <DailyMetrics
+          score={dashboardData.dailyMetrics.score}
+          motivation={dashboardData.dailyMetrics.motivation}
+          sleep={dashboardData.dailyMetrics.sleep}
+        />
+        <TrackingHistory entries={dashboardData.trackingHistory} />
       </div>
     </div>
   )
