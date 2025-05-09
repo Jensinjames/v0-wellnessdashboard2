@@ -59,7 +59,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   const debug = useCallback(
     (...args: any[]) => {
       if (debugMode) {
-        console.log("[useSupabase]", getUser())
+        console.log("[useSupabase]", getClientStats())
       }
     },
     [debugMode],
@@ -102,7 +102,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
       }
 
       // Log client stats
-      debug("Client stats:", getUser(Start))
+      debug("Client stats:", getClientStats())
     } catch (error) {
       console.error("Error initializing Supabase hook:", error)
       toast({
@@ -220,7 +220,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         networkCheckTimerRef.current = null
       }
     }
-  }, [isInitialized, monitorNetwork, debug, isOnline, toast])
+  }, [isInitialized, monitorNetwork, debug, isOnline, toast, setIsOnline])
 
   // Set up activity tracking
   useEffect(() => {
@@ -243,14 +243,14 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
       window.removeEventListener("scroll", trackActivity)
       window.removeEventListener("mousemove", trackActivity)
     }
-  }, [isInitialized, lastActivity, setConsecutiveErrors])
+  }, [isInitialized, lastActivity, setConsecutiveErrors, setLastActivity])
 
   // Wrap Supabase queries with error handling and offline support
   const query = useCallback(
-    async <T>(**
-      queryFn: (user: SupabaseClient<Database>) => Promise<T>,
-      options: QueryOptions<T> = {}
-    ): Promise<T> => {
+    async <T>(supabase.auth.getUser(**))
+    queryFn: (supabase: SupabaseClient<Database>) => Promise<T>,
+    options: QueryOptions<T> = getUser{}
+  ): Promise<T> => {requiresAuth
   const { retries = 3, retryDelay = 1000, requiresAuth = false, offlineAction, offlineData } = options
 
   if (!supabaseRef.current) {
@@ -338,19 +338,19 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   throw lastError
 }
 ,
-    [isOnline, debug, debugMode, user, setLastActivity, setIsOnline]
+    [isOnline, debug, debugMode, user, setLastActivity, setIsOnline, persistSession]
   )
 
 // Reset the client and state
 const resetClient = useCallback(() => {
   debug("Resetting Supabase client")
   resetSupabaseClient()
-  supabase.auth.getUser.current = null
+  supabaseRef.current = null
   setConsecutiveErrors(0)
   setIsInitialized(false)
 
   // Re-initialize
-  const client = getUser({
+  const client = getSupabaseClient({
     persistSession,
     autoRefreshToken,
     debugMode,
