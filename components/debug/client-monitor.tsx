@@ -5,6 +5,8 @@
  *
  * This component displays information about the Supabase client instances
  * and provides tools for debugging and monitoring.
+ *
+ * IMPORTANT: This component is only rendered in development mode.
  */
 
 import { useState, useEffect } from "react"
@@ -23,10 +25,18 @@ export function ClientMonitor({ autoRefresh = true, refreshInterval = 5000 }: Cl
   const [stats, setStats] = useState(getClientStats())
   const [expanded, setExpanded] = useState(false)
   const [lastCleanup, setLastCleanup] = useState<Date | null>(null)
+  const [hasMultipleInstances, setHasMultipleInstances] = useState(stats.goTrueClientCount > 1)
+
+  // Only render in development mode
+  if (process.env.NODE_ENV === "production") {
+    return null
+  }
 
   // Function to refresh stats
   const refreshStats = () => {
-    setStats(getClientStats())
+    const newStats = getClientStats()
+    setStats(newStats)
+    setHasMultipleInstances(newStats.goTrueClientCount > 1)
   }
 
   // Function to force cleanup
@@ -58,8 +68,6 @@ export function ClientMonitor({ autoRefresh = true, refreshInterval = 5000 }: Cl
 
     return () => clearInterval(interval)
   }, [autoRefresh, refreshInterval, stats.goTrueClientCount])
-
-  const hasMultipleInstances = stats.goTrueClientCount > 1
 
   return (
     <Card className="w-full">
@@ -94,21 +102,45 @@ export function ClientMonitor({ autoRefresh = true, refreshInterval = 5000 }: Cl
             <span className="text-sm text-muted-foreground">GoTrueClient Count</span>
             <span className="font-medium">{stats.goTrueClientCount}</span>
           </div>
+          <div className="flex flex-col">
+            <span className="text-sm text-muted-foreground">Initializing</span>
+            <span className="font-medium">{stats.isInitializing ? "Yes" : "No"}</span>
+          </div>
+          <div className="flex flex-col">
+            <span className="text-sm text-muted-foreground">Instance Count</span>
+            <span className="font-medium">{stats.instanceCount}</span>
+          </div>
         </div>
 
         {expanded && (
-          <div className="mt-4">
-            <h4 className="text-sm font-medium mb-2">Storage Keys</h4>
-            <div className="bg-muted p-2 rounded-md text-xs overflow-auto max-h-32">
-              {stats.storageKeys.length > 0 ? (
-                <ul className="list-disc pl-4">
-                  {stats.storageKeys.map((key) => (
-                    <li key={key}>{key}</li>
-                  ))}
-                </ul>
-              ) : (
-                <p>No storage keys found</p>
-              )}
+          <div className="mt-4 space-y-4">
+            <div>
+              <h4 className="text-sm font-medium mb-2">Client Created At</h4>
+              <div className="bg-muted p-2 rounded-md text-xs">
+                {stats.clientCreatedAt ? new Date(stats.clientCreatedAt).toLocaleString() : "N/A"}
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-sm font-medium mb-2">Last Reset Time</h4>
+              <div className="bg-muted p-2 rounded-md text-xs">
+                {stats.lastResetTime ? new Date(stats.lastResetTime).toLocaleString() : "N/A"}
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-sm font-medium mb-2">Storage Keys</h4>
+              <div className="bg-muted p-2 rounded-md text-xs overflow-auto max-h-32">
+                {stats.storageKeys.length > 0 ? (
+                  <ul className="list-disc pl-4">
+                    {stats.storageKeys.map((key) => (
+                      <li key={key}>{key}</li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>No storage keys found</p>
+                )}
+              </div>
             </div>
           </div>
         )}

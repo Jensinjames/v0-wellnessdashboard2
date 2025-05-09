@@ -1,39 +1,45 @@
 /**
- * Initialize Supabase client
+ * Initialize Supabase Client
  *
- * This module initializes the Supabase client when the app starts
- * to ensure a single instance is created early.
+ * This module provides a function to initialize the Supabase client early,
+ * before it's needed by components. This helps prevent multiple instances.
  */
 
 import { getSupabaseClient } from "@/lib/supabase-singleton"
 
-// Debug mode flag - safely check localStorage
-const getDebugMode = (): boolean => {
-  if (typeof window !== "undefined") {
-    return localStorage.getItem("supabase_debug") === "true" || process.env.NEXT_PUBLIC_DEBUG_MODE === "true"
+let initialized = false
+
+/**
+ * Initialize the Supabase client early
+ * This is useful for ensuring the client is ready before it's needed
+ */
+export async function initializeSupabaseEarly() {
+  if (initialized) return
+
+  try {
+    // Only run in the browser
+    if (typeof window === "undefined") return
+
+    console.log("[Supabase] Early initialization started")
+
+    // Get the client
+    const clientPromise = getSupabaseClient()
+
+    if (clientPromise instanceof Promise) {
+      await clientPromise
+    }
+
+    initialized = true
+    console.log("[Supabase] Early initialization complete")
+  } catch (error) {
+    console.error("[Supabase] Early initialization failed:", error)
   }
-  return false
 }
 
-// Initialize the Supabase client
-export function initializeSupabase(): void {
-  if (typeof window === "undefined") return
-
-  // Only initialize in the browser
-  if (document.readyState === "loading") {
-    // If the document is still loading, wait for it to be ready
-    document.addEventListener("DOMContentLoaded", () => {
-      getSupabaseClient({
-        debugMode: getDebugMode(),
-      })
-    })
-  } else {
-    // If the document is already loaded, initialize immediately
-    getSupabaseClient({
-      debugMode: getDebugMode(),
-    })
-  }
+// Auto-initialize in development mode
+if (process.env.NODE_ENV === "development" && typeof window !== "undefined") {
+  // Use a small delay to ensure the app has loaded
+  setTimeout(() => {
+    initializeSupabaseEarly()
+  }, 100)
 }
-
-// Call the initialization function
-initializeSupabase()

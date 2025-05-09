@@ -5,10 +5,11 @@ import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs"
 export async function middleware(req: NextRequest) {
   const res = NextResponse.next()
 
-  // Create a new supabase middleware client for each request
-  const supabase = createMiddlewareClient({ req, res })
-
   try {
+    // Create a new supabase middleware client for each request
+    // This ensures proper session handling for SSR
+    const supabase = createMiddlewareClient({ req, res })
+
     // Check if the user is authenticated
     const {
       data: { session },
@@ -47,11 +48,24 @@ export async function middleware(req: NextRequest) {
 
     // If the user is not authenticated and trying to access a protected route
     if (!session && !publicRoutes.some((route) => pathname.startsWith(route))) {
+      // Store the original URL to redirect back after login
       const redirectUrl = new URL("/auth/sign-in", req.url)
       redirectUrl.searchParams.set("redirectTo", pathname)
-      return NextResponse.redirect(redirectUrl)
+
+      // Create a response that redirects to the login page
+      const redirectRes = NextResponse.redirect(redirectUrl)
+
+      // Ensure cookies are properly set for the redirect
+      // This helps maintain the session state during the redirect
+      const supabaseCookies = res.headers.getSetCookie()
+      supabaseCookies.forEach((cookie) => {
+        redirectRes.headers.append("Set-Cookie", cookie)
+      })
+
+      return redirectRes
     }
 
+    // User is authenticated, proceed with the request
     return res
   } catch (error) {
     console.error("Middleware error:", error)

@@ -8,7 +8,6 @@
 import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
-import { cleanupOrphanedClients as cleanupOrphanedClientsManager } from "@/lib/supabase-singleton-manager"
 
 // Global variables for singleton pattern
 let supabaseInstance: SupabaseClient<Database> | null = null
@@ -16,13 +15,14 @@ let clientInstanceCount = 0
 let clientCreatedAt: number | null = null
 let isInitializing = false
 let initPromise: Promise<SupabaseClient<Database>> | null = null
+let lastResetTime: number | null = null
 
 // Debug mode flag - safely check localStorage
 const getDebugMode = (): boolean => {
   if (typeof window !== "undefined") {
-    return localStorage.getItem("supabase_debug") === "true" || process.env.NEXT_PUBLIC_DEBUG_MODE === "true"
+    return localStorage.getItem("supabase_debug") === "true" || process.env.NODE_ENV === "development"
   }
-  return false
+  return process.env.NODE_ENV === "development"
 }
 
 // Internal debug logging function
@@ -41,6 +41,7 @@ declare global {
     __SUPABASE_CLIENT?: SupabaseClient<Database>
     __SUPABASE_CLIENT_COUNT?: number
     __GOTRUE_CLIENTS?: Set<any>
+    __SUPABASE_LAST_RESET?: number
   }
 }
 
@@ -63,12 +64,7 @@ interface ClientOptions {
  * This ensures only one client instance is created per browser context
  */
 export function getSupabaseClient(
-  options: {
-    forceNew?: boolean
-    debugMode?: boolean
-    persistSession?: boolean
-    autoRefreshToken?: boolean
-  } = {},
+  options: ClientOptions = {},
 ): SupabaseClient<Database> | Promise<SupabaseClient<Database>> {
   const { forceNew = false, debugMode = getDebugMode(), persistSession = true, autoRefreshToken = true } = options
 
@@ -169,7 +165,7 @@ export function getSupabaseClient(
       // Add unload event listener to clean up client on page unload
       window.addEventListener("beforeunload", () => {
         debugLog("Page unloading, cleaning up Supabase client")
-        cleanupOrphanedClientsManager(true)
+        cleanupOrphanedClients(true)
       })
 
       // Reset initialization state
@@ -211,10 +207,12 @@ export function resetSupabaseClient(): void {
   supabaseInstance = null
   isInitializing = false
   initPromise = null
+  lastResetTime = Date.now()
 
   // Clear from window object
   if (typeof window !== "undefined") {
     delete window.__SUPABASE_CLIENT
+    window.__SUPABASE_LAST_RESET = lastResetTime
   }
 
   // Clear the GoTrueClient registry
@@ -275,11 +273,13 @@ export function cleanupOrphanedClients(forceCleanup = false): void {
 export function getClientStats() {
   return {
     hasClient: !!supabaseInstance || (typeof window !== "undefined" && !!window.__SUPABASE_CLIENT),
+    isInitializing: isInitializing,
     instanceCount: clientInstanceCount,
     goTrueClientCount: goTrueClientRegistry.size,
     windowGoTrueClientCount:
       typeof window !== "undefined" && window.__GOTRUE_CLIENTS ? window.__GOTRUE_CLIENTS.size : 0,
     clientCreatedAt,
+    lastResetTime,
     storageKeys:
       typeof window !== "undefined"
         ? Object.keys(localStorage).filter((key) => key.includes("supabase") || key.includes("auth"))
@@ -295,4 +295,19 @@ export function setDebugMode(enabled: boolean): void {
     localStorage.setItem("supabase_debug", enabled ? "true" : "false")
   }
   debugLog(`Debug mode ${enabled ? "enabled" : "disabled"}`)
+}
+
+/**
+ * Initialize the Supabase client early
+ * This is useful for ensuring the client is ready before it's needed
+ */
+export function initializeSupabaseClient(): Promise<SupabaseClient<Database>> {
+  debugLog("Early initialization of Supabase client")
+  const clientPromise = getSupabaseClient()
+
+  if (clientPromise instanceof Promise) {
+    return clientPromise
+  }
+
+  return Promise.resolve(clientPromise)
 }

@@ -8,7 +8,7 @@ import type { UserProfile, ProfileFormData } from "@/types/auth"
 import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
 import { validateAuthCredentials, sanitizeEmail } from "@/utils/auth-validation"
-import { getSupabaseClient, resetSupabaseClient } from "@/lib/supabase-singleton"
+import { getSupabaseClient, resetSupabaseClient, cleanupOrphanedClients } from "@/lib/supabase-singleton"
 
 interface AuthContextType {
   user: User | null
@@ -169,8 +169,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setUser(null)
             setProfile(null)
             setSession(null)
+
             // Reset the client to ensure a clean state
             resetSupabaseClient()
+
+            // Clean up any orphaned clients
+            cleanupOrphanedClients(true)
+
+            // Clear supabase reference
+            supabaseRef.current = null
           } else if (event === "SIGNED_IN" && newSession?.user) {
             debugLog("User signed in, updating state")
             setSession(newSession)
@@ -268,6 +275,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  const getSupabaseClientInstance = async () => {
+    if (!supabaseRef.current) {
+      const supabasePromise = getSupabaseClient({
+        debugMode: authDebugMode,
+      })
+
+      if (supabasePromise instanceof Promise) {
+        supabaseRef.current = await supabasePromise
+      } else {
+        supabaseRef.current = supabasePromise
+      }
+    }
+
+    return supabaseRef.current
+  }
+
   const signIn = async (credentials: { email: string; password: string }) => {
     debugLog("Sign in attempt", { email: credentials.email })
     try {
@@ -293,19 +316,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Get the Supabase client
-      if (!supabaseRef.current) {
-        const supabasePromise = getSupabaseClient({
-          debugMode: authDebugMode,
-        })
+      const supabase = await getSupabaseClientInstance()
 
-        if (supabasePromise instanceof Promise) {
-          supabaseRef.current = await supabasePromise
-        } else {
-          supabaseRef.current = supabasePromise
-        }
-      }
-
-      const { data, error } = await supabaseRef.current.auth.signInWithPassword({
+      const { data, error } = await supabase.auth.signInWithPassword({
         email: sanitizedEmail,
         password: credentials.password,
       })
@@ -365,19 +378,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       // Get the Supabase client
-      if (!supabaseRef.current) {
-        const supabasePromise = getSupabaseClient({
-          debugMode: authDebugMode,
-        })
+      const supabase = await getSupabaseClientInstance()
 
-        if (supabasePromise instanceof Promise) {
-          supabaseRef.current = await supabasePromise
-        } else {
-          supabaseRef.current = supabasePromise
-        }
-      }
-
-      const { data, error } = await supabaseRef.current.auth.signUp({
+      const { data, error } = await supabase.auth.signUp({
         email: sanitizedEmail,
         password: credentials.password,
         options: {
@@ -409,19 +412,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     debugLog("Sign out attempt")
     try {
       // Get the Supabase client
-      if (!supabaseRef.current) {
-        const supabasePromise = getSupabaseClient({
-          debugMode: authDebugMode,
-        })
+      const supabase = await getSupabaseClientInstance()
 
-        if (supabasePromise instanceof Promise) {
-          supabaseRef.current = await supabasePromise
-        } else {
-          supabaseRef.current = supabasePromise
-        }
-      }
-
-      await supabaseRef.current.auth.signOut()
+      await supabase.auth.signOut()
 
       // Explicitly clear state
       setUser(null)
@@ -431,6 +424,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Reset the client to ensure a clean state
       resetSupabaseClient()
       supabaseRef.current = null
+
+      // Clean up any orphaned clients
+      cleanupOrphanedClients(true)
 
       // Redirect to sign-in page
       router.push("/auth/sign-in")
@@ -449,19 +445,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const resetPassword = async (email: string): Promise<{ success: boolean; error: string | null }> => {
     try {
       // Get the Supabase client
-      if (!supabaseRef.current) {
-        const supabasePromise = getSupabaseClient({
-          debugMode: authDebugMode,
-        })
+      const supabase = await getSupabaseClientInstance()
 
-        if (supabasePromise instanceof Promise) {
-          supabaseRef.current = await supabasePromise
-        } else {
-          supabaseRef.current = supabasePromise
-        }
-      }
-
-      const { error } = await supabaseRef.current.auth.resetPasswordForEmail(email, {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/reset-password`,
       })
 
@@ -479,19 +465,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const updatePassword = async (password: string): Promise<{ success: boolean; error: string | null }> => {
     try {
       // Get the Supabase client
-      if (!supabaseRef.current) {
-        const supabasePromise = getSupabaseClient({
-          debugMode: authDebugMode,
-        })
+      const supabase = await getSupabaseClientInstance()
 
-        if (supabasePromise instanceof Promise) {
-          supabaseRef.current = await supabasePromise
-        } else {
-          supabaseRef.current = supabasePromise
-        }
-      }
-
-      const { error } = await supabaseRef.current.auth.updateUser({
+      const { error } = await supabase.auth.updateUser({
         password,
       })
 
@@ -517,19 +493,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIsLoading(true)
 
       // Get the Supabase client
-      if (!supabaseRef.current) {
-        const supabasePromise = getSupabaseClient({
-          debugMode: authDebugMode,
-        })
+      const supabase = await getSupabaseClientInstance()
 
-        if (supabasePromise instanceof Promise) {
-          supabaseRef.current = await supabasePromise
-        } else {
-          supabaseRef.current = supabasePromise
-        }
-      }
-
-      const { data, error } = await supabaseRef.current.from("profiles").select("*").eq("id", user.id).single()
+      const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).single()
 
       if (error) {
         console.error("Error fetching profile:", error)
@@ -554,9 +520,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [user])
 
   const getClientInfo = () => {
-    return {
+    // Get client stats from the singleton
+    const stats = {
       hasClient: !!supabaseRef.current,
       isInitializing: false,
+      hasInitPromise: false,
       clientInstanceCount: 1,
       goTrueClientCount: 1,
       clientInitTime: Date.now(),
@@ -566,6 +534,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           ? Object.keys(localStorage).filter((key) => key.includes("supabase") || key.includes("auth"))
           : [],
     }
+
+    return stats
   }
 
   const value = {
