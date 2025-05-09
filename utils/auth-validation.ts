@@ -4,18 +4,15 @@
  * Provides validation functions for authentication-related data.
  */
 
-// Email validation regex
-const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
-
-// Password validation regex - at least 8 chars, with uppercase, lowercase, number, and special char
-const STRONG_PASSWORD_REGEX = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]).{8,}$/
-
 /**
  * Validates an email address format
  */
 export function validateEmail(email: string): boolean {
   if (!email) return false
-  return EMAIL_REGEX.test(email.trim())
+
+  // Simple email validation regex
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
+  return emailRegex.test(email.trim())
 }
 
 /**
@@ -35,60 +32,33 @@ export function validatePassword(password: string): boolean {
 }
 
 /**
- * Checks password strength and returns a score and feedback
+ * Checks password strength and returns a score
  */
 export function validatePasswordStrength(password: string): {
   score: number
-  feedback: string
-  isStrong: boolean
+  isStrongEnough: boolean
 } {
   if (!password) {
-    return { score: 0, feedback: "Password is required", isStrong: false }
+    return { score: 0, isStrongEnough: false }
   }
 
   let score = 0
-  let feedback = ""
 
   // Length check
-  if (password.length < 8) {
-    feedback = "Password should be at least 8 characters long"
-  } else {
-    score += 1
-  }
+  if (password.length >= 8) score++
+  if (password.length >= 12) score++
 
-  // Uppercase check
-  if (/[A-Z]/.test(password)) {
-    score += 1
-  }
+  // Character type checks
+  if (/[A-Z]/.test(password)) score++
+  if (/[a-z]/.test(password)) score++
+  if (/[0-9]/.test(password)) score++
+  if (/[^A-Za-z0-9]/.test(password)) score++
 
-  // Lowercase check
-  if (/[a-z]/.test(password)) {
-    score += 1
-  }
-
-  // Number check
-  if (/\d/.test(password)) {
-    score += 1
-  }
-
-  // Special character check
-  if (/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/.test(password)) {
-    score += 1
-  }
-
-  // Determine feedback based on score
-  if (score < 3) {
-    feedback = "Password is weak. Add uppercase, lowercase, numbers, and special characters."
-  } else if (score < 5) {
-    feedback = "Password is medium strength. Add more character types for better security."
-  } else {
-    feedback = "Password is strong."
-  }
+  const isStrongEnough = score >= 4
 
   return {
     score,
-    feedback,
-    isStrong: score >= 3,
+    isStrongEnough,
   }
 }
 
@@ -140,6 +110,57 @@ export function validatePhoneNumber(phone: string): boolean {
   if (!phone) return false
 
   // Basic phone validation - allows various formats
-  const phoneRegex = /^[+]?[(]?[0-9]{3}[)]?[-\s.]?[0-9]{3}[-\s.]?[0-9]{4,6}$/
-  return phoneRegex.test(phone.trim())
+  const phoneRegex = /^\+?[0-9]{10,15}$/
+  return phoneRegex.test(phone.replace(/[\s()-]/g, ""))
+}
+
+/**
+ * Validates a password reset request
+ */
+export function validatePasswordResetRequest(email: string): {
+  valid: boolean
+  errors: { email?: string }
+} {
+  const errors: { email?: string } = {}
+
+  if (!email) {
+    errors.email = "Email is required"
+  } else if (!validateEmail(email)) {
+    errors.email = "Please enter a valid email address"
+  }
+
+  return {
+    valid: Object.keys(errors).length === 0,
+    errors,
+  }
+}
+
+/**
+ * Validates a password update request
+ */
+export function validatePasswordUpdateRequest(
+  password: string,
+  confirmPassword: string,
+): {
+  valid: boolean
+  errors: { password?: string; confirmPassword?: string }
+} {
+  const errors: { password?: string; confirmPassword?: string } = {}
+
+  if (!password) {
+    errors.password = "Password is required"
+  } else if (!validatePassword(password)) {
+    errors.password = "Password must be at least 8 characters"
+  }
+
+  if (!confirmPassword) {
+    errors.confirmPassword = "Please confirm your password"
+  } else if (password !== confirmPassword) {
+    errors.confirmPassword = "Passwords do not match"
+  }
+
+  return {
+    valid: Object.keys(errors).length === 0,
+    errors,
+  }
 }

@@ -23,11 +23,11 @@ export const LOG_LEVEL_NAMES = {
 
 // Define logger interface
 export interface Logger {
-  debug: (message: string, ...args: any[]) => void
-  info: (message: string, ...args: any[]) => void
-  warn: (message: string, ...args: any[]) => void
-  error: (message: string, ...args: any[]) => void
-  trace: (message: string, ...args: any[]) => void
+  debug: (message: string, data?: any, error?: any) => void
+  info: (message: string, data?: any, error?: any) => void
+  warn: (message: string, data?: any, error?: any) => void
+  error: (message: string, data?: any, error?: any) => void
+  trace: (message: string, data?: any, error?: any) => void
 }
 
 // Log entry interface
@@ -77,85 +77,89 @@ function formatLogMessage(module: string, level: string, message: string): strin
 // Create a logger instance for a specific module
 export function createLogger(module: string): Logger {
   return {
-    trace: (message: string, ...args: any[]) => {
+    trace: (message: string, data?: any, error?: any) => {
       if (shouldLog(LogLevel.TRACE)) {
         const logEntry: LogEntry = {
           timestamp: Date.now(),
           level: LogLevel.TRACE,
           module,
           message,
-          data: args.length > 0 ? args : undefined,
+          data,
+          error,
         }
         logEntries.push(logEntry)
         if (logEntries.length > MAX_LOG_ENTRIES) {
           logEntries.shift()
         }
-        console.debug(formatLogMessage(module, "TRACE", message), ...args)
+        console.debug(formatLogMessage(module, "TRACE", message), data, error)
       }
     },
-    debug: (message: string, ...args: any[]) => {
+    debug: (message: string, data?: any, error?: any) => {
       if (shouldLog(LogLevel.DEBUG)) {
         const logEntry: LogEntry = {
           timestamp: Date.now(),
           level: LogLevel.DEBUG,
           module,
           message,
-          data: args.length > 0 ? args : undefined,
+          data,
+          error,
         }
         logEntries.push(logEntry)
         if (logEntries.length > MAX_LOG_ENTRIES) {
           logEntries.shift()
         }
-        console.debug(formatLogMessage(module, "DEBUG", message), ...args)
+        console.debug(formatLogMessage(module, "DEBUG", message), data, error)
       }
     },
-    info: (message: string, ...args: any[]) => {
+    info: (message: string, data?: any, error?: any) => {
       if (shouldLog(LogLevel.INFO)) {
         const logEntry: LogEntry = {
           timestamp: Date.now(),
           level: LogLevel.INFO,
           module,
           message,
-          data: args.length > 0 ? args : undefined,
+          data,
+          error,
         }
         logEntries.push(logEntry)
         if (logEntries.length > MAX_LOG_ENTRIES) {
           logEntries.shift()
         }
-        console.info(formatLogMessage(module, "INFO", message), ...args)
+        console.info(formatLogMessage(module, "INFO", message), data, error)
       }
     },
-    warn: (message: string, ...args: any[]) => {
+    warn: (message: string, data?: any, error?: any) => {
       if (shouldLog(LogLevel.WARN)) {
         const logEntry: LogEntry = {
           timestamp: Date.now(),
           level: LogLevel.WARN,
           module,
           message,
-          data: args.length > 0 ? args : undefined,
+          data,
+          error,
         }
         logEntries.push(logEntry)
         if (logEntries.length > MAX_LOG_ENTRIES) {
           logEntries.shift()
         }
-        console.warn(formatLogMessage(module, "WARN", message), ...args)
+        console.warn(formatLogMessage(module, "WARN", message), data, error)
       }
     },
-    error: (message: string, ...args: any[]) => {
+    error: (message: string, data?: any, error?: any) => {
       if (shouldLog(LogLevel.ERROR)) {
         const logEntry: LogEntry = {
           timestamp: Date.now(),
           level: LogLevel.ERROR,
           module,
           message,
-          data: args.length > 0 ? args : undefined,
-          error: args.length > 0 ? args[0] : undefined,
+          data,
+          error,
         }
         logEntries.push(logEntry)
         if (logEntries.length > MAX_LOG_ENTRIES) {
           logEntries.shift()
         }
-        console.error(formatLogMessage(module, "ERROR", message), ...args)
+        console.error(formatLogMessage(module, "ERROR", message), data, error)
       }
     },
   }
