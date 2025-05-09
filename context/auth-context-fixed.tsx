@@ -1,17 +1,15 @@
 "use client"
 
 import { useRef } from "react"
-
 import type React from "react"
 import { createContext, useContext, useEffect, useState, useCallback } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { useRouter } from "next/navigation"
 import type { User, Session } from "@supabase/supabase-js"
 import type { UserProfile, ProfileFormData } from "@/types/auth"
 import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
 import { validateAuthCredentials, sanitizeEmail } from "@/utils/auth-validation"
-import { resetSupabaseClient } from "@/lib/supabase-client"
+import { getSupabaseClient, resetSupabaseClient } from "@/lib/supabase-singleton"
 
 interface AuthContextType {
   user: User | null
@@ -37,12 +35,16 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-// Debug mode flag
-let authDebugMode = process.env.NODE_ENV === "development"
+// Debug mode flag - safely check localStorage
+const getDebugMode = (): boolean => {
+  if (typeof window !== "undefined") {
+    return localStorage.getItem("auth_debug") === "true" || process.env.NEXT_PUBLIC_DEBUG_MODE === "true"
+  }
+  return false
+}
 
 // Enable/disable debug logging
 export function setAuthDebugMode(enabled: boolean): void {
-  authDebugMode = enabled
   if (typeof window !== "undefined") {
     localStorage.setItem("auth_debug", enabled ? "true" : "false")
   }
@@ -51,7 +53,7 @@ export function setAuthDebugMode(enabled: boolean): void {
 
 // Internal debug logging function
 function debugLog(...args: any[]): void {
-  if (authDebugMode) {
+  if (getDebugMode()) {
     console.log("[Auth Context]", ...args)
   }
 }
@@ -62,7 +64,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
-  const supabase = createClientComponentClient()
   const isMounted = useRef(true)
   const isInitialized = useRef(false)
 
@@ -74,6 +75,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const initializeAuth = async () => {
       try {
         debugLog("Initializing auth state")
+
+        // Get the Supabase client from our singleton
+        const supabase = getSupabaseClient({
+          debugMode: getDebugMode(),
+        })
+
         // Get session
         const {
           data: { session: initialSession },
@@ -193,7 +200,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => {
       isMounted.current = false
     }
-  }, [supabase, router])
+  }, [router])
 
   // Update profile function that uses server action instead of direct database access
   const updateProfile = async (data: ProfileFormData): Promise<{ success: boolean; error: Error | null }> => {
@@ -323,6 +330,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null, mockSignIn: true }
       } else {
         debugLog("Attempting real sign-in with Supabase")
+
+        // Get the Supabase client from our singleton
+        const supabase = getSupabaseClient({
+          debugMode: getDebugMode(),
+        })
+
         // Use a properly structured object for signInWithPassword
         const { data, error } = await supabase.auth.signInWithPassword({
           email: sanitizedEmail,
@@ -442,6 +455,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return { error: null, mockSignUp: true }
       } else {
         debugLog("Attempting real sign-up with Supabase")
+
+        // Get the Supabase client from our singleton
+        const supabase = getSupabaseClient({
+          debugMode: getDebugMode(),
+        })
+
         // Use a properly structured object for signUp
         const { data, error } = await supabase.auth.signUp({
           email: sanitizedEmail,
@@ -498,6 +517,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async () => {
     debugLog("Sign out attempt")
     try {
+      // Get the Supabase client from our singleton
+      const supabase = getSupabaseClient({
+        debugMode: getDebugMode(),
+      })
+
       await supabase.auth.signOut()
 
       // Explicitly clear state
@@ -532,6 +556,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       debugLog("Refreshing profile for user", user.id)
       setIsLoading(true)
 
+      // Get the Supabase client from our singleton
+      const supabase = getSupabaseClient({
+        debugMode: getDebugMode(),
+      })
+
       const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).single()
 
       if (error) {
@@ -554,7 +583,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false)
     }
-  }, [user, supabase])
+  }, [user])
 
   const getClientInfo = () => {
     return {

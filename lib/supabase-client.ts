@@ -102,7 +102,10 @@ export function getSupabaseClient(
           // Use a consistent storage key to prevent conflicts
           storageKey: "wellness-dashboard-auth-v2",
           // Debug flag to help identify issues - read from localStorage
-          debug: typeof window !== "undefined" ? localStorage.getItem("supabase_debug") === "true" : DEFAULT_DEBUG_MODE,
+          debug:
+            typeof window !== "undefined"
+              ? localStorage.getItem("supabase_debug") === "true" || process.env.NEXT_PUBLIC_DEBUG_MODE === "true"
+              : DEFAULT_DEBUG_MODE,
           // Storage event listener to sync auth state across tabs
           storage: {
             getItem: (key: string) => {
@@ -382,4 +385,9 @@ export function monitorGoTrueClientInstances(intervalMs = 60000): () => void {
 
   // Return a function to stop monitoring
   return () => clearInterval(intervalId)
+}
+
+let authDebugMode = false
+if (typeof window !== "undefined") {
+  authDebugMode = localStorage.getItem("auth_debug") === "true" || process.env.NEXT_PUBLIC_DEBUG_MODE === "true"
 }

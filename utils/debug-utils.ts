@@ -1,4 +1,13 @@
-import { isDebugMode } from "@/lib/env-utils"
+// Client-safe debug mode check
+function isDebugMode(): boolean {
+  if (typeof window === "undefined") return false
+
+  return (
+    window.__SUPABASE_DEBUG_MODE ||
+    localStorage.getItem("debug_mode") === "true" ||
+    process.env.NEXT_PUBLIC_DEBUG_MODE === "true"
+  )
+}
 
 // Debug settings object
 interface DebugSettings {
