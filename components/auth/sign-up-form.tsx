@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Info, AlertTriangle, Wifi, RefreshCw, Mail, CheckCircle } from "lucide-react"
+import { useSafeSearchParams } from "@/hooks/use-safe-search-params"
 
 export function SignUpForm() {
   const [email, setEmail] = useState("")
@@ -27,6 +28,7 @@ export function SignUpForm() {
   const [emailVerificationSent, setEmailVerificationSent] = useState(false)
   const { signUp } = useAuth()
   const router = useRouter()
+  const { params, getParam, isReady } = useSafeSearchParams()
 
   // Check browser's online status
   useEffect(() => {
