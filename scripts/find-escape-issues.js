@@ -8,7 +8,7 @@ const problematicPatterns = [
   // Incomplete hex escapes
   "\\\\x[0-9a-fA-F]{0,1}(?![0-9a-fA-F])",
   // Invalid escape sequences in strings
-  "\\\\[^'\"\\\\bfnrt0-9xu]",
+  "\\\\[^'\"\\\\\bfnrt0-9xu]",
   // Potential issues with regex
   "\\\\[pP]\\{[^}]*$",
   // Unescaped line breaks in strings
@@ -40,7 +40,6 @@ function scanFile(filePath) {
         console.log(`  Pattern ${index + 1}: ${matches.length} matches`)
 
         // Find line numbers for each match
-        const lineNumber = 1
         const lines = []
         const contentLines = content.split("\n")
 
