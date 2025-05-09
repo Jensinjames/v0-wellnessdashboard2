@@ -1,6 +1,8 @@
-"use client"
+/**
+ * Logger utility for consistent logging across the application
+ */
 
-// Log levels
+// Define log levels
 export enum LogLevel {
   NONE = 0,
   ERROR = 1,
@@ -10,30 +12,40 @@ export enum LogLevel {
   TRACE = 5,
 }
 
-// Log level names for display
-export const LOG_LEVEL_NAMES: Record<LogLevel, string> = {
-  [LogLevel.NONE]: "NONE",
-  [LogLevel.ERROR]: "ERROR",
-  [LogLevel.WARN]: "WARN",
-  [LogLevel.INFO]: "INFO",
-  [LogLevel.DEBUG]: "DEBUG",
-  [LogLevel.TRACE]: "TRACE",
+export const LOG_LEVEL_NAMES = {
+  [LogLevel.NONE]: "None",
+  [LogLevel.ERROR]: "Error",
+  [LogLevel.WARN]: "Warning",
+  [LogLevel.INFO]: "Info",
+  [LogLevel.DEBUG]: "Debug",
+  [LogLevel.TRACE]: "Trace",
 }
 
-// Store log entries for retrieval
+// Define logger interface
+export interface Logger {
+  debug: (message: string, ...args: any[]) => void
+  info: (message: string, ...args: any[]) => void
+  warn: (message: string, ...args: any[]) => void
+  error: (message: string, ...args: any[]) => void
+  trace: (message: string, ...args: any[]) => void
+}
+
+// Log entry interface
 export interface LogEntry {
+  timestamp: number
   level: LogLevel
   module: string
   message: string
   data?: any
   error?: any
   context?: any
-  timestamp: number
 }
 
-// In-memory log storage
+// Current log level (can be changed at runtime)
+let currentLogLevel: LogLevel = LogLevel.INFO
+
+// Log storage
 const logEntries: LogEntry[] = []
-let currentLogLevel = LogLevel.INFO
 const MAX_LOG_ENTRIES = 1000
 
 /**
@@ -41,185 +53,127 @@ const MAX_LOG_ENTRIES = 1000
  */
 export function setLogLevel(level: LogLevel): void {
   currentLogLevel = level
-  if (typeof window !== "undefined") {
-    localStorage.setItem("log_level", level.toString())
-  }
-  console.log(`Log level set to ${LOG_LEVEL_NAMES[level]}`)
+  console.info(`Log level set to ${LOG_LEVEL_NAMES[level]}`)
 }
 
 /**
- * Get all stored log entries
+ * Get the current log level
+ */
+export function getLogLevel(): LogLevel {
+  return currentLogLevel
+}
+
+// Check if the current level allows the specified level
+function shouldLog(level: LogLevel): boolean {
+  return level <= currentLogLevel
+}
+
+// Format the log message with timestamp and module name
+function formatLogMessage(module: string, level: string, message: string): string {
+  const timestamp = new Date().toISOString()
+  return `[${timestamp}] [${level}] [${module}] ${message}`
+}
+
+// Create a logger instance for a specific module
+export function createLogger(module: string): Logger {
+  return {
+    trace: (message: string, ...args: any[]) => {
+      if (shouldLog(LogLevel.TRACE)) {
+        const logEntry: LogEntry = {
+          timestamp: Date.now(),
+          level: LogLevel.TRACE,
+          module,
+          message,
+          data: args.length > 0 ? args : undefined,
+        }
+        logEntries.push(logEntry)
+        if (logEntries.length > MAX_LOG_ENTRIES) {
+          logEntries.shift()
+        }
+        console.debug(formatLogMessage(module, "TRACE", message), ...args)
+      }
+    },
+    debug: (message: string, ...args: any[]) => {
+      if (shouldLog(LogLevel.DEBUG)) {
+        const logEntry: LogEntry = {
+          timestamp: Date.now(),
+          level: LogLevel.DEBUG,
+          module,
+          message,
+          data: args.length > 0 ? args : undefined,
+        }
+        logEntries.push(logEntry)
+        if (logEntries.length > MAX_LOG_ENTRIES) {
+          logEntries.shift()
+        }
+        console.debug(formatLogMessage(module, "DEBUG", message), ...args)
+      }
+    },
+    info: (message: string, ...args: any[]) => {
+      if (shouldLog(LogLevel.INFO)) {
+        const logEntry: LogEntry = {
+          timestamp: Date.now(),
+          level: LogLevel.INFO,
+          module,
+          message,
+          data: args.length > 0 ? args : undefined,
+        }
+        logEntries.push(logEntry)
+        if (logEntries.length > MAX_LOG_ENTRIES) {
+          logEntries.shift()
+        }
+        console.info(formatLogMessage(module, "INFO", message), ...args)
+      }
+    },
+    warn: (message: string, ...args: any[]) => {
+      if (shouldLog(LogLevel.WARN)) {
+        const logEntry: LogEntry = {
+          timestamp: Date.now(),
+          level: LogLevel.WARN,
+          module,
+          message,
+          data: args.length > 0 ? args : undefined,
+        }
+        logEntries.push(logEntry)
+        if (logEntries.length > MAX_LOG_ENTRIES) {
+          logEntries.shift()
+        }
+        console.warn(formatLogMessage(module, "WARN", message), ...args)
+      }
+    },
+    error: (message: string, ...args: any[]) => {
+      if (shouldLog(LogLevel.ERROR)) {
+        const logEntry: LogEntry = {
+          timestamp: Date.now(),
+          level: LogLevel.ERROR,
+          module,
+          message,
+          data: args.length > 0 ? args : undefined,
+          error: args.length > 0 ? args[0] : undefined,
+        }
+        logEntries.push(logEntry)
+        if (logEntries.length > MAX_LOG_ENTRIES) {
+          logEntries.shift()
+        }
+        console.error(formatLogMessage(module, "ERROR", message), ...args)
+      }
+    },
+  }
+}
+
+/**
+ * Get all log entries
  */
 export function getLogEntries(): LogEntry[] {
   return [...logEntries]
 }
 
 /**
- * Clear all stored log entries
+ * Clear all log entries
  */
 export function clearLogs(): void {
   logEntries.length = 0
-  console.log("Logs cleared")
 }
 
-// Add a log entry to storage
-function addLogEntry(entry: LogEntry): void {
-  logEntries.push(entry)
-
-  // Trim log if it gets too large
-  if (logEntries.length > MAX_LOG_ENTRIES) {
-    logEntries.shift()
-  }
-}
-
-/**
- * Create a logger instance for a specific module
- */
-export function createLogger(module: string) {
-  return {
-    error: (message: string, data?: any, error?: any, context?: any) => {
-      if (currentLogLevel >= LogLevel.ERROR) {
-        console.error(`[${module.toUpperCase()}] ERROR: ${message}`, data, error, context)
-        addLogEntry({
-          level: LogLevel.ERROR,
-          module,
-          message,
-          data,
-          error,
-          context,
-          timestamp: Date.now(),
-        })
-      }
-    },
-    warn: (message: string, data?: any, context?: any) => {
-      if (currentLogLevel >= LogLevel.WARN) {
-        console.warn(`[${module.toUpperCase()}] WARN: ${message}`, data, context)
-        addLogEntry({
-          level: LogLevel.WARN,
-          module,
-          message,
-          data,
-          context,
-          timestamp: Date.now(),
-        })
-      }
-    },
-    info: (message: string, data?: any, context?: any) => {
-      if (currentLogLevel >= LogLevel.INFO) {
-        console.log(`[${module.toUpperCase()}] INFO: ${message}`, data, context)
-        addLogEntry({
-          level: LogLevel.INFO,
-          module,
-          message,
-          data,
-          context,
-          timestamp: Date.now(),
-        })
-      }
-    },
-    debug: (message: string, data?: any, context?: any) => {
-      if (currentLogLevel >= LogLevel.DEBUG) {
-        console.debug(`[${module.toUpperCase()}] DEBUG: ${message}`, data, context)
-        addLogEntry({
-          level: LogLevel.DEBUG,
-          module,
-          message,
-          data,
-          context,
-          timestamp: Date.now(),
-        })
-      }
-    },
-    trace: (message: string, data?: any, context?: any) => {
-      if (currentLogLevel >= LogLevel.TRACE) {
-        console.trace(`[${module.toUpperCase()}] TRACE: ${message}`, data, context)
-        addLogEntry({
-          level: LogLevel.TRACE,
-          module,
-          message,
-          data,
-          context,
-          timestamp: Date.now(),
-        })
-      }
-    },
-    withContext: (context: Record<string, any>) => {
-      return {
-        error: (message: string, data?: any, error?: any) => {
-          if (currentLogLevel >= LogLevel.ERROR) {
-            console.error(`[${module.toUpperCase()}] ERROR: ${message}`, data, error, context)
-            addLogEntry({
-              level: LogLevel.ERROR,
-              module,
-              message,
-              data,
-              error,
-              context,
-              timestamp: Date.now(),
-            })
-          }
-        },
-        warn: (message: string, data?: any) => {
-          if (currentLogLevel >= LogLevel.WARN) {
-            console.warn(`[${module.toUpperCase()}] WARN: ${message}`, data, context)
-            addLogEntry({
-              level: LogLevel.WARN,
-              module,
-              message,
-              data,
-              context,
-              timestamp: Date.now(),
-            })
-          }
-        },
-        info: (message: string, data?: any) => {
-          if (currentLogLevel >= LogLevel.INFO) {
-            console.log(`[${module.toUpperCase()}] INFO: ${message}`, data, context)
-            addLogEntry({
-              level: LogLevel.INFO,
-              module,
-              message,
-              data,
-              context,
-              timestamp: Date.now(),
-            })
-          }
-        },
-        debug: (message: string, data?: any) => {
-          if (currentLogLevel >= LogLevel.DEBUG) {
-            console.debug(`[${module.toUpperCase()}] DEBUG: ${message}`, data, context)
-            addLogEntry({
-              level: LogLevel.DEBUG,
-              module,
-              message,
-              data,
-              context,
-              timestamp: Date.now(),
-            })
-          }
-        },
-        trace: (message: string, data?: any) => {
-          if (currentLogLevel >= LogLevel.TRACE) {
-            console.trace(`[${module.toUpperCase()}] TRACE: ${message}`, data, context)
-            addLogEntry({
-              level: LogLevel.TRACE,
-              module,
-              message,
-              data,
-              context,
-              timestamp: Date.now(),
-            })
-          }
-        },
-      }
-    },
-  }
-}
-
-// Export default logger for quick access
-export default createLogger("App")
-
-// Add the logger export after the default export at the end of the file
-
-// Export a default logger instance as a named export for compatibility
+// Export a default logger instance as a named export
 export const logger = createLogger("App")

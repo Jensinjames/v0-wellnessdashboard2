@@ -1,85 +1,54 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, type ReactNode } from "react"
-import type { Session, User } from "@supabase/supabase-js"
-import { getSupabaseClient, resetSupabaseClient } from "@/lib/supabase-client-core"
-import { createLogger } from "@/utils/logger"
+import type React from "react"
+import { createContext, useContext, useEffect, useState } from "react"
+import type { SupabaseClient } from "@supabase/supabase-js"
+import { getSupabaseClient } from "@/lib/supabase-client-fixed"
+import type { Database } from "@/types/database"
 
-const logger = createLogger("SupabaseProvider")
-
-// Session context type
-type SupabaseContextType = {
-  session: Session | null
-  user: User | null
+// Define the shape of our Supabase context
+interface SupabaseContextType {
+  supabase: SupabaseClient<Database> | null
   isLoading: boolean
-  refresh: () => Promise<void>
+  error: Error | null
 }
 
-// Create the context
+// Create the context with default values
 const SupabaseContext = createContext<SupabaseContextType>({
-  session: null,
-  user: null,
+  supabase: null,
   isLoading: true,
-  refresh: async () => {},
+  error: null,
 })
 
-// Provider component
-export function SupabaseProvider({
-  children,
-  initialSession,
-}: { children: ReactNode; initialSession?: Session | null }) {
-  const [session, setSession] = useState<Session | null>(initialSession || null)
-  const [user, setUser] = useState<User | null>(initialSession?.user || null)
-  const [isLoading, setIsLoading] = useState(!initialSession)
+// Hook to use the Supabase context
+export const useSupabaseContext = () => useContext(SupabaseContext)
 
-  // Function to manually refresh the session
-  const refresh = async () => {
-    try {
-      setIsLoading(true)
-      const supabase = getSupabaseClient()
-      const { data, error } = await supabase.auth.getSession()
-
-      if (error) {
-        throw error
-      }
-
-      setSession(data.session)
-      setUser(data.session?.user || null)
-    } catch (error) {
-      logger.error("Error refreshing session:", error)
-      // If we get an auth error, reset the client to force re-initialization
-      resetSupabaseClient()
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  // Listen for auth changes
-  useEffect(() => {
-    const supabase = getSupabaseClient()
-
-    // If we don't have an initial session, fetch it
-    if (!initialSession) {
-      refresh()
-    }
-
-    // Subscribe to auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, newSession) => {
-      logger.debug(`Auth state changed: ${event}`)
-      setSession(newSession)
-      setUser(newSession?.user || null)
-    })
-
-    // Cleanup on unmount
-    return () => {
-      subscription.unsubscribe()
-    }
-  }, [initialSession])
-
-  return <SupabaseContext.Provider value={{ session, user, isLoading, refresh }}>{children}</SupabaseContext.Provider>
+interface SupabaseProviderProps {
+  children: React.ReactNode
 }
 
-// Custom hook to use the Supabase context
-export const useSupabaseAuth = () => useContext(SupabaseContext)
+export function SupabaseProvider({ children }: SupabaseProviderProps) {
+  const [supabase, setSupabase] = useState<SupabaseClient<Database> | null>(null)
+  const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
+
+  useEffect(() => {
+    async function initializeSupabase() {
+      try {
+        setIsLoading(true)
+        const client = await getSupabaseClient()
+        setSupabase(client as SupabaseClient<Database>)
+        setError(null)
+      } catch (err) {
+        console.error("Error initializing Supabase client:", err)
+        setError(err instanceof Error ? err : new Error("Failed to initialize Supabase client"))
+      } finally {
+        setIsLoading(false)
+      }
+    }
+
+    initializeSupabase()
+  }, [])
+
+  return <SupabaseContext.Provider value={{ supabase, isLoading, error }}>{children}</SupabaseContext.Provider>
+}

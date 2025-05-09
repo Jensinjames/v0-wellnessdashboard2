@@ -1,7 +1,3 @@
-/**
- * Authentication Context
- * Provides authentication state and methods throughout the application
- */
 "use client"
 
 import { useRouter } from "next/navigation"
@@ -15,15 +11,18 @@ import { validateAuthCredentials, sanitizeEmail, validateEmail, validatePassword
 import { useToast } from "@/hooks/use-toast"
 import { createLogger } from "@/utils/logger"
 import { authService } from "@/lib/auth-service"
+import { useSupabaseContext } from "@/components/providers/supabase-provider"
 
 // Create a dedicated logger for auth operations
 const authLogger = createLogger("Auth")
 
+// Define the shape of our auth context
 interface AuthContextType {
   user: User | null
   profile: UserProfile | null
   session: Session | null
   isLoading: boolean
+  error: Error | null
   signIn: (
     credentials: { email: string; password: string },
     redirectPath?: string,
@@ -46,13 +45,29 @@ interface AuthContextType {
   isProfileComplete: boolean
 }
 
+// Create the context with default values
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+// Hook to use the auth context
+export const useAuth = () => {
+  const context = useContext(AuthContext)
+  if (context === undefined) {
+    throw new Error("useAuth must be used within an AuthProvider")
+  }
+  return context
+}
+
+interface AuthProviderProps {
+  children: React.ReactNode
+}
+
+export function AuthProvider({ children }: AuthProviderProps) {
+  const { supabase, isLoading: isSupabaseLoading } = useSupabaseContext()
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [isLoading, setIsLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
   const router = useRouter()
   const { toast } = useToast()
   const isMounted = useRef(true)
@@ -64,8 +79,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Initialize auth state
   useEffect(() => {
+    if (!supabase || isSupabaseLoading) return
     if (isInitialized.current) return
     isInitialized.current = true
+
+    async function getInitialSession() {
+      try {
+        setIsLoading(true)
+
+        const { data, error } = await supabase.auth.getSession()
+
+        if (error) {
+          throw error
+        }
+
+        setSession(data.session)
+        setUser(data.session?.user || null)
+      } catch (err) {
+        console.error("Error getting initial session:", err)
+        setError(err instanceof Error ? err : new Error("Failed to get initial session"))
+      } finally {
+        setIsLoading(false)
+      }
+    }
 
     const initializeAuth = async () => {
       try {
@@ -135,15 +171,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     }
 
+    getInitialSession()
     initializeAuth()
 
     return () => {
       isMounted.current = false
     }
-  }, [])
+  }, [supabase, isSupabaseLoading, router])
 
   // Set up auth state change listener
   useEffect(() => {
+    if (!supabase) return
     // Set up the auth state change listener using our auth service
     const {
       data: { subscription },
@@ -176,10 +214,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       router.refresh()
     })
 
+    // Set up auth state listener
+    const { data: authListener } = supabase.auth.onAuthStateChange(async (event, newSession) => {
+      setSession(newSession)
+      setUser(newSession?.user || null)
+
+      // Force a router refresh to update server components
+      router.refresh()
+    })
+
     return () => {
       subscription.unsubscribe()
+      authListener.subscription.unsubscribe()
     }
-  }, [router])
+  }, [supabase, router])
 
   // Update profile function that uses server action instead of direct database access
   const updateProfile = async (data: ProfileFormData): Promise<{ success: boolean; error: Error | null }> => {
@@ -420,6 +468,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   const signOut = async (redirectPath = "/auth/sign-in") => {
+    if (!supabase) return
     try {
       authLogger.info("Attempting sign out")
 
@@ -443,8 +492,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           redirectInProgressRef.current = false
         }, 100)
       }
-    } catch (error) {
-      authLogger.error("Sign out error:", error)
+    } catch (err) {
+      console.error("Error signing out:", err)
+      setError(err instanceof Error ? err : new Error("Failed to sign out"))
+      authLogger.error("Sign out error:", err)
       // Even if there's an error, clear the local state
       setUser(null)
       setProfile(null)
@@ -579,7 +630,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     user,
     profile,
     session,
-    isLoading,
+    isLoading: isLoading || isSupabaseLoading,
     signIn,
     signUp,
     signOut,
@@ -589,18 +640,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     updatePassword,
     resendVerificationEmail,
     isProfileComplete,
+    error,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-}
-
-// Export the useAuth hook
-export function useAuth() {
-  const context = useContext(AuthContext)
-  if (context === undefined) {
-    throw new Error("useAuth must be used within an AuthProvider")
-  }
-  return context
 }
 
 // Debug mode control function
