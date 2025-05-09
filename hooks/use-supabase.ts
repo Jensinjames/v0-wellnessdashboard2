@@ -339,7 +339,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   throw lastError
 }
 ,
-    [isOnline, debug, debugMode, user, setLastActivity, setIsOnline]
+    [isOnline, debug, debugMode, user, setLastActivity, setIsOnline, persistSession, autoRefreshToken, toast]
   )
 
 // Reset the client and state
@@ -366,7 +366,7 @@ const resetClient = useCallback(() => {
     supabaseRef.current = client
     setIsInitialized(true)
   }
-}, [debug, debugMode, persistSession, autoRefreshToken])
+}, [debug, debugMode, persistSession, autoRefreshToken, toast])
 
 return {
     supabase: supabaseRef.current,

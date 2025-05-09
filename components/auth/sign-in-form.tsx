@@ -10,7 +10,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Info, AlertTriangle, Mail } from "lucide-react"
+import { Info, AlertTriangle, Mail, Loader2 } from "lucide-react"
+import { extractRedirectPath, extractAuthToken, storeRedirectPath, handleAuthToken } from "@/utils/auth-redirect"
 
 export function SignInForm() {
   const [email, setEmail] = useState("")
@@ -21,17 +22,45 @@ export function SignInForm() {
   const [mockSignIn, setMockSignIn] = useState(false)
   const [isEmailVerificationError, setIsEmailVerificationError] = useState(false)
   const [redirectPath, setRedirectPath] = useState("/dashboard")
+  const [isProcessingToken, setIsProcessingToken] = useState(false)
   const { signIn } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
 
-  // Use effect to safely access search params after mount
+  // Process URL parameters on mount
   useEffect(() => {
-    if (searchParams) {
-      const redirectTo = searchParams.get("redirectTo")
-      if (redirectTo) {
-        setRedirectPath(redirectTo)
-      }
+    if (!searchParams) return
+
+    // Get the current URL for token extraction
+    const currentUrl = typeof window !== "undefined" ? window.location.href : ""
+
+    // Extract authentication token if present
+    const token = extractAuthToken(currentUrl)
+
+    // Get and process the redirectTo parameter
+    const redirectParam = searchParams.get("redirectTo")
+    const cleanRedirectPath = extractRedirectPath(redirectParam)
+    setRedirectPath(cleanRedirectPath)
+
+    // If we have a token, process it
+    if (token) {
+      setIsProcessingToken(true)
+      setIsLoading(true)
+
+      handleAuthToken(token, cleanRedirectPath)
+        .then((success) => {
+          if (success) {
+            // Token processed successfully, redirect
+            window.location.href = cleanRedirectPath
+          } else {
+            // Token processing failed
+            setError("Authentication token processing failed")
+            setIsLoading(false)
+          }
+        })
+        .finally(() => {
+          setIsProcessingToken(false)
+        })
     }
   }, [searchParams])
 
@@ -46,6 +75,10 @@ export function SignInForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Don't process if we're already handling a token
+    if (isProcessingToken) return
+
     setIsLoading(true)
     setError(null)
     setFieldErrors({})
@@ -53,6 +86,11 @@ export function SignInForm() {
     setIsEmailVerificationError(false)
 
     try {
+      console.log(`Attempting sign in with redirect to: ${redirectPath}`)
+
+      // Store the redirect path before authentication
+      storeRedirectPath(redirectPath)
+
       // Pass credentials as a single object with the correct structure
       const result = await signIn({ email, password })
 
@@ -81,13 +119,17 @@ export function SignInForm() {
         setMockSignIn(true)
         // Wait a moment before redirecting to simulate the sign-in process
         setTimeout(() => {
+          console.log(`Mock sign-in successful, redirecting to: ${redirectPath}`)
           router.push(redirectPath)
         }, 2000)
         return
       }
 
       // If we get here, sign-in was successful
-      router.push(redirectPath)
+      console.log(`Sign-in successful, redirecting to: ${redirectPath}`)
+
+      // Force a hard navigation to ensure proper session handling
+      window.location.href = redirectPath
     } catch (err: any) {
       console.error("Unexpected error during sign-in:", err)
       setError(err.message || "An unexpected error occurred")
@@ -101,6 +143,14 @@ export function SignInForm() {
       <h2 id="sign-in-heading" className="sr-only">
         Sign in form
       </h2>
+
+      {isProcessingToken && (
+        <Alert className="mb-4" role="status" aria-live="polite">
+          <Loader2 className="h-4 w-4 animate-spin mr-2" aria-hidden="true" />
+          <AlertTitle>Processing Authentication</AlertTitle>
+          <AlertDescription>Please wait while we process your authentication token...</AlertDescription>
+        </Alert>
+      )}
 
       {error && !isEmailVerificationError && (
         <Alert className="rounded-md bg-red-50 p-4 text-sm text-red-700" role="alert" aria-live="assertive">
@@ -156,7 +206,7 @@ export function SignInForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          disabled={isLoading || mockSignIn}
+          disabled={isLoading || mockSignIn || isProcessingToken}
           aria-labelledby="email-label"
           aria-required="true"
           autoComplete="email"
@@ -190,7 +240,7 @@ export function SignInForm() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          disabled={isLoading || mockSignIn}
+          disabled={isLoading || mockSignIn || isProcessingToken}
           aria-labelledby="password-label"
           aria-required="true"
           autoComplete="current-password"
@@ -208,11 +258,20 @@ export function SignInForm() {
       <Button
         type="submit"
         className="w-full"
-        disabled={isLoading || mockSignIn}
+        disabled={isLoading || mockSignIn || isProcessingToken}
         aria-busy={isLoading}
         aria-live="polite"
       >
-        {isLoading ? "Signing in..." : mockSignIn ? "Redirecting..." : "Sign in"}
+        {isLoading ? (
+          <>
+            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+            {isProcessingToken ? "Processing..." : "Signing in..."}
+          </>
+        ) : mockSignIn ? (
+          "Redirecting..."
+        ) : (
+          "Sign in"
+        )}
       </Button>
 
       <div className="text-center text-sm">

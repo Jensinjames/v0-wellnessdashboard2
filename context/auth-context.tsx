@@ -9,6 +9,7 @@ import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
 import { validateAuthCredentials, sanitizeEmail } from "@/utils/auth-validation"
 import { getSupabaseClient, resetSupabaseClient, cleanupOrphanedClients } from "@/lib/supabase-singleton"
+import { getStoredRedirectPath } from "@/utils/auth-redirect"
 
 interface AuthContextType {
   user: User | null
@@ -33,6 +34,8 @@ interface AuthContextType {
   resetPassword: (email: string) => Promise<{ success: boolean; error: string | null }>
   updatePassword: (password: string) => Promise<{ success: boolean; error: string | null }>
   getClientInfo: () => any
+  refreshSession: () => Promise<Session | null>
+  processAuthToken: (token: string) => Promise<{ success: boolean; error: string | null }>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -194,6 +197,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 setCacheItem(CACHE_KEYS.PROFILE(newSession.user.id), profile)
               }
             })
+
+            // Check if we have a stored redirect path
+            const redirectPath = getStoredRedirectPath()
+            if (redirectPath && redirectPath !== "/dashboard") {
+              debugLog(`Redirecting to stored path: ${redirectPath}`)
+              // Use window.location for a hard redirect to ensure session is properly set
+              if (typeof window !== "undefined") {
+                window.location.href = redirectPath
+              }
+            }
           } else if (event === "TOKEN_REFRESHED" && newSession) {
             debugLog("Token refreshed, updating session")
             setSession(newSession)
@@ -318,9 +331,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Get the Supabase client
       const supabase = await getSupabaseClientInstance()
 
+      // Add additional options for better session handling
       const { data, error } = await supabase.auth.signInWithPassword({
         email: sanitizedEmail,
         password: credentials.password,
+        options: {
+          // Ensure we get a fresh session
+          captchaToken: undefined,
+        },
       })
 
       if (error) {
@@ -333,6 +351,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         debugLog("Sign-in successful, updating session and user")
         setSession(data.session)
         setUser(data.user)
+
+        // Explicitly refresh the session to ensure it's properly set
+        await supabase.auth.refreshSession()
 
         // Fetch and update the profile as well
         if (data.user) {
@@ -519,6 +540,74 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [user])
 
+  // Add a function to refresh the session
+  const refreshSession = useCallback(async (): Promise<Session | null> => {
+    try {
+      debugLog("Refreshing session")
+
+      // Get the Supabase client
+      const supabase = await getSupabaseClientInstance()
+
+      // Explicitly refresh the session
+      const { data, error } = await supabase.auth.refreshSession()
+
+      if (error) {
+        console.error("Error refreshing session:", error)
+        return null
+      }
+
+      if (data.session) {
+        debugLog("Session refreshed successfully")
+        setSession(data.session)
+        setUser(data.session.user)
+        return data.session
+      }
+
+      return null
+    } catch (error) {
+      console.error("Unexpected error refreshing session:", error)
+      return null
+    }
+  }, [])
+
+  // Process an authentication token
+  const processAuthToken = useCallback(
+    async (token: string): Promise<{ success: boolean; error: string | null }> => {
+      try {
+        debugLog("Processing authentication token")
+
+        // Make an API call to process the token
+        const response = await fetch("/api/auth/token", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ token }),
+        })
+
+        if (!response.ok) {
+          const errorData = await response.json()
+          return {
+            success: false,
+            error: errorData.error || "Failed to process authentication token",
+          }
+        }
+
+        // Refresh the session after token processing
+        await refreshSession()
+
+        return { success: true, error: null }
+      } catch (error: any) {
+        console.error("Error processing authentication token:", error)
+        return {
+          success: false,
+          error: error.message || "An unexpected error occurred while processing the token",
+        }
+      }
+    },
+    [refreshSession],
+  )
+
   const getClientInfo = () => {
     // Get client stats from the singleton
     const stats = {
@@ -551,6 +640,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     resetPassword,
     updatePassword,
     getClientInfo,
+    refreshSession,
+    processAuthToken,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

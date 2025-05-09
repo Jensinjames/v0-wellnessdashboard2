@@ -1,89 +1,57 @@
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
-import { cookies } from "next/headers"
 import { NextResponse } from "next/server"
-import type { NextRequest } from "next/server"
+import { cookies } from "next/headers"
+import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
+import type { Database } from "@/types/database"
 
-export async function GET(request: NextRequest) {
+export async function GET(request: Request) {
   const requestUrl = new URL(request.url)
   const code = requestUrl.searchParams.get("code")
-  const next = requestUrl.searchParams.get("next") || "/dashboard"
-  const error = requestUrl.searchParams.get("error")
-  const error_description = requestUrl.searchParams.get("error_description")
-  const type = requestUrl.searchParams.get("type") || "signup"
+  const redirectTo = requestUrl.searchParams.get("redirectTo") || "/dashboard"
 
-  // If there's an error, redirect to the appropriate page with the error
-  if (error) {
-    console.error("Auth callback error:", error, error_description)
+  console.log(`Auth callback with code: ${code ? "present" : "missing"}, redirectTo: ${redirectTo}`)
 
-    // Determine where to redirect based on the type of auth flow
-    const redirectPath = type === "recovery" ? "/auth/reset-password" : "/auth/sign-in"
-
-    return NextResponse.redirect(
-      new URL(`${redirectPath}?error=${encodeURIComponent(error_description || "Authentication error")}`, request.url),
-    )
-  }
-
-  // If there's no code, redirect to the sign-in page
-  if (!code) {
-    console.warn("No code provided in auth callback")
-    return NextResponse.redirect(new URL("/auth/sign-in", request.url))
-  }
-
-  try {
+  if (code) {
     const cookieStore = cookies()
-    const supabase = createRouteHandlerClient({ cookies: () => cookieStore })
+    const supabase = createRouteHandlerClient<Database>({ cookies: () => cookieStore })
 
-    // Exchange the code for a session
-    const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
+    try {
+      // Exchange the code for a session
+      const { error } = await supabase.auth.exchangeCodeForSession(code)
 
-    if (exchangeError) {
-      console.error("Error exchanging code for session:", exchangeError)
-      return NextResponse.redirect(
-        new URL(`/auth/sign-in?error=${encodeURIComponent(exchangeError.message)}`, request.url),
-      )
-    }
-
-    // Get the user's session
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
-
-    // Check if this is a password reset flow
-    if (type === "recovery" && session) {
-      return NextResponse.redirect(new URL("/auth/reset-password", request.url))
-    }
-
-    // For email confirmation and signup flows, redirect to the dashboard or specified next URL
-    if (session) {
-      // Create profile for new users if necessary
-      if (type === "signup") {
-        const { data: existingProfile } = await supabase
-          .from("profiles")
-          .select("id")
-          .eq("id", session.user.id)
-          .single()
-
-        if (!existingProfile) {
-          // Create minimal profile
-          await supabase
-            .from("profiles")
-            .insert({
-              id: session.user.id,
-              email: session.user.email,
-              created_at: new Date().toISOString(),
-              updated_at: new Date().toISOString(),
-            })
-            .single()
-        }
+      if (error) {
+        console.error("Error exchanging code for session:", error.message)
+        // Redirect to sign-in page with error
+        return NextResponse.redirect(
+          new URL(`/auth/sign-in?error=${encodeURIComponent("Authentication failed")}`, request.url),
+        )
       }
 
-      return NextResponse.redirect(new URL(next, request.url))
-    }
+      // Successfully authenticated, redirect to the specified path
+      console.log(`Authentication successful, redirecting to: ${redirectTo}`)
 
-    // If we couldn't determine the user state, redirect to sign-in
-    return NextResponse.redirect(new URL("/auth/sign-in", request.url))
-  } catch (error) {
-    console.error("Unexpected error in auth callback:", error)
-    return NextResponse.redirect(new URL("/auth/sign-in?error=An unexpected error occurred", request.url))
+      // Fix: Properly decode the redirect path
+      let decodedRedirect = redirectTo
+      try {
+        decodedRedirect = decodeURIComponent(redirectTo)
+      } catch (e) {
+        console.error("Error decoding redirect path:", e)
+      }
+
+      // Ensure the path starts with /
+      if (!decodedRedirect.startsWith("/")) {
+        decodedRedirect = `/${decodedRedirect}`
+      }
+
+      return NextResponse.redirect(new URL(decodedRedirect, request.url))
+    } catch (error) {
+      console.error("Unexpected error in auth callback:", error)
+      return NextResponse.redirect(
+        new URL(`/auth/sign-in?error=${encodeURIComponent("An unexpected error occurred")}`, request.url),
+      )
+    }
   }
+
+  // No code present, redirect to home page
+  console.log("No code present in auth callback, redirecting to home")
+  return NextResponse.redirect(new URL("/", request.url))
 }
