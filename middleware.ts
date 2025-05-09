@@ -52,11 +52,14 @@ export async function middleware(req: NextRequest) {
       return NextResponse.redirect(redirectUrl)
     }
 
+    // Check if this is an anonymous user
+    const isAnonymous = session?.user?.app_metadata?.provider === "anonymous"
+
     // Routes that should bypass onboarding check
     const bypassOnboardingCheck = ["/onboarding", ...bypassAllChecks]
 
-    // If the user is authenticated, check if they've completed onboarding
-    if (session && !bypassOnboardingCheck.some((route) => pathname.startsWith(route))) {
+    // If the user is authenticated and not anonymous, check if they've completed onboarding
+    if (session && !isAnonymous && !bypassOnboardingCheck.some((route) => pathname.startsWith(route))) {
       // Check if the user has completed onboarding
       // We'll use cookies for this check
       const onboardingCompleted = req.cookies.get("onboarding-completed")?.value === "true"
@@ -94,6 +97,21 @@ export async function middleware(req: NextRequest) {
           return res
         }
       }
+    }
+
+    // For anonymous users, we'll skip the onboarding check
+    if (session && isAnonymous) {
+      // Set a cookie to indicate this is an anonymous session
+      res.cookies.set("anonymous-session", "true", {
+        maxAge: 60 * 60 * 24, // 1 day
+        path: "/",
+      })
+
+      // Also set onboarding as completed for anonymous users
+      res.cookies.set("onboarding-completed", "true", {
+        maxAge: 60 * 60 * 24, // 1 day
+        path: "/",
+      })
     }
 
     return res

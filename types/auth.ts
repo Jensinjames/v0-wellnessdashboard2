@@ -7,6 +7,7 @@ export interface ProfileFormData {
   last_name: string
   avatar_url?: string | null
   phone?: string | null
+  is_anonymous?: boolean
 }
 
 export interface ProfileCompletionStatus {
@@ -46,4 +47,12 @@ export interface VerificationSubmission {
   userId: string
   type: VerificationType
   code: string
+}
+
+export interface AuthState {
+  user: any | null
+  profile: UserProfile | null
+  session: any | null
+  isLoading: boolean
+  isAnonymous: boolean
 }

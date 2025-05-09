@@ -5,12 +5,13 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
-import { useAuth } from "@/context/auth-context"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Info, AlertTriangle, Mail, Loader2, Database, RefreshCw, Wifi } from "lucide-react"
+import type { Database as DatabaseType } from "@/types/database"
 
 export function SignInForm() {
   const [email, setEmail] = useState("")
@@ -18,16 +19,16 @@ export function SignInForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
-  const [mockSignIn, setMockSignIn] = useState(false)
+  const [isAnonymous, setIsAnonymous] = useState(false)
   const [isEmailVerificationError, setIsEmailVerificationError] = useState(false)
   const [networkError, setNetworkError] = useState(false)
   const [isCheckingNetwork, setIsCheckingNetwork] = useState(false)
   const [databaseError, setDatabaseError] = useState(false)
   const [redirectPath, setRedirectPath] = useState("/dashboard")
-  const { signIn, refreshSession, resendVerificationEmail } = useAuth()
+
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [signInAttempts, setSignInAttempts] = useState(0)
+  const supabase = createClientComponentClient<DatabaseType>()
 
   // Use effect to safely access search params after mount
   useEffect(() => {
@@ -57,18 +58,22 @@ export function SignInForm() {
   }, [email, password, error, fieldErrors])
 
   // Attempt to refresh the session on component mount
-  // This can help with cases where the session is still valid but the UI doesn't reflect it
   useEffect(() => {
-    const attemptSessionRefresh = async () => {
+    const checkSession = async () => {
       try {
-        await refreshSession()
+        const { data, error } = await supabase.auth.getSession()
+        if (data.session && !error) {
+          // User is already signed in, redirect
+          router.push(redirectPath)
+        }
       } catch (err) {
-        // Silently fail - this is just a proactive attempt
+        // Silently fail - this is just a proactive check
+        console.error("Session check error:", err)
       }
     }
 
-    attemptSessionRefresh()
-  }, [refreshSession])
+    checkSession()
+  }, [router, redirectPath, supabase.auth])
 
   const handleNetworkCheck = async () => {
     setIsCheckingNetwork(true)
@@ -124,11 +129,23 @@ export function SignInForm() {
     setIsLoading(true)
     setError(null)
     setFieldErrors({})
-    setMockSignIn(false)
+    setIsAnonymous(false)
     setIsEmailVerificationError(false)
     setNetworkError(false)
     setDatabaseError(false)
-    setSignInAttempts((prev) => prev + 1)
+
+    // Basic validation
+    if (!email.trim() && !isAnonymous) {
+      setFieldErrors((prev) => ({ ...prev, email: "Email is required" }))
+      setIsLoading(false)
+      return
+    }
+
+    if (!password.trim() && !isAnonymous) {
+      setFieldErrors((prev) => ({ ...prev, password: "Password is required" }))
+      setIsLoading(false)
+      return
+    }
 
     // Check if we're online before attempting sign-in
     if (typeof navigator !== "undefined" && !navigator.onLine) {
@@ -142,71 +159,72 @@ export function SignInForm() {
       // Trim the email to prevent whitespace issues
       const trimmedEmail = email.trim()
 
-      // For demo mode, bypass the regular sign-in flow after multiple failed attempts
-      if (signInAttempts >= 2 && trimmedEmail === "demo@example.com" && password === "demo123") {
-        setMockSignIn(true)
-        // Wait a moment before redirecting to simulate the sign-in process
-        setTimeout(() => {
-          router.push(redirectPath)
-        }, 2000)
-        setIsLoading(false)
+      if (trimmedEmail === "demo@example.com" && password === "demo123") {
+        // Use anonymous authentication for demo mode
+        const { data, error } = await supabase.auth.signInAnonymously()
+
+        if (error) {
+          console.error("Anonymous sign-in error:", error)
+          setError(error.message)
+          setIsLoading(false)
+          return
+        }
+
+        setIsAnonymous(true)
+
+        // Create a profile for the anonymous user
+        if (data.user) {
+          try {
+            await supabase.from("profiles").upsert({
+              id: data.user.id,
+              email: "anonymous@example.com",
+              first_name: "Demo",
+              last_name: "User",
+              is_anonymous: true,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            })
+          } catch (profileError) {
+            console.error("Error creating anonymous profile:", profileError)
+            // Don't fail the sign-in if profile creation fails
+          }
+        }
+
+        // Redirect to dashboard
+        router.push(redirectPath)
         return
       }
 
-      // Pass credentials as a single object with the correct structure
-      const result = await signIn({ email: trimmedEmail, password })
+      // Regular email/password sign-in
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password,
+      })
 
-      if (result.fieldErrors) {
-        setFieldErrors(result.fieldErrors)
-        setIsLoading(false)
-        return
-      }
-
-      if (result.error) {
-        const errorMessage = result.error.message || "An error occurred during sign-in"
-
-        // Check if it's a database error
-        if (
-          errorMessage.includes("Database error") ||
-          errorMessage.includes("database error") ||
-          errorMessage.includes("Database error granting user")
+      if (error) {
+        // Handle specific error cases
+        if (error.message.includes("Email not confirmed")) {
+          setIsEmailVerificationError(true)
+          setError("Please verify your email before signing in. Check your inbox for a verification link.")
+        } else if (
+          error.message.includes("Database error") ||
+          error.message.includes("database error") ||
+          error.message.includes("Database error granting user")
         ) {
           setDatabaseError(true)
-          setError(errorMessage)
-        }
-        // Check if it's an email verification error
-        else if (
-          errorMessage.includes("verify your email") ||
-          errorMessage.includes("Email not confirmed") ||
-          errorMessage.includes("not confirmed")
-        ) {
-          setIsEmailVerificationError(true)
-          setError(errorMessage)
-        }
-        // Check if it's a network error
-        else if (
-          errorMessage.includes("network") ||
-          errorMessage.includes("Failed to fetch") ||
-          errorMessage.includes("Network Error")
+          setError(error.message)
+        } else if (
+          error.message.includes("network") ||
+          error.message.includes("Failed to fetch") ||
+          error.message.includes("Network Error")
         ) {
           setNetworkError(true)
-          setError(errorMessage)
-        }
-        // General error
-        else {
-          setError(errorMessage)
+          setError(error.message)
+        } else {
+          setError(error.message)
         }
 
         setIsLoading(false)
-        return
-      }
-
-      if (result.mockSignIn) {
-        setMockSignIn(true)
-        // Wait a moment before redirecting to simulate the sign-in process
-        setTimeout(() => {
-          router.push(redirectPath)
-        }, 2000)
         return
       }
 
@@ -216,7 +234,6 @@ export function SignInForm() {
     } catch (err: any) {
       console.error("Unexpected error during sign-in:", err)
       setError(err.message || "An unexpected error occurred. Please try again.")
-    } finally {
       setIsLoading(false)
     }
   }
@@ -230,10 +247,16 @@ export function SignInForm() {
     try {
       setIsLoading(true)
 
-      const result = await resendVerificationEmail(email.trim())
+      const { error } = await supabase.auth.resend({
+        type: "signup",
+        email: email.trim(),
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
 
-      if (result.error) {
-        setError(`Failed to resend verification email: ${result.error.message}`)
+      if (error) {
+        setError(`Failed to resend verification email: ${error.message}`)
       } else {
         alert(`If an account exists with ${email}, a verification email has been sent.`)
       }
@@ -245,14 +268,47 @@ export function SignInForm() {
     }
   }
 
-  const handleDemoSignIn = () => {
-    setEmail("demo@example.com")
-    setPassword("demo123")
-    // Submit the form with demo credentials
-    setTimeout(() => {
-      const form = document.querySelector("form") as HTMLFormElement
-      if (form) form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }))
-    }, 100)
+  const handleAnonymousSignIn = async () => {
+    setIsLoading(true)
+    setError(null)
+
+    try {
+      const { data, error } = await supabase.auth.signInAnonymously()
+
+      if (error) {
+        console.error("Anonymous sign-in error:", error)
+        setError(error.message)
+        setIsLoading(false)
+        return
+      }
+
+      setIsAnonymous(true)
+
+      // Create a profile for the anonymous user
+      if (data.user) {
+        try {
+          await supabase.from("profiles").upsert({
+            id: data.user.id,
+            email: "anonymous@example.com",
+            first_name: "Demo",
+            last_name: "User",
+            is_anonymous: true,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          })
+        } catch (profileError) {
+          console.error("Error creating anonymous profile:", profileError)
+          // Don't fail the sign-in if profile creation fails
+        }
+      }
+
+      // Redirect to dashboard
+      router.push(redirectPath)
+    } catch (err: any) {
+      console.error("Unexpected error during anonymous sign-in:", err)
+      setError(err.message || "An unexpected error occurred. Please try again.")
+      setIsLoading(false)
+    }
   }
 
   return (
@@ -315,7 +371,7 @@ export function SignInForm() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={handleDemoSignIn}
+                onClick={handleAnonymousSignIn}
                 className="bg-orange-100/50 border-orange-200"
               >
                 Use Demo Mode
@@ -349,7 +405,7 @@ export function SignInForm() {
                 variant="outline"
                 size="sm"
                 className="bg-blue-100 border-blue-200 text-blue-800 hover:bg-blue-200"
-                onClick={handleDemoSignIn}
+                onClick={handleAnonymousSignIn}
               >
                 Use Demo Mode
               </Button>
@@ -383,12 +439,12 @@ export function SignInForm() {
         </Alert>
       )}
 
-      {mockSignIn && (
+      {isAnonymous && (
         <Alert className="mb-4" role="status" aria-live="polite">
           <Info className="h-4 w-4" aria-hidden="true" />
           <AlertTitle>Demo Mode</AlertTitle>
           <AlertDescription>
-            You're being signed in with demo credentials. You'll be redirected to the dashboard shortly.
+            You're being signed in with anonymous credentials. You'll be redirected to the dashboard shortly.
           </AlertDescription>
         </Alert>
       )}
@@ -403,7 +459,7 @@ export function SignInForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          disabled={isLoading || mockSignIn}
+          disabled={isLoading || isAnonymous}
           aria-labelledby="email-label"
           aria-required="true"
           autoComplete="email"
@@ -437,7 +493,7 @@ export function SignInForm() {
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           required
-          disabled={isLoading || mockSignIn}
+          disabled={isLoading || isAnonymous}
           aria-labelledby="password-label"
           aria-required="true"
           autoComplete="current-password"
@@ -455,7 +511,7 @@ export function SignInForm() {
       <Button
         type="submit"
         className="w-full"
-        disabled={isLoading || mockSignIn}
+        disabled={isLoading || isAnonymous}
         aria-busy={isLoading}
         aria-live="polite"
       >
@@ -464,7 +520,7 @@ export function SignInForm() {
             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             Signing in...
           </>
-        ) : mockSignIn ? (
+        ) : isAnonymous ? (
           "Redirecting..."
         ) : (
           "Sign in"
@@ -488,8 +544,8 @@ export function SignInForm() {
           variant="outline"
           size="sm"
           className="mt-2"
-          onClick={handleDemoSignIn}
-          disabled={isLoading || mockSignIn}
+          onClick={handleAnonymousSignIn}
+          disabled={isLoading || isAnonymous}
         >
           Use Demo Mode
         </Button>

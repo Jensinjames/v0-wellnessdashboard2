@@ -59,24 +59,27 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // If the user is confirmed, redirect to the dashboard or the next URL
-    if (session.user?.email_confirmed_at) {
+    // Check if this is an anonymous user
+    const isAnonymous = session.user?.app_metadata?.provider === "anonymous"
+
+    // If the user is confirmed or anonymous, redirect to the dashboard or the next URL
+    if (session.user?.email_confirmed_at || isAnonymous) {
       // Try to create a profile if it doesn't exist
       try {
-        if (session.user.email) {
-          const { error: profileError } = await supabase.from("profiles").upsert(
-            {
-              id: session.user.id,
-              email: session.user.email,
-              updated_at: new Date().toISOString(),
-            },
-            { onConflict: "id", ignoreDuplicates: false },
-          )
+        const profileData = {
+          id: session.user.id,
+          email: session.user.email || "anonymous@example.com",
+          is_anonymous: isAnonymous,
+          updated_at: new Date().toISOString(),
+        }
 
-          if (profileError) {
-            console.warn("Error creating/updating profile during callback:", profileError)
-            // Don't fail the auth flow, just log the error
-          }
+        const { error: profileError } = await supabase
+          .from("profiles")
+          .upsert(profileData, { onConflict: "id", ignoreDuplicates: false })
+
+        if (profileError) {
+          console.warn("Error creating/updating profile during callback:", profileError)
+          // Don't fail the auth flow, just log the error
         }
       } catch (profileError) {
         console.error("Unexpected error creating profile during callback:", profileError)
