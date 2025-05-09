@@ -1,138 +1,119 @@
-/**
- * This script scans the codebase for potential escape sequence issues
- * that might cause "Expected unicode escape" syntax errors during build.
- *
- * Usage: node scripts/find-escape-issues.js
- */
-
 const fs = require("fs")
 const path = require("path")
-const { promisify } = require("util")
+const { execSync } = require("child_process")
 
-const readdir = promisify(fs.readdir)
-const stat = promisify(fs.stat)
-const readFile = promisify(fs.readFile)
-
-// Patterns that might cause escape sequence issues
-const PROBLEMATIC_PATTERNS = [
+// Patterns that might cause "Expected unicode escape" errors
+const problematicPatterns = [
   // Incomplete unicode escapes
-  { pattern: /\\u([^0-9a-fA-F]|$)/, description: "Incomplete unicode escape sequence" },
-
+  /\\u[0-9a-fA-F]{0,3}(?![0-9a-fA-F])/g,
   // Incomplete hex escapes
-  { pattern: /\\x([^0-9a-fA-F]|$)/, description: "Incomplete hex escape sequence" },
-
-  // Potentially problematic backslash sequences
-  { pattern: /\\([^nrtbfvu0-9x"'\\])/, description: "Potentially problematic backslash sequence" },
-
-  // Unescaped apostrophes in JSX
-  { pattern: /(\{[^}]*?)'(?:[^'\\]|\\.)*?'[^}]*?\})/, description: "Unescaped apostrophe in JSX expression" },
-
-  // Unescaped quotes in JSX
-  { pattern: /(\{[^}]*?)"(?:[^"\\]|\\.)*?"[^}]*?\})/, description: "Unescaped quote in JSX expression" },
+  /\\x[0-9a-fA-F]{0,1}(?![0-9a-fA-F])/g,
+  // Invalid escape sequences in strings
+  /\\[^'"\\/bfnrt0-9xu]/g,
+  // Potential issues with regex
+  /\\[pP]\{[^}]*$/g,
+  // Unescaped line breaks in strings
+  /[^\\]\n[^'"`]/g,
 ]
 
-// File extensions to scan
-const EXTENSIONS_TO_SCAN = [".js", ".jsx", ".ts", ".tsx"]
+// File extensions to check
+const extensions = [".js", ".jsx", ".ts", ".tsx"]
 
 // Directories to exclude
-const EXCLUDE_DIRS = ["node_modules", ".next", "out", "build", "dist", ".git"]
+const excludeDirs = ["node_modules", ".next", "dist", ".git", ".husky"]
 
-async function scanDirectory(dir) {
-  const issues = []
+function scanFile(filePath) {
+  try {
+    const content = fs.readFileSync(filePath, "utf8")
+    let hasIssues = false
+
+    problematicPatterns.forEach((pattern, index) => {
+      const matches = content.match(pattern)
+      if (matches) {
+        if (!hasIssues) {
+          console.log(`\nIssues in ${filePath}:`)
+          hasIssues = true
+        }
+
+        console.log(`  Pattern ${index + 1}: ${matches.length} matches`)
+
+        // Find line numbers for each match
+        const lastIndex = 0
+        let lineNumber = 1
+        const lines = []
+
+        for (let i = 0; i < content.length; i++) {
+          if (content[i] === "\n") {
+            lineNumber++
+          }
+
+          if (pattern.test(content.slice(i, i + 10))) {
+            const line = content.slice(i - 20, i + 30).replace(/\n/g, "\\n")
+            lines.push({ lineNumber, context: line })
+            i += 5 // Skip ahead to avoid multiple matches on the same issue
+          }
+        }
+
+        // Display up to 3 examples
+        lines.slice(0, 3).forEach(({ lineNumber, context }) => {
+          console.log(`    Line ${lineNumber}: ...${context}...`)
+        })
+
+        if (lines.length > 3) {
+          console.log(`    ... and ${lines.length - 3} more`)
+        }
+      }
+    })
+
+    return hasIssues
+  } catch (error) {
+    console.error(`Error scanning ${filePath}:`, error.message)
+    return false
+  }
+}
+
+function scanDirectory(dir) {
+  let issuesFound = 0
 
   try {
-    const entries = await readdir(dir)
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
 
     for (const entry of entries) {
-      const fullPath = path.join(dir, entry)
+      const fullPath = path.join(dir, entry.name)
 
-      try {
-        const stats = await stat(fullPath)
-
-        if (stats.isDirectory()) {
-          // Skip excluded directories
-          if (EXCLUDE_DIRS.includes(entry)) {
-            continue
-          }
-
-          // Recursively scan subdirectories
-          const subIssues = await scanDirectory(fullPath)
-          issues.push(...subIssues)
-        } else if (stats.isFile()) {
-          // Check if the file has an extension we want to scan
-          const ext = path.extname(fullPath)
-          if (EXTENSIONS_TO_SCAN.includes(ext)) {
-            const fileIssues = await scanFile(fullPath)
-            issues.push(...fileIssues)
-          }
+      if (entry.isDirectory()) {
+        if (!excludeDirs.includes(entry.name)) {
+          issuesFound += scanDirectory(fullPath)
         }
-      } catch (err) {
-        console.error(`Error processing ${fullPath}:`, err)
-      }
-    }
-  } catch (err) {
-    console.error(`Error reading directory ${dir}:`, err)
-  }
-
-  return issues
-}
-
-async function scanFile(filePath) {
-  const issues = []
-
-  try {
-    const content = await readFile(filePath, "utf8")
-    const lines = content.split("\n")
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]
-      const lineNumber = i + 1
-
-      for (const { pattern, description } of PROBLEMATIC_PATTERNS) {
-        if (pattern.test(line)) {
-          issues.push({
-            file: filePath,
-            line: lineNumber,
-            content: line.trim(),
-            description,
-          })
-          break // Only report one issue per line
+      } else if (entry.isFile() && extensions.includes(path.extname(entry.name))) {
+        if (scanFile(fullPath)) {
+          issuesFound++
         }
       }
     }
-  } catch (err) {
-    console.error(`Error reading file ${filePath}:`, err)
+  } catch (error) {
+    console.error(`Error scanning directory ${dir}:`, error.message)
   }
 
-  return issues
+  return issuesFound
 }
 
-async function main() {
-  console.log("Scanning for potential escape sequence issues...")
+// Main execution
+console.log("Scanning for problematic escape sequences...")
+const startTime = Date.now()
+const rootDir = process.cwd()
+const issuesFound = scanDirectory(rootDir)
 
-  const startDir = process.cwd()
-  const issues = await scanDirectory(startDir)
+console.log(`\nScan completed in ${((Date.now() - startTime) / 1000).toFixed(2)}s`)
+console.log(`Found issues in ${issuesFound} files`)
 
-  if (issues.length === 0) {
-    console.log("No issues found!")
-    return
-  }
-
-  console.log(`Found ${issues.length} potential issues:`)
-  console.log("-----------------------------------")
-
-  for (const issue of issues) {
-    console.log(`File: ${issue.file}`)
-    console.log(`Line: ${issue.line}`)
-    console.log(`Issue: ${issue.description}`)
-    console.log(`Content: ${issue.content}`)
-    console.log("-----------------------------------")
-  }
-
-  console.log("Suggestion: Check these files for escape sequence issues and fix them.")
+if (issuesFound > 0) {
+  console.log("\nTo fix these issues:")
+  console.log("1. Use proper Unicode escapes: \\u0041 instead of \\u41")
+  console.log("2. Use proper hex escapes: \\x41 instead of \\x4")
+  console.log('3. Remove unnecessary escapes: "hello" instead of "h\\ello"')
+  console.log("4. For regex patterns, use proper escapes or raw strings")
+  console.log("5. Run ESLint to catch these issues: npx eslint --fix .")
 }
 
-main().catch((err) => {
-  console.error("Error running script:", err)
-  process.exit(1)
-})
+process.exit(issuesFound > 0 ? 1 : 0)

@@ -6,3 +6,6 @@ npx lint-staged
 
 # Run TypeScript check
 npm run type-check
+
+echo "Checking for problematic escape sequences..."
+npm run find-escape-issues

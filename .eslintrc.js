@@ -158,6 +158,11 @@ module.exports = {
       },
     ],
     "prettier/prettier": ["error", {}, { usePrettierrc: true }],
+    "no-useless-escape": "error",
+    "no-control-regex": "error",
+    "no-invalid-regexp": "error",
+    "no-regex-spaces": "error",
+    "no-misleading-character-class": "error",
   },
   overrides: [
     // Specific rules for Next.js pages and API routes
@@ -191,6 +196,17 @@ module.exports = {
         ],
         "no-unexpected-multiline": "error",
         "@typescript-eslint/explicit-function-return-type": "off",
+      },
+    },
+    {
+      files: ["**/*.ts", "**/*.tsx"],
+      rules: {
+        // These rules help catch issues with escape sequences in strings and regular expressions
+        "no-useless-escape": "error",
+        "no-control-regex": "error",
+        "no-invalid-regexp": "error",
+        "no-regex-spaces": "error",
+        "no-misleading-character-class": "error",
       },
     },
   ],
