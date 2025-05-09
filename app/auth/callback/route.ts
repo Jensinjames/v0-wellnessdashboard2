@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { createServerSupabaseClient } from "@/lib/supabase-server"
+import { createServerClient } from "@supabase/ssr"
+import { cookies } from "next/headers"
+import type { Database } from "@/types/database"
 
 export async function GET(request: NextRequest) {
   const requestUrl = new URL(request.url)
@@ -25,7 +27,28 @@ export async function GET(request: NextRequest) {
 
   try {
     // Create a new supabase server client
-    const supabase = await createServerSupabaseClient()
+    const cookieStore = cookies()
+    const supabase = createServerClient<Database>(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          get(name: string) {
+            return cookieStore.get(name)?.value
+          },
+          set(
+            name: string,
+            value: string,
+            options: { path?: string; maxAge?: number; domain?: string; secure?: boolean },
+          ) {
+            cookieStore.set(name, value, options)
+          },
+          remove(name: string, options: { path?: string; domain?: string }) {
+            cookieStore.set(name, "", { ...options, maxAge: 0 })
+          },
+        },
+      },
+    )
 
     // Exchange the code for a session
     const { error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)

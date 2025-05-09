@@ -4,7 +4,6 @@
  */
 
 import { createServerClient } from "@supabase/ssr"
-import { cookies } from "next/headers"
 import type { CookieOptions } from "@supabase/ssr"
 import type { Database } from "@/types/database"
 import { serverEnv, validateEnv } from "@/lib/env"
@@ -15,14 +14,12 @@ let serverConnectionAttempts = 0
 const SERVER_CONNECTION_BACKOFF_BASE = 1000 // ms
 
 // This is a helper function to create a server client in route handlers and server actions
-export function createServerSupabaseClient(
+export async function createServerSupabaseClient(
   options: {
     retryOnError?: boolean
     timeout?: number
   } = {},
 ) {
-  const cookieStore = cookies()
-
   // Validate environment variables
   if (!validateEnv()) {
     throw new Error("Missing required environment variables for Supabase server client")
@@ -48,6 +45,10 @@ export function createServerSupabaseClient(
     (serverConnectionAttempts > 1
       ? Math.min(SERVER_CONNECTION_BACKOFF_BASE * Math.pow(2, serverConnectionAttempts - 1), 15000)
       : 10000)
+
+  // Use a dynamic import to avoid the "next/headers" issue in client components
+  const { cookies } = await import("next/headers")
+  const cookieStore = cookies()
 
   return createServerClient<Database>(serverEnv.SUPABASE_URL!, serverEnv.SUPABASE_ANON_KEY!, {
     cookies: {

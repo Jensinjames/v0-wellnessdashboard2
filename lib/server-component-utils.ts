@@ -8,7 +8,7 @@ export const getServerSupabase = cache(async () => {
 
 // Create cached data fetchers
 export const getUserProfile = cache(async (userId: string) => {
-  const supabase = getServerSupabase()
+  const supabase = await getServerSupabase()
   const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
 
   if (error) {
@@ -20,7 +20,7 @@ export const getUserProfile = cache(async (userId: string) => {
 })
 
 export const getCategories = cache(async (userId: string) => {
-  const supabase = getServerSupabase()
+  const supabase = await getServerSupabase()
   const { data, error } = await supabase.from("categories").select("*").eq("user_id", userId)
 
   if (error) {
@@ -32,7 +32,7 @@ export const getCategories = cache(async (userId: string) => {
 })
 
 export const getDashboardStats = cache(async (userId: string) => {
-  const supabase = getServerSupabase()
+  const supabase = await getServerSupabase()
   const { data, error } = await supabase.from("dashboard_stats").select("*").eq("user_id", userId).single()
 
   if (error) {
