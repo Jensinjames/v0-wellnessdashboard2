@@ -192,28 +192,76 @@ export class AuthService {
   }
 
   /**
-   * Request password reset for an email
+   * Request password reset for an email with retry mechanism
    */
   async resetPassword(email: string): Promise<{
     error: AuthError | Error | null
+    retried?: boolean
+  }> {
+    return this.resetPasswordWithRetry(email, 0)
+  }
+
+  /**
+   * Internal method for password reset with retry logic
+   */
+  private async resetPasswordWithRetry(
+    email: string,
+    retryCount: number,
+    maxRetries = 3,
+  ): Promise<{
+    error: AuthError | Error | null
+    retried?: boolean
   }> {
     try {
-      authLogger.info("Requesting password reset", { email })
+      if (retryCount > 0) {
+        authLogger.info(`Retrying password reset (attempt ${retryCount} of ${maxRetries})`, { email })
+      } else {
+        authLogger.info("Requesting password reset", { email })
+      }
 
       const { error } = await this.supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/reset-password`,
       })
 
-      if (error) {
-        authLogger.error("Password reset request error:", { error, email })
-        return { error }
+      // If successful or it's not a 500 unexpected_failure, return the result
+      if (!error || !(error?.__isAuthError && error?.status === 500 && error?.code === "unexpected_failure")) {
+        if (error) {
+          authLogger.error("Password reset request error:", { error, email })
+        } else {
+          authLogger.info("Password reset email sent", { email })
+        }
+
+        return {
+          error,
+          retried: retryCount > 0,
+        }
       }
 
-      authLogger.info("Password reset email sent", { email })
-      return { error: null }
+      // If we've reached max retries, return the error
+      if (retryCount >= maxRetries) {
+        authLogger.error(`Password reset failed after ${maxRetries} retries`, { error, email })
+        return {
+          error,
+          retried: true,
+        }
+      }
+
+      // Calculate backoff delay with jitter (100ms, 200ms, 400ms base times with jitter)
+      const delay = Math.floor(2 ** retryCount * 100 * (0.75 + Math.random() * 0.5))
+
+      authLogger.info(`Auth service returned 500 error. Retrying password reset in ${delay}ms...`, { email })
+
+      // Wait for the backoff period
+      await new Promise((resolve) => setTimeout(resolve, delay))
+
+      // Retry with incremented retry counter
+      return this.resetPasswordWithRetry(email, retryCount + 1, maxRetries)
     } catch (error: any) {
       authLogger.error("Unexpected password reset error:", error)
-      return { error }
+      return {
+        error,
+        retried: retryCount > 0,
+      }
     }
   }
 

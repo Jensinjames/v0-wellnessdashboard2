@@ -1,12 +1,6 @@
 /**
- * Migration script to help with transitioning from Pages Router to App Router
- *
- * This script:
- * 1. Identifies files in the pages/ directory
- * 2. Suggests App Router equivalents
- * 3. Identifies usage of next/headers in non-App Router contexts
- *
- * Usage: node scripts/migrate-to-app-router.js
+ * This script helps migrate a Next.js project from Pages Router to App Router
+ * by identifying files that need to be moved and suggesting changes.
  */
 
 const fs = require("fs")
@@ -14,128 +8,160 @@ const path = require("path")
 const { execSync } = require("child_process")
 
 // Configuration
-const ROOT_DIR = path.resolve(__dirname, "..")
-const PAGES_DIR = path.join(ROOT_DIR, "pages")
-const APP_DIR = path.join(ROOT_DIR, "app")
+const pagesDir = "pages"
+const appDir = "app"
+const componentsDir = "components"
 
-// Check if pages directory exists
-if (!fs.existsSync(PAGES_DIR)) {
-  console.log("✅ No pages/ directory found. You are already using App Router exclusively.")
-  process.exit(0)
+// Create app directory if it doesn't exist
+if (!fs.existsSync(appDir)) {
+  fs.mkdirSync(appDir)
+  console.log(`Created ${appDir} directory`)
 }
 
-// Find all files in the pages directory
-function findFiles(dir, fileList = []) {
-  const files = fs.readdirSync(dir)
-
-  files.forEach((file) => {
-    const filePath = path.join(dir, file)
-    const stat = fs.statSync(filePath)
-
-    if (stat.isDirectory()) {
-      findFiles(filePath, fileList)
-    } else {
-      fileList.push(filePath)
-    }
-  })
-
-  return fileList
-}
-
-// Map Pages Router paths to App Router paths
-function mapToAppRouter(pagePath) {
-  // Remove the pages directory prefix
-  const relativePath = pagePath.replace(PAGES_DIR, "")
-
-  // Handle special cases
-  if (relativePath.startsWith("/api/")) {
-    // API routes
-    const apiPath = relativePath.replace(".ts", "").replace(".js", "")
-    return `app${apiPath}/route.ts`
-  } else if (relativePath.includes("_app.") || relativePath.includes("_document.")) {
-    // _app and _document files
-    return "app/layout.tsx (merge functionality)"
-  } else if (relativePath.includes("_middleware.")) {
-    // Middleware
-    return "middleware.ts (at project root)"
-  } else if (relativePath.includes("[") && relativePath.includes("]")) {
-    // Dynamic routes
-    const dynamicPath = relativePath
-      .replace(/\[([^\]]+)\]/g, "$1") // Replace [param] with param
-      .replace(/\.tsx$|\.jsx$|\.ts$|\.js$/, "")
-
-    if (dynamicPath.endsWith("/index")) {
-      return `app${dynamicPath.replace("/index", "")}/[...params]/page.tsx`
-    }
-    return `app${dynamicPath}/page.tsx`
-  } else {
-    // Regular pages
-    const normalPath = relativePath.replace(/\.tsx$|\.jsx$|\.ts$|\.js$/, "")
-
-    if (normalPath.endsWith("/index")) {
-      return `app${normalPath.replace("/index", "")}/page.tsx`
-    }
-    return `app${normalPath}/page.tsx`
+// Function to identify page files
+function findPageFiles() {
+  if (!fs.existsSync(pagesDir)) {
+    console.log("No pages directory found. Skipping page migration.")
+    return []
   }
+
+  const pageFiles = []
+
+  function scanDirectory(dir) {
+    const entries = fs.readdirSync(dir, { withFileTypes: true })
+
+    for (const entry of entries) {
+      const fullPath = path.join(dir, entry.name)
+
+      if (entry.isDirectory()) {
+        scanDirectory(fullPath)
+      } else if (entry.isFile() && /\.(js|jsx|ts|tsx)$/.test(entry.name)) {
+        // Skip _app, _document, and API routes for now
+        if (!/^_app|^_document|^api\//.test(path.relative(pagesDir, fullPath))) {
+          pageFiles.push(fullPath)
+        }
+      }
+    }
+  }
+
+  scanDirectory(pagesDir)
+  return pageFiles
 }
 
-// Check for next/headers usage in files
-function checkForNextHeaders(filePath) {
+// Function to suggest app router path for a page file
+function suggestAppRouterPath(pageFile) {
+  const relativePath = path.relative(pagesDir, pageFile)
+  const parsedPath = path.parse(relativePath)
+
+  // Handle index files
+  if (parsedPath.name === "index") {
+    return path.join(appDir, parsedPath.dir, "page" + parsedPath.ext)
+  }
+
+  // Handle dynamic routes
+  const dirName = parsedPath.name.replace(/^\[(.+)\]$/, "$1")
+  if (dirName !== parsedPath.name) {
+    return path.join(appDir, parsedPath.dir, `[${dirName}]`, "page" + parsedPath.ext)
+  }
+
+  // Handle regular pages
+  return path.join(appDir, parsedPath.dir, parsedPath.name, "page" + parsedPath.ext)
+}
+
+// Function to analyze a file for client components
+function analyzeFileForClientComponents(filePath) {
   const content = fs.readFileSync(filePath, "utf8")
-  return content.includes("next/headers")
+
+  const clientHooks = [
+    "useState",
+    "useEffect",
+    "useContext",
+    "useReducer",
+    "useCallback",
+    "useMemo",
+    "useRef",
+    "useImperativeHandle",
+    "useLayoutEffect",
+    "useDebugValue",
+  ]
+
+  const foundHooks = []
+
+  for (const hook of clientHooks) {
+    const regex = new RegExp(`\\b${hook}\\s*\\(`, "g")
+    if (regex.test(content)) {
+      foundHooks.push(hook)
+    }
+  }
+
+  // Check for event handlers
+  const hasEventHandlers = /on\w+\s*=\s*\{/.test(content)
+
+  // Check for browser APIs
+  const hasBrowserAPIs = /\bwindow\b|\bdocument\b|\blocalStorage\b|\bsessionStorage\b/.test(content)
+
+  return {
+    needsClientDirective: foundHooks.length > 0 || hasEventHandlers || hasBrowserAPIs,
+    foundHooks,
+    hasEventHandlers,
+    hasBrowserAPIs,
+  }
 }
 
 // Main execution
-console.log("🔍 Analyzing project for Pages Router to App Router migration...\n")
+console.log("Starting migration analysis from Pages Router to App Router...")
 
-// Find all files in pages directory
-const pagesFiles = findFiles(PAGES_DIR)
-console.log(`Found ${pagesFiles.length} files in pages/ directory.\n`)
+// Find page files
+const pageFiles = findPageFiles()
+console.log(`Found ${pageFiles.length} page files to analyze.`)
 
-// Generate migration plan
-console.log("📋 Migration Plan:")
-console.log("=================\n")
+// Analyze each page file
+const migrationPlan = []
 
-pagesFiles.forEach((file) => {
-  const appRouterEquivalent = mapToAppRouter(file)
-  const usesNextHeaders = checkForNextHeaders(file)
+for (const pageFile of pageFiles) {
+  const appRouterPath = suggestAppRouterPath(pageFile)
+  const analysis = analyzeFileForClientComponents(pageFile)
 
-  console.log(`${file} → ${appRouterEquivalent}`)
-  if (usesNextHeaders) {
-    console.log(`  ⚠️ WARNING: This file uses next/headers which is only compatible with App Router`)
-  }
-  console.log("")
-})
-
-// Check for next/headers usage in other files
-console.log("\n🔍 Checking for next/headers usage in other files...")
-
-try {
-  const grepResult = execSync(
-    'grep -r "next/headers" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.jsx" . --exclude-dir=node_modules --exclude-dir=.next',
-    { encoding: "utf8" },
-  )
-
-  const lines = grepResult.split("\n").filter((line) => line && !line.includes("/app/"))
-
-  if (lines.length > 0) {
-    console.log("\n⚠️ Found next/headers usage outside of app/ directory:")
-    lines.forEach((line) => {
-      console.log(`  ${line}`)
-    })
-    console.log("\nThese files need to be updated to use App Router compatible APIs.")
-  } else {
-    console.log("✅ No problematic next/headers usage found outside of app/ directory.")
-  }
-} catch (error) {
-  // grep returns non-zero exit code if no matches found
-  console.log("✅ No problematic next/headers usage found outside of app/ directory.")
+  migrationPlan.push({
+    currentPath: pageFile,
+    suggestedPath: appRouterPath,
+    analysis,
+  })
 }
 
-console.log("\n📝 Next Steps:")
-console.log("1. Move all pages to their App Router equivalents")
-console.log("2. Update API routes to use Route Handlers")
-console.log("3. Update middleware to use App Router patterns")
-console.log("4. Remove the pages/ directory once migration is complete")
-console.log("\nRefer to the Next.js migration guide for more details:")
-console.log("https://nextjs.org/docs/app/building-your-application/upgrading/app-router-migration")
+// Print migration plan
+console.log("\nMigration Plan:")
+console.log("==============")
+
+for (const item of migrationPlan) {
+  console.log(`\nFile: ${item.currentPath}`)
+  console.log(`Suggested App Router path: ${item.suggestedPath}`)
+
+  if (item.analysis.needsClientDirective) {
+    console.log('Needs "use client" directive because:')
+
+    if (item.analysis.foundHooks.length > 0) {
+      console.log(`- Uses React hooks: ${item.analysis.foundHooks.join(", ")}`)
+    }
+
+    if (item.analysis.hasEventHandlers) {
+      console.log("- Contains event handlers")
+    }
+
+    if (item.analysis.hasBrowserAPIs) {
+      console.log("- Uses browser APIs")
+    }
+  } else {
+    console.log("Can be a Server Component (no client-side features detected)")
+  }
+}
+
+// Suggest next steps
+console.log("\nNext Steps:")
+console.log("1. Create a layout.tsx file in the app directory")
+console.log('2. Move your pages one by one, adding "use client" directives where needed')
+console.log("3. Update imports and paths")
+console.log("4. Test each page after migration")
+console.log("5. Move API routes to route handlers")
+
+console.log("\nMigration analysis complete!")

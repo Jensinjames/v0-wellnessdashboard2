@@ -19,6 +19,7 @@ export function EnhancedForgotPasswordForm() {
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<{ email?: string }>({})
   const [success, setSuccess] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
   const { resetPassword } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -55,8 +56,16 @@ export function EnhancedForgotPasswordForm() {
 
       if (resetError) {
         console.error("Password reset error details:", resetError)
-        const errorInfo = handleAuthError({ message: resetError }, { operation: "password-reset" })
-        setError(errorInfo.message)
+
+        // Check if it's a server error that might be temporary
+        if (resetError.includes("temporarily unavailable") || resetError.includes("currently unavailable")) {
+          setRetryCount((prev) => prev + 1)
+          setError(`${resetError} (Attempt ${retryCount + 1})`)
+        } else {
+          const errorInfo = handleAuthError({ message: resetError }, { operation: "password-reset" })
+          setError(errorInfo.message)
+        }
+
         setIsLoading(false)
         return
       }
@@ -69,6 +78,11 @@ export function EnhancedForgotPasswordForm() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleRetry = () => {
+    setError(null)
+    handleSubmit(new Event("submit") as any)
   }
 
   if (success) {
@@ -105,7 +119,23 @@ export function EnhancedForgotPasswordForm() {
         <Alert className="rounded-md bg-red-50 p-4 text-sm text-red-700" role="alert" aria-live="assertive">
           <AlertTriangle className="h-4 w-4 mr-2" aria-hidden="true" />
           <AlertTitle>Password Reset Failed</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>
+            {error}
+            {error.includes("temporarily unavailable") || error.includes("currently unavailable") ? (
+              <div className="mt-2">
+                <Button variant="outline" size="sm" onClick={handleRetry} className="mt-1" disabled={isLoading}>
+                  {isLoading ? (
+                    <>
+                      <RefreshCw className="h-3 w-3 mr-1 animate-spin" aria-hidden="true" />
+                      Retrying...
+                    </>
+                  ) : (
+                    "Try Again"
+                  )}
+                </Button>
+              </div>
+            ) : null}
+          </AlertDescription>
         </Alert>
       )}
 

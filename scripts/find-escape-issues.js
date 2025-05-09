@@ -1,19 +1,18 @@
 const fs = require("fs")
 const path = require("path")
-const { execSync } = require("child_process")
 
-// Patterns that might cause "Expected unicode escape" errors
+// Patterns that might cause "Expected unicode escape" errors - using string literals instead of regex literals
 const problematicPatterns = [
-  // Incomplete unicode escapes
-  /\\u[0-9a-fA-F]{0,3}(?![0-9a-fA-F])/g,
+  // Incomplete unicode escapes - using string representation to avoid issues
+  "\\\\u[0-9a-fA-F]{0,3}(?![0-9a-fA-F])",
   // Incomplete hex escapes
-  /\\x[0-9a-fA-F]{0,1}(?![0-9a-fA-F])/g,
+  "\\\\x[0-9a-fA-F]{0,1}(?![0-9a-fA-F])",
   // Invalid escape sequences in strings
-  /\\[^'"\\/bfnrt0-9xu]/g,
+  "\\\\[^'\"\\\\bfnrt0-9xu]",
   // Potential issues with regex
-  /\\[pP]\{[^}]*$/g,
+  "\\\\[pP]\\{[^}]*$",
   // Unescaped line breaks in strings
-  /[^\\]\n[^'"`]/g,
+  "[^\\\\]\\n[^'\"`]",
 ]
 
 // File extensions to check
@@ -27,8 +26,11 @@ function scanFile(filePath) {
     const content = fs.readFileSync(filePath, "utf8")
     let hasIssues = false
 
-    problematicPatterns.forEach((pattern, index) => {
+    problematicPatterns.forEach((patternStr, index) => {
+      // Create regex from string pattern at runtime
+      const pattern = new RegExp(patternStr, "g")
       const matches = content.match(pattern)
+
       if (matches) {
         if (!hasIssues) {
           console.log(`\nIssues in ${filePath}:`)
@@ -38,25 +40,23 @@ function scanFile(filePath) {
         console.log(`  Pattern ${index + 1}: ${matches.length} matches`)
 
         // Find line numbers for each match
-        const lastIndex = 0
-        let lineNumber = 1
+        const lineNumber = 1
         const lines = []
+        const contentLines = content.split("\n")
 
-        for (let i = 0; i < content.length; i++) {
-          if (content[i] === "\n") {
-            lineNumber++
-          }
-
-          if (pattern.test(content.slice(i, i + 10))) {
-            const line = content.slice(i - 20, i + 30).replace(/\n/g, "\\n")
-            lines.push({ lineNumber, context: line })
-            i += 5 // Skip ahead to avoid multiple matches on the same issue
+        for (let i = 0; i < contentLines.length; i++) {
+          const line = contentLines[i]
+          if (pattern.test(line)) {
+            lines.push({
+              lineNumber: i + 1,
+              context: line.length > 50 ? line.substring(0, 50) + "..." : line,
+            })
           }
         }
 
         // Display up to 3 examples
         lines.slice(0, 3).forEach(({ lineNumber, context }) => {
-          console.log(`    Line ${lineNumber}: ...${context}...`)
+          console.log(`    Line ${lineNumber}: ${context}`)
         })
 
         if (lines.length > 3) {

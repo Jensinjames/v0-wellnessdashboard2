@@ -526,10 +526,24 @@ export function AuthProvider({ children }: AuthProviderProps) {
 
       authLogger.info("Attempting password reset", { email: sanitizedEmail })
 
-      // Use our auth service to reset password
-      const { error } = await authService.resetPassword(sanitizedEmail)
+      // Use our auth service to reset password with retry mechanism
+      const { error, retried } = await authService.resetPassword(sanitizedEmail)
 
       if (error) {
+        // Special handling for 500 unexpected_failure that couldn't be resolved with retries
+        if (error?.__isAuthError && error?.status === 500 && error?.code === "unexpected_failure") {
+          authLogger.error("Authentication service error (500) during password reset:", {
+            error,
+            email: sanitizedEmail,
+          })
+          return {
+            success: false,
+            error: retried
+              ? "Authentication service is currently unavailable. Please try again later."
+              : "Authentication service temporarily unavailable. Please try again.",
+          }
+        }
+
         authLogger.error("Reset password error:", { error, email: sanitizedEmail })
         return { success: false, error: error.message }
       }
