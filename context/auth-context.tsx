@@ -29,6 +29,7 @@ interface AuthContextType {
     error: Error | null
     mockSignIn?: boolean
     fieldErrors?: { email?: string; password?: string }
+    userId?: string
   }>
   signUp: (credentials: { email: string; password: string }) => Promise<{
     error: Error | null
@@ -477,6 +478,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (error) {
             debugLog("Sign-in error from Supabase", error)
 
+            // Include the user ID in the error response if available
+            const userId = data?.user?.id
+
             // Check if the error is due to email not being verified
             if (error.message?.includes("Email not confirmed")) {
               return {
@@ -484,6 +488,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   "Please verify your email before signing in. Check your inbox for a verification link.",
                 ),
                 mockSignIn: false,
+                userId, // Include the user ID
               }
             }
 
@@ -492,6 +497,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                 error: new Error(error.message),
                 mockSignIn: false,
                 networkIssue: true,
+                userId, // Include the user ID
               }
             }
 
@@ -505,10 +511,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
               return {
                 error: new Error("Database error granting user. Please try again or use demo mode."),
                 mockSignIn: false,
+                userId, // Include the user ID
               }
             }
 
-            return { error: new Error(error.message), mockSignIn: false }
+            return { error: new Error(error.message), mockSignIn: false, userId }
           }
 
           // Explicitly update the state with the new session data

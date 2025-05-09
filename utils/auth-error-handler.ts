@@ -25,10 +25,34 @@ export function handleAuthError(error: any, operation: string): string {
     error.message?.includes("db error") ||
     error.message?.includes("database connection") ||
     error.message?.includes("connection error") ||
-    error.message?.includes("could not connect to database")
+    error.message?.includes("could not connect to database") ||
+    error.message?.includes("role") ||
+    error.message?.includes("permission denied") ||
+    error.message?.includes("violates foreign key constraint")
   ) {
+    // Log detailed error information for debugging
+    console.warn("Database error details:", {
+      message: error.message,
+      code: error.code,
+      details: error.details,
+      hint: error.hint,
+      operation,
+    })
+
     if (operation === "sign-in" || operation === "sign-up") {
-      return "We encountered a temporary database issue. Please try again or use demo mode."
+      // For sign-in/sign-up, provide a more specific message based on error details
+      if (error.message?.includes("foreign key constraint")) {
+        return "Account setup issue. Please contact support or try again later."
+      }
+      if (error.message?.includes("permission denied")) {
+        return "Permission issue with your account. Please try again or contact support."
+      }
+      if (error.message?.includes("role")) {
+        return "User role assignment failed. Please try again later."
+      }
+
+      // Default database error message for sign-in/sign-up
+      return "We encountered a temporary database issue. Please try again in a moment."
     }
     return "Database connection issue. Please try again in a moment."
   }
@@ -36,7 +60,7 @@ export function handleAuthError(error: any, operation: string): string {
   // Handle authentication errors
   if (error.message?.includes("Invalid login credentials") || error.status === 400) {
     if (operation === "sign-in") {
-      return "Invalid email or password. Please try again or use demo mode."
+      return "Invalid email or password. Please try again."
     }
   }
 

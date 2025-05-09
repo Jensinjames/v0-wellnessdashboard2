@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { useAuth } from "@/context/auth-context"
@@ -10,9 +10,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Info, AlertTriangle, Mail, Loader2, Database, RefreshCw, User } from "lucide-react"
+import { Info, AlertTriangle, Mail, Loader2, Database, RefreshCw, User, ShieldCheck } from "lucide-react"
 import { handleAuthError } from "@/utils/auth-error-handler"
 import { checkSupabaseConnection } from "@/lib/supabase-client-enhanced"
+import { recoverFromDatabaseError } from "@/utils/db-recovery-utils"
 
 export function SignInForm() {
   const [email, setEmail] = useState("")
@@ -24,9 +25,12 @@ export function SignInForm() {
   const [isEmailVerificationError, setIsEmailVerificationError] = useState(false)
   const [networkError, setNetworkError] = useState(false)
   const [databaseError, setDatabaseError] = useState(false)
+  const [isRecovering, setIsRecovering] = useState(false)
+  const [recoverySuccess, setRecoverySuccess] = useState(false)
   const [redirectPath, setRedirectPath] = useState("/dashboard")
   const [connectionStatus, setConnectionStatus] = useState<{ isConnected: boolean; latency: number } | null>(null)
   const [isCheckingConnection, setIsCheckingConnection] = useState(false)
+  const [lastSignInAttempt, setLastSignInAttempt] = useState<{ userId: string; email: string } | null>(null)
   const { signIn, refreshSession, getAnonymousId } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -72,6 +76,7 @@ export function SignInForm() {
       setIsEmailVerificationError(false)
       setNetworkError(false)
       setDatabaseError(false)
+      setRecoverySuccess(false)
     }
   }, [email, password, error, fieldErrors])
 
@@ -111,6 +116,31 @@ export function SignInForm() {
     }
   }
 
+  const handleDatabaseRecovery = useCallback(async () => {
+    if (!lastSignInAttempt) {
+      setError("No sign-in attempt information available for recovery")
+      return
+    }
+
+    setIsRecovering(true)
+    try {
+      const { userId, email } = lastSignInAttempt
+      const { success, error } = await recoverFromDatabaseError(userId, email)
+
+      if (success) {
+        setRecoverySuccess(true)
+        setDatabaseError(false)
+        setError(null)
+      } else {
+        setError(`Recovery failed: ${error?.message || "Unknown error"}`)
+      }
+    } catch (err: any) {
+      setError(`Recovery error: ${err.message || "Unknown error"}`)
+    } finally {
+      setIsRecovering(false)
+    }
+  }, [lastSignInAttempt])
+
   // Update the handleSubmit function to better handle database errors
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -121,6 +151,7 @@ export function SignInForm() {
     setIsEmailVerificationError(false)
     setNetworkError(false)
     setDatabaseError(false)
+    setRecoverySuccess(false)
     setSignInAttempts((prev) => prev + 1)
 
     // Get the anonymous ID for potential data migration
@@ -172,6 +203,14 @@ export function SignInForm() {
       if (result.error) {
         const errorMessage = result.error.message || "An error occurred during sign-in"
 
+        // Store the user ID if available for potential recovery
+        if (result.userId) {
+          setLastSignInAttempt({
+            userId: result.userId,
+            email: trimmedEmail,
+          })
+        }
+
         // Check if it's a database error - expanded conditions
         if (
           errorMessage.includes("Database error") ||
@@ -179,7 +218,10 @@ export function SignInForm() {
           errorMessage.includes("Database error granting user") ||
           errorMessage.includes("db error") ||
           errorMessage.includes("database connection") ||
-          errorMessage.includes("connection error")
+          errorMessage.includes("connection error") ||
+          errorMessage.includes("permission denied") ||
+          errorMessage.includes("role") ||
+          errorMessage.includes("violates foreign key constraint")
         ) {
           setDatabaseError(true)
           setError(handleAuthError(result.error, "sign-in"))
@@ -347,6 +389,28 @@ export function SignInForm() {
                 "We're experiencing a temporary database issue. This might be due to maintenance or high traffic."}
             </p>
             <div className="mt-2 flex flex-col sm:flex-row gap-2">
+              {lastSignInAttempt && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="bg-blue-100 border-blue-200 text-blue-800 hover:bg-blue-200"
+                  onClick={handleDatabaseRecovery}
+                  disabled={isRecovering}
+                >
+                  {isRecovering ? (
+                    <>
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                      <span>Repairing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <ShieldCheck className="h-4 w-4 mr-2" aria-hidden="true" />
+                      <span>Repair Account</span>
+                    </>
+                  )}
+                </Button>
+              )}
               <Button
                 type="button"
                 variant="outline"
@@ -369,6 +433,16 @@ export function SignInForm() {
                 Use Demo Mode
               </Button>
             </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {recoverySuccess && (
+        <Alert className="rounded-md bg-green-50 p-4 text-sm text-green-700" role="alert" aria-live="assertive">
+          <ShieldCheck className="h-4 w-4" aria-hidden="true" />
+          <AlertTitle>Account Repaired</AlertTitle>
+          <AlertDescription>
+            <p className="mb-2">Your account has been successfully repaired. Please try signing in again.</p>
           </AlertDescription>
         </Alert>
       )}
@@ -470,7 +544,7 @@ export function SignInForm() {
       <Button
         type="submit"
         className="w-full"
-        disabled={isLoading || mockSignIn}
+        disabled={isLoading || mockSignIn || isRecovering}
         aria-busy={isLoading}
         aria-live="polite"
       >
@@ -504,7 +578,7 @@ export function SignInForm() {
           size="sm"
           className="mt-2"
           onClick={handleDemoSignIn}
-          disabled={isLoading || mockSignIn}
+          disabled={isLoading || mockSignIn || isRecovering}
         >
           Use Demo Mode
         </Button>
