@@ -147,7 +147,7 @@ export function EnhancedForgotPasswordForm() {
       </Button>
 
       <div className="text-center text-sm">
-        Remember your password?{" "}
+        {"Remember your password? "}
         <Link
           href="/auth/sign-in"
           className="text-blue-600 hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"

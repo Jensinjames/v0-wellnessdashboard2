@@ -53,7 +53,7 @@ export default function VerifyEmailPage() {
           <EmailVerificationStatus email={email} />
         ) : (
           <Alert>
-            <AlertDescription>No email address found. Please go back to sign-in or sign-up.</AlertDescription>
+            <AlertDescription>{"No email address found. Please go back to sign-in or sign-up."}</AlertDescription>
           </Alert>
         )}
       </Suspense>

@@ -230,11 +230,12 @@ export function EnhancedSignUpForm() {
           <AlertTitle>Verification Email Sent</AlertTitle>
           <AlertDescription>
             <p className="mb-2">
-              We've sent a verification email to <strong>{email}</strong>. Please check your inbox and click the
-              verification link to complete your registration.
+              {"We've sent a verification email to "}
+              <strong>{email}</strong>
+              {". Please check your inbox and click the verification link to complete your registration."}
             </p>
             <p className="mb-2">
-              If you don't see the email, please check your spam folder or click the button below to resend.
+              {"If you don't see the email, please check your spam folder or click the button below to resend."}
             </p>
             <div className="mt-4 flex flex-col sm:flex-row gap-3">
               <Button
@@ -270,7 +271,7 @@ export function EnhancedSignUpForm() {
           <CheckCircle className="h-4 w-4" aria-hidden="true" />
           <AlertTitle>Sign-up Successful</AlertTitle>
           <AlertDescription>
-            Your account has been created successfully. You'll be redirected to the verification page.
+            {"Your account has been created successfully. You'll be redirected to the verification page."}
           </AlertDescription>
         </Alert>
       )}
@@ -420,7 +421,7 @@ export function EnhancedSignUpForm() {
       )}
 
       <div className="text-center text-sm">
-        Already have an account?{" "}
+        {"Already have an account? "}
         <Link
           href="/auth/sign-in"
           className="text-blue-600 hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"

@@ -123,8 +123,11 @@ export function EmailVerificationStatus({ email }: EmailVerificationStatusProps)
       <AlertTitle>Email Not Verified</AlertTitle>
       <AlertDescription>
         <p className="mb-2">
-          Your email <strong>{email}</strong> has not been verified yet. Please check your inbox and click the
-          verification link in the email we sent you.
+          {"Your email "}
+          <strong>{email}</strong>
+          {
+            " has not been verified yet. Please check your inbox and click the verification link in the email we sent you."
+          }
         </p>
         <div className="flex flex-col sm:flex-row gap-2 mt-4">
           <Button onClick={handleResendVerification} variant="outline" size="sm" disabled={isResending}>
