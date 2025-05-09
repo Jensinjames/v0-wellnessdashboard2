@@ -1,88 +1,60 @@
-/**
- * Schema Utilities
- * Provides functions to fix database schema issues
- */
-import { createLogger } from "@/utils/logger"
-
-// Create a dedicated logger for schema operations
-const logger = createLogger("SchemaUtils")
+import { createServerSupabaseClient } from "@/lib/supabase-server"
 
 /**
- * Fix schema issues in the database
- * This function attempts to create missing tables and fix permissions
+ * Gets the column names for a specific table
+ * @param tableName The name of the table to inspect
+ * @returns An array of column names
  */
-export async function fixSchemaIssue(): Promise<{ success: boolean; error?: string }> {
+export async function getTableColumns(tableName: string): Promise<string[]> {
   try {
-    logger.info("Attempting to fix schema issues")
+    const supabase = createServerSupabaseClient()
 
-    // Call the API endpoint to fix schema issues
-    const response = await fetch("/api/fix-schema", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        action: "fix_schema",
-        tables: ["user_changes_log"],
-      }),
-    })
+    // Fetch a single row to get column names
+    const { data, error } = await supabase.from(tableName).select("*").limit(1)
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}))
-      logger.error("Schema fix API returned error", { status: response.status, error: errorData })
-      return {
-        success: false,
-        error: errorData.message || `API returned status ${response.status}`,
-      }
+    if (error) {
+      console.error(`Error fetching columns for table ${tableName}:`, error)
+      return []
     }
 
-    const data = await response.json()
-    logger.info("Schema fix completed successfully", data)
-
-    return { success: true }
+    // Extract column names from the first row
+    return data && data.length > 0 ? Object.keys(data[0]) : []
   } catch (error) {
-    logger.error("Error fixing schema:", error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
-    }
+    console.error(`Unexpected error inspecting table ${tableName}:`, error)
+    return []
   }
 }
 
 /**
- * Check if a table exists in the database
+ * Checks if a column exists in a table
+ * @param tableName The name of the table to check
+ * @param columnName The name of the column to check for
+ * @returns True if the column exists, false otherwise
  */
-export async function checkTableExists(tableName: string): Promise<boolean> {
-  try {
-    const response = await fetch(`/api/check-table?table=${encodeURIComponent(tableName)}`)
-
-    if (!response.ok) {
-      return false
-    }
-
-    const data = await response.json()
-    return data.exists
-  } catch (error) {
-    logger.error(`Error checking if table ${tableName} exists:`, error)
-    return false
-  }
+export async function columnExists(tableName: string, columnName: string): Promise<boolean> {
+  const columns = await getTableColumns(tableName)
+  return columns.includes(columnName)
 }
 
 /**
- * Get schema version from the database
+ * Gets the actual database schema for debugging purposes
+ * @returns An object mapping table names to arrays of column names
  */
-export async function getSchemaVersion(): Promise<string> {
+export async function getDatabaseSchema(): Promise<Record<string, string[]>> {
   try {
-    const response = await fetch("/api/schema-version")
+    const supabase = createServerSupabaseClient()
+    const schema: Record<string, string[]> = {}
 
-    if (!response.ok) {
-      return "unknown"
+    // List of tables to inspect
+    const tables = ["profiles", "users", "wellness_entries", "categories", "goals"]
+
+    for (const table of tables) {
+      schema[table] = await getTableColumns(table)
     }
 
-    const data = await response.json()
-    return data.version
+    return schema
   } catch (error) {
-    logger.error("Error getting schema version:", error)
-    return "unknown"
+    console.error("Error fetching database schema:", error)
+    return {}
   }
 }

@@ -1,285 +1,229 @@
 "use client"
 
-import { useState } from "react"
+import type React from "react"
+
+import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
-import { z } from "zod"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { Eye, EyeOff, Loader2 } from "lucide-react"
-
+import { useAuth } from "@/context/auth-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { useAuth } from "@/context/auth-context"
-import { createLogger } from "@/utils/logger"
-import { handleAuthError, isSchemaError, getTechnicalErrorDetails } from "@/utils/auth-error-handler"
-import { fixSchemaIssue } from "@/utils/schema-utils" // Import the schema fix utility
-// Import the AuthServiceStatus component
-import { AuthServiceStatus } from "@/components/auth/auth-service-status"
-
-// Create a dedicated logger for the sign-in form
-const logger = createLogger("SignInForm")
-
-// Define the form schema
-const formSchema = z.object({
-  email: z.string().email("Please enter a valid email address"),
-  password: z.string().min(8, "Password must be at least 8 characters"),
-})
-
-type FormData = z.infer<typeof formSchema>
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { Info, AlertTriangle, Mail } from "lucide-react"
 
 export function SignInForm() {
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
+  const [mockSignIn, setMockSignIn] = useState(false)
+  const [isEmailVerificationError, setIsEmailVerificationError] = useState(false)
+  const [redirectPath, setRedirectPath] = useState("/dashboard")
   const { signIn } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const [isLoading, setIsLoading] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [isSchemaIssue, setIsSchemaIssue] = useState(false)
-  const [technicalDetails, setTechnicalDetails] = useState<string | null>(null)
-  const [retryCount, setRetryCount] = useState(0)
-  const [isFixingSchema, setIsFixingSchema] = useState(false)
-  const MAX_RETRIES = 2
-  const [isRetrying, setIsRetrying] = useState(false)
 
-  // Get the redirect URL from the query string
-  const redirectTo = searchParams?.get("redirectTo") || "/dashboard"
-
-  // Initialize the form
-  const {
-    register,
-    handleSubmit: hookFormSubmit,
-    formState: { errors },
-    setError: setFieldError,
-  } = useForm<FormData>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-    },
-  })
-
-  // Handle schema fix
-  const handleSchemaFix = async () => {
-    try {
-      setIsFixingSchema(true)
-      setError("Attempting to fix database schema issue...")
-
-      // Call the schema fix utility
-      const result = await fixSchemaIssue()
-
-      if (result.success) {
-        setError("Database schema fixed. Please try signing in again.")
-        setIsSchemaIssue(false)
-        setTechnicalDetails(null)
-      } else {
-        setError(`Schema fix failed: ${result.error || "Unknown error"}. Please contact support.`)
+  // Use effect to safely access search params after mount
+  useEffect(() => {
+    if (searchParams) {
+      const redirectTo = searchParams.get("redirectTo")
+      if (redirectTo) {
+        setRedirectPath(redirectTo)
       }
-    } catch (err) {
-      logger.error("Error fixing schema:", err)
-      setError("Failed to fix schema issue. Please contact support.")
-    } finally {
-      setIsFixingSchema(false)
     }
-  }
+  }, [searchParams])
 
-  // Handle form submission
-  const handleSubmit = async (data: FormData) => {
-    try {
-      setIsLoading(true)
+  useEffect(() => {
+    // Clear any errors when inputs change
+    if (error || Object.keys(fieldErrors).length > 0) {
       setError(null)
-      setIsSchemaIssue(false)
-      setTechnicalDetails(null)
-      setIsRetrying(false)
+      setFieldErrors({})
+      setIsEmailVerificationError(false)
+    }
+  }, [email, password, error, fieldErrors])
 
-      // Log the attempt (without sensitive data)
-      logger.info("Attempting sign-in", {
-        emailProvided: !!data.email,
-        passwordProvided: !!data.password,
-      })
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
+    setError(null)
+    setFieldErrors({})
+    setMockSignIn(false)
+    setIsEmailVerificationError(false)
 
-      // Check if we need to show the retrying UI
-      if (retryCount > 0) {
-        setIsRetrying(true)
+    try {
+      // Pass credentials as a single object with the correct structure
+      const result = await signIn({ email, password })
+
+      if (result.fieldErrors) {
+        setFieldErrors(result.fieldErrors)
+        setIsLoading(false)
+        return
       }
 
-      // Call the signIn function from the auth context
-      const { error: signInError, fieldErrors } = await signIn(
-        {
-          email: data.email,
-          password: data.password,
-        },
-        redirectTo,
-      )
-
-      // Handle field-specific errors
-      if (fieldErrors) {
-        Object.entries(fieldErrors).forEach(([field, message]) => {
-          if (message && (field === "email" || field === "password")) {
-            setFieldError(field as "email" | "password", {
-              type: "manual",
-              message,
-            })
-          }
-        })
-      }
-
-      // Handle general errors
-      if (signInError) {
-        // Process the error
-        const authError = handleAuthError(signInError, { email: data.email })
-
-        // Check if it's a schema error
-        if (isSchemaError(signInError)) {
-          setIsSchemaIssue(true)
-          setTechnicalDetails(getTechnicalErrorDetails(signInError))
-
-          // If we haven't exceeded max retries, try again after a delay
-          if (retryCount < MAX_RETRIES) {
-            setRetryCount((prev) => prev + 1)
-            setError("Database connection issue. Retrying automatically...")
-
-            // Wait and retry
-            setTimeout(
-              () => {
-                handleSubmit(data)
-              },
-              2000 * (retryCount + 1),
-            ) // Exponential backoff
-
-            return
-          }
+      if (result.error) {
+        // Check if it's an email verification error
+        if (
+          result.error.message?.includes("verify your email") ||
+          result.error.message?.includes("Email not confirmed")
+        ) {
+          setIsEmailVerificationError(true)
+          setError(result.error.message)
+        } else {
+          setError(result.error.message)
         }
-
-        setError(authError.message)
+        setIsLoading(false)
+        return
       }
-    } catch (err) {
-      logger.error("Unexpected error during sign-in:", err)
-      setError("An unexpected error occurred. Please try again.")
+
+      if (result.mockSignIn) {
+        setMockSignIn(true)
+        // Wait a moment before redirecting to simulate the sign-in process
+        setTimeout(() => {
+          router.push(redirectPath)
+        }, 2000)
+        return
+      }
+
+      // If we get here, sign-in was successful
+      router.push(redirectPath)
+    } catch (err: any) {
+      console.error("Unexpected error during sign-in:", err)
+      setError(err.message || "An unexpected error occurred")
     } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <>
-      <AuthServiceStatus />
-      <div className="grid gap-6">
-        <form onSubmit={hookFormSubmit(handleSubmit)} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="name@example.com"
-              autoCapitalize="none"
-              autoComplete="email"
-              autoCorrect="off"
-              disabled={isLoading || isFixingSchema}
-              {...register("email")}
-            />
-            {errors.email && <p className="text-sm text-red-500">{errors.email.message}</p>}
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="password">Password</Label>
-              <Link href="/auth/forgot-password" className="text-sm text-primary hover:underline">
-                Forgot password?
-              </Link>
-            </div>
-            <div className="relative">
-              <Input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                placeholder="••••••••"
-                autoComplete="current-password"
-                disabled={isLoading || isFixingSchema}
-                {...register("password")}
-              />
+    <form onSubmit={handleSubmit} className="space-y-4" aria-labelledby="sign-in-heading">
+      <h2 id="sign-in-heading" className="sr-only">
+        Sign in form
+      </h2>
+
+      {error && !isEmailVerificationError && (
+        <Alert className="rounded-md bg-red-50 p-4 text-sm text-red-700" role="alert" aria-live="assertive">
+          <AlertTriangle className="h-4 w-4 mr-2" aria-hidden="true" />
+          {error}
+        </Alert>
+      )}
+
+      {isEmailVerificationError && (
+        <Alert className="rounded-md bg-amber-50 p-4 text-sm text-amber-700" role="alert" aria-live="assertive">
+          <Mail className="h-4 w-4" aria-hidden="true" />
+          <AlertTitle>Email Verification Required</AlertTitle>
+          <AlertDescription>
+            <p className="mb-2">
+              Please verify your email address before signing in. Check your inbox for a verification link.
+            </p>
+            <p>
+              If you didn't receive the email, you can{" "}
               <Button
                 type="button"
-                variant="ghost"
-                size="sm"
-                className="absolute right-2 top-1/2 -translate-y-1/2 px-2"
-                onClick={() => setShowPassword(!showPassword)}
-                disabled={isLoading || isFixingSchema}
+                variant="link"
+                className="p-0 h-auto text-amber-800 underline"
+                onClick={() => {
+                  // Here you would implement resending the verification email
+                  alert("Verification email resend functionality would go here")
+                }}
               >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
+                request a new verification email
               </Button>
-            </div>
-            {errors.password && <p className="text-sm text-red-500">{errors.password.message}</p>}
-          </div>
+              .
+            </p>
+          </AlertDescription>
+        </Alert>
+      )}
 
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-              {isSchemaIssue && (
-                <div className="mt-2">
-                  <p className="text-sm font-medium">This appears to be a database configuration issue.</p>
-                  <p className="text-xs mt-1">Error code: SCHEMA-001</p>
-                  {technicalDetails && (
-                    <details className="mt-2">
-                      <summary className="text-xs cursor-pointer">Technical Details</summary>
-                      <pre className="text-xs mt-1 p-2 bg-gray-100 rounded overflow-x-auto">{technicalDetails}</pre>
-                    </details>
-                  )}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mt-2"
-                    onClick={handleSchemaFix}
-                    disabled={isFixingSchema}
-                  >
-                    {isFixingSchema ? (
-                      <>
-                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                        Fixing Schema...
-                      </>
-                    ) : (
-                      "Fix Schema Issue"
-                    )}
-                  </Button>
-                </div>
-              )}
-              {isRetrying && (
-                <div className="mt-2">
-                  <p className="text-sm font-medium">Retrying connection to authentication service...</p>
-                  <div className="mt-1 flex items-center">
-                    <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                    <span className="text-xs">Please wait</span>
-                  </div>
-                </div>
-              )}
-            </Alert>
-          )}
+      {mockSignIn && (
+        <Alert className="mb-4" role="status" aria-live="polite">
+          <Info className="h-4 w-4" aria-hidden="true" />
+          <AlertTitle>Demo Mode</AlertTitle>
+          <AlertDescription>
+            You're being signed in with demo credentials. You'll be redirected to the dashboard shortly.
+          </AlertDescription>
+        </Alert>
+      )}
 
-          <Button type="submit" className="w-full" disabled={isLoading || isFixingSchema}>
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {isRetrying
-                  ? "Connecting to auth service..."
-                  : retryCount > 0
-                    ? `Retrying (${retryCount}/${MAX_RETRIES})...`
-                    : "Signing in..."}
-              </>
-            ) : (
-              "Sign In"
-            )}
-          </Button>
-        </form>
+      <div className="space-y-2">
+        <Label htmlFor="email" id="email-label">
+          Email
+        </Label>
+        <Input
+          id="email"
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          required
+          disabled={isLoading || mockSignIn}
+          aria-labelledby="email-label"
+          aria-required="true"
+          autoComplete="email"
+          aria-invalid={!!fieldErrors.email}
+          aria-errormessage={fieldErrors.email ? "email-error" : undefined}
+          className={fieldErrors.email ? "border-red-500" : ""}
+        />
+        {fieldErrors.email && (
+          <p id="email-error" className="mt-1 text-sm text-red-600">
+            {fieldErrors.email}
+          </p>
+        )}
+      </div>
 
-        <div className="text-center text-sm">
-          Don&apos;t have an account?{" "}
-          <Link href="/auth/sign-up" className="text-primary hover:underline">
-            Sign up
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <Label htmlFor="password" id="password-label">
+            Password
+          </Label>
+          <Link
+            href="/auth/forgot-password"
+            className="text-sm text-blue-600 hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
+            aria-label="Forgot password"
+          >
+            Forgot password?
           </Link>
         </div>
+        <Input
+          id="password"
+          type="password"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          required
+          disabled={isLoading || mockSignIn}
+          aria-labelledby="password-label"
+          aria-required="true"
+          autoComplete="current-password"
+          aria-invalid={!!fieldErrors.password}
+          aria-errormessage={fieldErrors.password ? "password-error" : undefined}
+          className={fieldErrors.password ? "border-red-500" : ""}
+        />
+        {fieldErrors.password && (
+          <p id="password-error" className="mt-1 text-sm text-red-600">
+            {fieldErrors.password}
+          </p>
+        )}
       </div>
-    </>
+
+      <Button
+        type="submit"
+        className="w-full"
+        disabled={isLoading || mockSignIn}
+        aria-busy={isLoading}
+        aria-live="polite"
+      >
+        {isLoading ? "Signing in..." : mockSignIn ? "Redirecting..." : "Sign in"}
+      </Button>
+
+      <div className="text-center text-sm">
+        Don't have an account?{" "}
+        <Link
+          href="/auth/sign-up"
+          className="text-blue-600 hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
+        >
+          Sign up
+        </Link>
+      </div>
+    </form>
   )
 }

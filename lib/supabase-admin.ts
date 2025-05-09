@@ -1,87 +1,137 @@
 import { createClient } from "@supabase/supabase-js"
-import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
-import { SERVER_ENV, validateServerEnv } from "./secure-env-config"
-import { isServer } from "@/utils/environment"
 
-// Singleton instance for the admin client
-let adminClient: SupabaseClient<Database> | null = null
+// Ensure this is only used on the server
+if (typeof window !== "undefined") {
+  throw new Error("supabase-admin can only be used on the server")
+}
 
-/**
- * Creates a Supabase admin client with service role privileges
- * This should ONLY be used server-side in secure contexts
- */
-export function createSupabaseAdmin(): SupabaseClient<Database> {
-  // Ensure this is only called server-side
-  if (!isServer()) {
-    throw new Error("Supabase admin client can only be created server-side")
-  }
+if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+  throw new Error("SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for admin operations")
+}
 
-  // Validate environment variables
-  const validation = validateServerEnv()
-  if (!validation.valid) {
-    throw new Error(`Missing required server environment variables: ${validation.missing.join(", ")}`)
-  }
+// Connection health tracking for admin
+let lastAdminConnectionAttempt = 0
+let adminConnectionAttempts = 0
+const ADMIN_CONNECTION_BACKOFF_BASE = 1000 // ms
 
-  // Check for service role key
-  if (!SERVER_ENV.SUPABASE_SERVICE_ROLE_KEY) {
-    throw new Error("SUPABASE_SERVICE_ROLE_KEY is required for admin operations")
-  }
+// Calculate timeout with exponential backoff
+const now = Date.now()
+const timeSinceLastAttempt = now - lastAdminConnectionAttempt
 
-  // Return existing instance if available
-  if (adminClient) {
-    return adminClient
-  }
+// Reset connection attempts if it's been a while
+if (timeSinceLastAttempt > 60000) {
+  // 1 minute
+  adminConnectionAttempts = 0
+}
 
-  // Create new admin client with service role
-  adminClient = createClient<Database>(SERVER_ENV.SUPABASE_URL!, SERVER_ENV.SUPABASE_SERVICE_ROLE_KEY!, {
-    auth: {
-      autoRefreshToken: false,
-      persistSession: false,
+// Increment connection attempts
+adminConnectionAttempts++
+lastAdminConnectionAttempt = now
+
+// Calculate timeout with exponential backoff
+const timeout =
+  adminConnectionAttempts > 1
+    ? Math.min(ADMIN_CONNECTION_BACKOFF_BASE * Math.pow(2, adminConnectionAttempts - 1), 15000)
+    : 10000
+
+// Create a single supabase admin client for interacting with your database with elevated privileges
+const supabaseAdmin = createClient<Database>(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY, {
+  auth: {
+    autoRefreshToken: false,
+    persistSession: false,
+  },
+  global: {
+    headers: {
+      "x-application-name": "wellness-dashboard-admin",
     },
-  })
+    fetch: (url, options = {}) => {
+      // Create a custom fetch with timeout
+      return fetchWithAdminTimeout(url, options, timeout)
+    },
+  },
+  db: {
+    schema: "public",
+  },
+})
 
-  return adminClient
-}
+// Custom fetch implementation with timeout for admin
+async function fetchWithAdminTimeout(
+  url: RequestInfo | URL,
+  options: RequestInit = {},
+  timeout = 15000,
+  retryCount = 0,
+): Promise<Response> {
+  const MAX_RETRIES = 2
+  const controller = new AbortController()
+  const { signal } = controller
 
-/**
- * Resets the admin client
- * Useful for testing
- */
-export function resetAdminClient(): void {
-  adminClient = null
-}
+  // Merge the provided signal with our abort controller
+  const originalSignal = options.signal
 
-/**
- * Safely executes an admin operation with proper error handling
- */
-export async function executeAdminOperation<T>(
-  operation: (client: SupabaseClient<Database>) => Promise<T>,
-): Promise<{ data: T | null; error: Error | null }> {
-  try {
-    // Ensure we're server-side
-    if (!isServer()) {
-      return {
-        data: null,
-        error: new Error("Admin operations can only be executed server-side"),
-      }
-    }
-
-    // Get admin client
-    const admin = createSupabaseAdmin()
-
-    // Execute the operation
-    const result = await operation(admin)
-
-    return {
-      data: result,
-      error: null,
-    }
-  } catch (error) {
-    console.error("Admin operation error:", error)
-    return {
-      data: null,
-      error: error instanceof Error ? error : new Error(String(error)),
+  if (originalSignal) {
+    // If the original signal aborts, abort our controller too
+    if (originalSignal.aborted) {
+      controller.abort()
+    } else {
+      originalSignal.addEventListener("abort", () => controller.abort())
     }
   }
+
+  const timeoutId = setTimeout(() => {
+    controller.abort()
+  }, timeout)
+
+  try {
+    const response = await fetch(url, {
+      ...options,
+      signal,
+    })
+
+    // Clear the timeout
+    clearTimeout(timeoutId)
+
+    // Check if we got a rate limit response
+    if (response.status === 429 && retryCount < MAX_RETRIES) {
+      // Calculate backoff time - exponential with jitter
+      const backoffTime = Math.min(1000 * Math.pow(2, retryCount), 10000) * (0.8 + Math.random() * 0.4)
+      console.log(`[Admin] Rate limited. Retrying in ${backoffTime}ms (attempt ${retryCount + 1})`)
+
+      // Wait for the backoff period
+      await new Promise((resolve) => setTimeout(resolve, backoffTime))
+
+      // Retry the request
+      return fetchWithAdminTimeout(url, options, timeout, retryCount + 1)
+    }
+
+    // Reset connection attempts on successful response
+    if (response.ok) {
+      adminConnectionAttempts = 0
+    }
+
+    return response
+  } catch (error) {
+    // Clear the timeout
+    clearTimeout(timeoutId)
+
+    // Check if it's a timeout or network error and we should retry
+    if (
+      retryCount < MAX_RETRIES &&
+      (error instanceof TypeError || (error instanceof DOMException && error.name === "AbortError"))
+    ) {
+      // Calculate backoff time - exponential with jitter
+      const backoffTime = Math.min(1000 * Math.pow(2, retryCount), 10000) * (0.8 + Math.random() * 0.4)
+      console.log(`[Admin] Network error. Retrying in ${backoffTime}ms (attempt ${retryCount + 1})`)
+
+      // Wait for the backoff period
+      await new Promise((resolve) => setTimeout(resolve, backoffTime))
+
+      // Retry the request
+      return fetchWithAdminTimeout(url, options, timeout, retryCount + 1)
+    }
+
+    throw error
+  }
 }
+
+export { supabaseAdmin }
