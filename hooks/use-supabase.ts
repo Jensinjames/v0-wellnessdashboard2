@@ -42,7 +42,7 @@ interface QueryOptions<T = any> {
 }
 
 export function useSupabase(options: UseSupabaseOptions = {}) {
-  const { persistSession = true, autoRefreshToken = true, debugMode = getDebugMode(), monitorNetwork = true } = options
+  const { persistSession = true, autoRefreshToken = true, debugMode = getDebugMode() } = options
 
   const { user } = useAuth()
   const { toast } = useToast()
@@ -50,6 +50,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   const [isOnline, setIsOnline] = useState(true)
   const [lastActivity, setLastActivity] = useState(Date.now())
   const [consecutiveErrors, setConsecutiveErrors] = useState(0)
+  const { monitorNetwork = true } = options
 
   const supabaseRef = useRef<SupabaseClient<Database> | null>(null)
   const networkCheckTimerRef = useRef<NodeJS.Timeout | null>(null)
@@ -59,7 +60,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   const debug = useCallback(
     (...args: any[]) => {
       if (debugMode) {
-        console.log("[useSupabase]", getClientStats())
+        console.log("[useSupabase]", ...args, getClientStats())
       }
     },
     [debugMode],
@@ -220,7 +221,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         networkCheckTimerRef.current = null
       }
     }
-  }, [isInitialized, monitorNetwork, debug, isOnline, toast, setIsOnline])
+  }, [isInitialized, monitorNetwork, debug, isOnline, toast])
 
   // Set up activity tracking
   useEffect(() => {
@@ -243,14 +244,14 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
       window.removeEventListener("scroll", trackActivity)
       window.removeEventListener("mousemove", trackActivity)
     }
-  }, [isInitialized, lastActivity, setConsecutiveErrors, setLastActivity])
+  }, [isInitialized])
 
   // Wrap Supabase queries with error handling and offline support
   const query = useCallback(
-    async <T>(supabase.auth.getUser(**))
-    queryFn: (supabase: SupabaseClient<Database>) => Promise<T>,
-    options: QueryOptions<T> = getUser{}
-  ): Promise<T> => {requiresAuth
+    async <T>(\
+      queryFn: (supabase: SupabaseClient<Database>) => Promise<T>,
+      options: QueryOptions<T> = {}
+    ): Promise<T> => {
   const { retries = 3, retryDelay = 1000, requiresAuth = false, offlineAction, offlineData } = options
 
   if (!supabaseRef.current) {
@@ -338,7 +339,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
   throw lastError
 }
 ,
-    [isOnline, debug, debugMode, user, setLastActivity, setIsOnline, persistSession]
+    [isOnline, debug, debugMode, user, setLastActivity, setIsOnline]
   )
 
 // Reset the client and state
@@ -365,7 +366,7 @@ const resetClient = useCallback(() => {
     supabaseRef.current = client
     setIsInitialized(true)
   }
-}, [debug, debugMode, persistSession, autoRefreshToken, setConsecutiveErrors, setIsInitialized])
+}, [debug, debugMode, persistSession, autoRefreshToken])
 
 return {
     supabase: supabaseRef.current,
