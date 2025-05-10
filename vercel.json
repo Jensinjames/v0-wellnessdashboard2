@@ -1,9 +1,10 @@
 {
-  "buildCommand": "pnpm install --no-frozen-lockfile && next build",
-  "installCommand": "pnpm install --no-frozen-lockfile",
+  "buildCommand": "node scripts/diagnose-dependencies.ts && pnpm install --no-frozen-lockfile && next build",
+  "installCommand": "npm install -g pnpm@8.10.0 && pnpm install --no-frozen-lockfile",
   "framework": "nextjs",
   "outputDirectory": ".next",
   "env": {
-    "PNPM_FLAGS": "--no-frozen-lockfile --strict-peer-dependencies=false"
+    "PNPM_FLAGS": "--no-frozen-lockfile --strict-peer-dependencies=false",
+    "NODE_OPTIONS": "--max-old-space-size=4096"
   }
 }
