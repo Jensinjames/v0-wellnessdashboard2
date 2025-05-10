@@ -1,9 +1,9 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { useSupabaseSingleton, instanceCount } from "@/hooks/use-supabase-singleton"
+import { useSupabaseClient } from "@/hooks/use-supabase-client"
 import { Badge } from "@/components/ui/badge"
 
 export function SupabaseSingletonMonitor() {
-  const { supabase, instances, lastChecked, connectionStatus } = useSupabaseSingleton()
+  const { supabase, isLoading, debugInfo } = useSupabaseClient()
 
   return (
     <Card>
@@ -15,12 +15,14 @@ export function SupabaseSingletonMonitor() {
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col">
-              <span className="text-sm font-medium text-muted-foreground">Components Using Supabase</span>
-              <span className="text-xl font-bold">{instances}</span>
+              <span className="text-sm font-medium text-muted-foreground">Status</span>
+              <span className="text-xl font-bold">
+                {isLoading ? "Loading..." : supabase ? "Connected" : "Disconnected"}
+              </span>
             </div>
             <div className="flex flex-col">
-              <span className="text-sm font-medium text-muted-foreground">Last Checked</span>
-              <span className="text-sm">{lastChecked.toLocaleTimeString()}</span>
+              <span className="text-sm font-medium text-muted-foreground">GoTrue Clients</span>
+              <span className="text-xl font-bold">{debugInfo.goTrueClientCount}</span>
             </div>
           </div>
 
@@ -28,18 +30,20 @@ export function SupabaseSingletonMonitor() {
             <p className="font-medium">Singleton Information:</p>
             <div className="mt-2 space-y-1">
               <div className="flex justify-between">
-                <span>Client URL:</span>
-                <code className="text-xs">{(supabase as any)?.supabaseUrl?.split("https://")[1] || "Unknown"}</code>
+                <span>Instance Count:</span>
+                <code className="text-xs">{debugInfo.instanceCount}</code>
               </div>
               <div className="flex justify-between">
                 <span>Auth Status:</span>
                 <Badge variant="outline" className="ml-2">
-                  {connectionStatus}
+                  {supabase ? "Authenticated" : "Not Authenticated"}
                 </Badge>
               </div>
               <div className="flex justify-between">
-                <span>Instance Count:</span>
-                <code className="text-xs">{instanceCount || 1}</code>
+                <span>Last Initialized:</span>
+                <code className="text-xs">
+                  {debugInfo.lastInitTime ? new Date(debugInfo.lastInitTime).toLocaleTimeString() : "Never"}
+                </code>
               </div>
             </div>
           </div>

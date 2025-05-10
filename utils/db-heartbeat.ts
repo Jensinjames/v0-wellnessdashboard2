@@ -1,44 +1,44 @@
 /**
  * Database Heartbeat Utility
  *
- * Keeps the database connection pool warm by sending periodic lightweight queries.
- * This helps prevent cold starts that can lead to 500 errors when the pool is idle.
+ * This module provides a heartbeat mechanism to keep database connections alive
+ * and prevent connection pool timeouts.
  */
-import { getSupabaseClient } from "@/lib/supabase-client"
 import { createLogger } from "@/utils/logger"
+import { pingDatabase } from "@/lib/supabase-singleton-manager"
 
+// Create a dedicated logger for heartbeat operations
 const logger = createLogger("DBHeartbeat")
+
+// Heartbeat interval in milliseconds (default: 5 minutes)
+const HEARTBEAT_INTERVAL = 5 * 60 * 1000
+
+// Track the heartbeat interval
 let heartbeatInterval: NodeJS.Timeout | null = null
-const HEARTBEAT_INTERVAL = 60000 // 1 minute
+let isHeartbeatRunning = false
+let lastHeartbeatTime: number | null = null
+let heartbeatCount = 0
+let successfulHeartbeats = 0
+let failedHeartbeats = 0
 
 /**
  * Start the database heartbeat
- * This should be called once during app initialization
  */
-export function startDatabaseHeartbeat(): void {
-  if (typeof window === "undefined") {
-    // Only run on client-side
+export function startDatabaseHeartbeat(intervalMs = HEARTBEAT_INTERVAL): void {
+  // Don't start if already running
+  if (isHeartbeatRunning) {
+    logger.debug("Heartbeat already running, skipping initialization")
     return
   }
 
-  if (heartbeatInterval) {
-    // Already running
-    return
-  }
+  logger.info(`Starting database heartbeat with interval: ${intervalMs}ms`)
+  isHeartbeatRunning = true
 
-  logger.info("Starting database heartbeat")
+  // Execute heartbeat immediately
+  executeHeartbeat()
 
-  // Immediately send a ping to warm up the connection
-  sendHeartbeat().catch((err) => {
-    logger.warn("Initial heartbeat failed:", err)
-  })
-
-  // Set up the interval
-  heartbeatInterval = setInterval(() => {
-    sendHeartbeat().catch((err) => {
-      logger.warn("Heartbeat failed:", err)
-    })
-  }, HEARTBEAT_INTERVAL)
+  // Set up interval for future heartbeats
+  heartbeatInterval = setInterval(executeHeartbeat, intervalMs)
 }
 
 /**
@@ -48,36 +48,51 @@ export function stopDatabaseHeartbeat(): void {
   if (heartbeatInterval) {
     clearInterval(heartbeatInterval)
     heartbeatInterval = null
+    isHeartbeatRunning = false
     logger.info("Database heartbeat stopped")
   }
 }
 
 /**
- * Send a single heartbeat ping to the database
+ * Execute a single heartbeat
  */
-async function sendHeartbeat(): Promise<void> {
+async function executeHeartbeat(): Promise<void> {
   try {
-    const supabase = getSupabaseClient()
+    heartbeatCount++
+    lastHeartbeatTime = Date.now()
+    logger.debug(`Executing database heartbeat #${heartbeatCount}`)
 
-    // Use a simple query instead of RPC to warm up the connection
-    // This is more reliable across different Supabase configurations
-    const { error } = await supabase.from("profiles").select("count").limit(1)
+    // Ping the database
+    const success = await pingDatabase()
 
-    if (error) {
-      logger.warn("Heartbeat query failed:", error)
+    if (success) {
+      successfulHeartbeats++
+      logger.debug(`Heartbeat #${heartbeatCount} successful`)
     } else {
-      logger.debug("Heartbeat successful")
+      failedHeartbeats++
+      logger.warn(`Heartbeat #${heartbeatCount} failed`)
     }
   } catch (error) {
-    logger.warn("Heartbeat exception:", error)
-    // Swallow the error to prevent it from breaking the app
+    failedHeartbeats++
+    logger.error(`Error executing heartbeat #${heartbeatCount}:`, error)
   }
 }
 
-// For debugging purposes
-export function getHeartbeatStatus(): { isRunning: boolean; interval: number } {
+/**
+ * Get heartbeat status
+ */
+export function getHeartbeatStatus(): {
+  isRunning: boolean
+  lastHeartbeatTime: number | null
+  heartbeatCount: number
+  successfulHeartbeats: number
+  failedHeartbeats: number
+} {
   return {
-    isRunning: heartbeatInterval !== null,
-    interval: HEARTBEAT_INTERVAL,
+    isRunning: isHeartbeatRunning,
+    lastHeartbeatTime,
+    heartbeatCount,
+    successfulHeartbeats,
+    failedHeartbeats,
   }
 }

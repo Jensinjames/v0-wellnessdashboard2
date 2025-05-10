@@ -8,10 +8,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertTriangle, CheckCircle, RefreshCw } from "lucide-react"
+import { AlertTriangle, CheckCircle, RefreshCw, Mail } from "lucide-react"
 import { useAuth } from "@/context/auth-context"
 import { validateEmail } from "@/utils/auth-validation"
-import { handleAuthError } from "@/utils/auth-error-handler"
+import { handleAuthError, isEmailSendingError } from "@/utils/auth-error-handler"
 
 export function ForgotPasswordForm() {
   const [email, setEmail] = useState("")
@@ -22,6 +22,7 @@ export function ForgotPasswordForm() {
   const [retryCount, setRetryCount] = useState(0)
   const [autoRetry, setAutoRetry] = useState(false)
   const [retryCountdown, setRetryCountdown] = useState(0)
+  const [isEmailError, setIsEmailError] = useState(false)
   const { resetPassword } = useAuth()
 
   // Handle auto-retry countdown
@@ -48,6 +49,7 @@ export function ForgotPasswordForm() {
     setError(null)
     setFieldErrors({})
     setAutoRetry(false)
+    setIsEmailError(false)
 
     // Validate email
     if (!email) {
@@ -78,8 +80,15 @@ export function ForgotPasswordForm() {
       if (resetError) {
         console.error("Password reset error details:", resetError)
 
-        // Special handling for 500 errors which are likely SMTP or database pool issues
-        if (resetError.includes("500") || resetError.includes("unexpected_failure")) {
+        // Check if it's an email sending error
+        const errorInfo = handleAuthError({ message: resetError }, { operation: "password-reset" })
+
+        if (isEmailSendingError(errorInfo)) {
+          setIsEmailError(true)
+          setError(
+            "We're having trouble sending emails right now. Please try again later or contact support if the problem persists.",
+          )
+        } else if (resetError.includes("500") || resetError.includes("unexpected_failure")) {
           setRetryCount((prev) => prev + 1)
 
           // After 2 manual retries, offer auto-retry
@@ -91,7 +100,6 @@ export function ForgotPasswordForm() {
             setError("The password reset service is temporarily unavailable. Please try again in a moment.")
           }
         } else {
-          const errorInfo = handleAuthError({ message: resetError }, { operation: "password-reset" })
           setError(errorInfo.message)
         }
 
@@ -103,8 +111,15 @@ export function ForgotPasswordForm() {
     } catch (err: any) {
       console.error("Caught exception during password reset:", err)
 
-      // Special handling for 500 errors
-      if (
+      // Check if it's an email sending error
+      const errorInfo = handleAuthError(err, { operation: "password-reset" })
+
+      if (isEmailSendingError(errorInfo)) {
+        setIsEmailError(true)
+        setError(
+          "We're having trouble sending emails right now. Please try again later or contact support if the problem persists.",
+        )
+      } else if (
         err?.status === 500 ||
         (err?.error && err.error.status === 500) ||
         err?.message?.includes("unexpected_failure")
@@ -120,7 +135,6 @@ export function ForgotPasswordForm() {
           setError("The password reset service is temporarily unavailable. Please try again in a moment.")
         }
       } else {
-        const errorInfo = handleAuthError(err, { operation: "password-reset" })
         setError(errorInfo.message)
       }
     } finally {
@@ -131,6 +145,35 @@ export function ForgotPasswordForm() {
   const cancelAutoRetry = () => {
     setAutoRetry(false)
     setRetryCountdown(0)
+  }
+
+  // Special case for email sending errors - offer alternative recovery options
+  const renderEmailErrorHelp = () => {
+    if (!isEmailError) return null
+
+    return (
+      <div className="mt-4 p-4 bg-blue-50 rounded-md text-blue-800 text-sm">
+        <h3 className="font-medium flex items-center">
+          <Mail className="h-4 w-4 mr-2" /> Alternative Recovery Options
+        </h3>
+        <p className="mt-2">Since email delivery is currently experiencing issues, you can:</p>
+        <ul className="list-disc pl-5 mt-2 space-y-1">
+          <li>Try again later when our email service is back online</li>
+          <li>
+            Contact support at{" "}
+            <a href="mailto:support@rollenwellness.com" className="underline">
+              support@rollenwellness.com
+            </a>
+          </li>
+          <li>
+            If you remember your password,{" "}
+            <Link href="/auth/sign-in" className="underline">
+              try signing in
+            </Link>
+          </li>
+        </ul>
+      </div>
+    )
   }
 
   if (success) {
@@ -185,6 +228,8 @@ export function ForgotPasswordForm() {
           </AlertDescription>
         </Alert>
       )}
+
+      {isEmailError && renderEmailErrorHelp()}
 
       <div className="space-y-2">
         <Label htmlFor="email" id="email-label">

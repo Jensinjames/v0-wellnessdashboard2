@@ -14,6 +14,7 @@ export enum AuthErrorCategory {
   CREDENTIALS = "credentials",
   RATE_LIMIT = "rate_limit",
   SERVER = "server",
+  EMAIL = "email",
   UNKNOWN = "unknown",
 }
 
@@ -48,6 +49,11 @@ export enum AuthErrorType {
   SERVICE_UNAVAILABLE = "service_unavailable",
   DATABASE_ERROR = "database_error",
   SCHEMA_ERROR = "schema_error", // Added for schema-related errors
+
+  // Email errors
+  EMAIL_SENDING_FAILED = "email_sending_failed",
+  SMTP_ERROR = "smtp_error",
+  EMAIL_TEMPLATE_ERROR = "email_template_error",
 
   // Unknown errors
   UNKNOWN_ERROR = "unknown_error",
@@ -133,6 +139,35 @@ export function parseAuthError(error: any, context?: Record<string, any>): AuthE
       category: AuthErrorCategory.RATE_LIMIT,
       type: AuthErrorType.TOO_MANY_REQUESTS,
       message: "Too many requests. Please wait a moment and try again.",
+      originalError: error,
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
+  // Email sending errors
+  if (
+    errorMessage.includes("Error sending recovery email") ||
+    errorMessage.includes("Error sending email") ||
+    errorMessage.includes("failed to send email")
+  ) {
+    return {
+      category: AuthErrorCategory.EMAIL,
+      type: AuthErrorType.EMAIL_SENDING_FAILED,
+      message:
+        "We're having trouble sending emails right now. Please try again later or contact support if the problem persists.",
+      originalError: error,
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
+  // SMTP configuration errors
+  if (errorMessage.includes("SMTP") || errorMessage.includes("smtp") || errorMessage.includes("mail server")) {
+    return {
+      category: AuthErrorCategory.EMAIL,
+      type: AuthErrorType.SMTP_ERROR,
+      message: "Email service is currently unavailable. Please try again later or contact support.",
       originalError: error,
       timestamp: Date.now(),
       context,
@@ -375,6 +410,14 @@ export function handleAuthError(error: any, context?: Record<string, any>): Auth
 export function isSchemaError(error: any): boolean {
   const parsedError = parseAuthError(error)
   return parsedError.type === AuthErrorType.SCHEMA_ERROR
+}
+
+/**
+ * Check if an error is an email sending error
+ */
+export function isEmailSendingError(error: any): boolean {
+  const parsedError = parseAuthError(error)
+  return parsedError.category === AuthErrorCategory.EMAIL
 }
 
 /**

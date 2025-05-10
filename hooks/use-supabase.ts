@@ -240,8 +240,8 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
 
   // Wrap Supabase queries with error handling
   const query = useCallback(
-    async <T>(\
-      queryFn: (client: SupabaseClient<Database>) => Promise<T>,
+    async <T>(.\
+      queryFn: (client: SupabaseClient<Database>) => Promise<T>,)
       options: {
         retries?: number
         retryDelay?: number

@@ -174,9 +174,39 @@ export async function resetPassword(email: string, options?: { redirectTo?: stri
       `Sending password reset to ${email} with redirectTo: ${redirectOptions.redirectTo || "default"}`,
     )
 
-    return await supabase.auth.resetPasswordForEmail(email, redirectOptions)
-  } catch (error) {
+    // Attempt to send the password reset email
+    const result = await supabase.auth.resetPasswordForEmail(email, redirectOptions)
+
+    // Check for specific error messages related to email sending
+    if (result.error) {
+      if (result.error.message?.includes("sending")) {
+        supabaseLogger.error("Email sending error:", result.error)
+        return {
+          error: {
+            message: "Error sending recovery email",
+            originalError: result.error,
+          },
+        }
+      }
+    }
+
+    return result
+  } catch (error: any) {
     supabaseLogger.error("Error in resetPassword:", error)
+
+    // Check if the error is related to email sending
+    if (
+      error.message?.includes("sending") ||
+      (error.error && typeof error.error === "object" && error.error.message?.includes("sending"))
+    ) {
+      return {
+        error: {
+          message: "Error sending recovery email",
+          originalError: error,
+        },
+      }
+    }
+
     return { error }
   }
 }

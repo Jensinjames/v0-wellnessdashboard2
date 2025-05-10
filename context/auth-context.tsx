@@ -13,17 +13,9 @@ import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
 import { validateAuthCredentials, sanitizeEmail, validateEmail, validatePassword } from "@/utils/auth-validation"
 import { useToast } from "@/hooks/use-toast"
-import {
-  getSupabase,
-  addAuthListener,
-  signInWithEmail,
-  signUpWithEmail,
-  signOut as supabaseSignOut,
-  resetPassword as supabaseResetPassword,
-  updatePassword as supabaseUpdatePassword,
-} from "@/lib/supabase-manager"
 import { createLogger } from "@/utils/logger"
 import { startDatabaseHeartbeat } from "@/utils/db-heartbeat"
+import { getSupabaseClient, addAuthListener, pingDatabase } from "@/lib/supabase-singleton-manager"
 
 // Create a dedicated logger for auth operations
 const authLogger = createLogger("Auth")
@@ -65,6 +57,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const isMounted = useRef(true)
   const isInitialized = useRef(false)
   const redirectInProgressRef = useRef(false)
+  const supabaseClientRef = useRef<any>(null)
 
   // Compute if profile is complete
   const isProfileComplete = profile ? Boolean(profile.first_name && profile.last_name && profile.email) : false
@@ -82,7 +75,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         startDatabaseHeartbeat()
 
         // Get the Supabase client
-        const supabase = getSupabase()
+        const supabase = await Promise.resolve(getSupabaseClient())
+        supabaseClientRef.current = supabase
 
         // Get session
         const {
@@ -286,8 +280,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       authLogger.info("Attempting sign in", { email: sanitizedEmail })
 
+      // Warm up the connection before the actual auth request
+      await pingDatabase()
+
+      // Get the Supabase client
+      const supabase = await Promise.resolve(getSupabaseClient())
+
       // Attempt sign-in with validated credentials
-      const { data, error } = await signInWithEmail(sanitizedEmail, credentials.password)
+      const { data, error } = await supabase.auth.signInWithPassword({
+        email: sanitizedEmail,
+        password: credentials.password,
+      })
 
       if (error) {
         authLogger.error("Sign in error:", { error, email: sanitizedEmail })
@@ -382,7 +385,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       authLogger.info("Attempting sign up", { email: sanitizedEmail })
-      const { data, error } = await signUpWithEmail(sanitizedEmail, credentials.password)
+
+      // Warm up the connection before the actual auth request
+      await pingDatabase()
+
+      // Get the Supabase client
+      const supabase = await Promise.resolve(getSupabaseClient())
+
+      // Attempt sign-up with validated credentials
+      const { data, error } = await supabase.auth.signUp({
+        email: sanitizedEmail,
+        password: credentials.password,
+      })
 
       if (error) {
         authLogger.error("Sign up error:", { error, email: sanitizedEmail })
@@ -406,7 +420,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signOut = async (redirectPath = "/auth/sign-in") => {
     try {
       authLogger.info("Attempting sign out")
-      const { error } = await supabaseSignOut()
+
+      // Get the Supabase client
+      const supabase = await Promise.resolve(getSupabaseClient())
+
+      // Attempt sign-out
+      const { error } = await supabase.auth.signOut()
 
       if (error) {
         authLogger.error("Sign out error:", error)
@@ -461,6 +480,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const origin = typeof window !== "undefined" ? window.location.origin : process.env.NEXT_PUBLIC_SITE_URL || ""
       const redirectTo = `${origin}/auth/reset-password`
 
+      // Warm up the connection before the actual auth request
+      await pingDatabase()
+
+      // Get the Supabase client
+      const supabase = await Promise.resolve(getSupabaseClient())
+
       // Try up to 3 times with exponential backoff for 500 errors
       let attempt = 0
       const maxAttempts = 3
@@ -477,7 +502,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           })
 
           // Actual reset password request
-          const resetPromise = supabaseResetPassword(sanitizedEmail, {
+          const resetPromise = supabase.auth.resetPasswordForEmail(sanitizedEmail, {
             redirectTo,
           })
 
@@ -487,6 +512,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           if (!error) {
             // Success!
             return { success: true, error: null }
+          }
+
+          // Check for email sending errors specifically
+          if (
+            error.message?.includes("Error sending recovery email") ||
+            error.message?.includes("Error sending email") ||
+            error.message?.includes("failed to send email")
+          ) {
+            authLogger.error("Email sending error:", { error, email: sanitizedEmail })
+            return {
+              success: false,
+              error: "Error sending recovery email",
+            }
           }
 
           // If it's not a 500 error, don't retry
@@ -522,6 +560,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           // Handle unexpected errors during the retry
           authLogger.error("Reset password unexpected error:", { error: innerError, email: sanitizedEmail })
 
+          // Check for email sending errors in the caught exception
+          if (
+            innerError.message?.includes("Error sending recovery email") ||
+            innerError.message?.includes("Error sending email") ||
+            innerError.message?.includes("failed to send email") ||
+            (innerError.error &&
+              typeof innerError.error === "object" &&
+              innerError.error.message?.includes("Error sending"))
+          ) {
+            return {
+              success: false,
+              error: "Error sending recovery email",
+            }
+          }
+
           // If we've hit the max attempts, return a user-friendly error
           if (attempt >= maxAttempts) {
             return {
@@ -543,6 +596,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     } catch (error: any) {
       authLogger.error("Reset password error:", error)
+
+      // Check for email sending errors in the outer catch
+      if (
+        error.message?.includes("Error sending recovery email") ||
+        error.message?.includes("Error sending email") ||
+        error.message?.includes("failed to send email") ||
+        (error.error && typeof error.error === "object" && error.error.message?.includes("Error sending"))
+      ) {
+        return {
+          success: false,
+          error: "Error sending recovery email",
+        }
+      }
+
       return { success: false, error: error.message || "Failed to reset password" }
     }
   }
@@ -555,7 +622,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       authLogger.info("Attempting password update")
-      const { error } = await supabaseUpdatePassword(password)
+
+      // Get the Supabase client
+      const supabase = await Promise.resolve(getSupabaseClient())
+
+      // Attempt password update
+      const { error } = await supabase.auth.updateUser({ password })
 
       if (error) {
         authLogger.error("Update password error:", error)
@@ -577,7 +649,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       setIsLoading(true)
 
-      const supabase = getSupabase()
+      // Get the Supabase client
+      const supabase = await Promise.resolve(getSupabaseClient())
+
       const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).single()
 
       if (error) {
