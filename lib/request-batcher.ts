@@ -24,6 +24,14 @@ type BatcherOptions = {
   priorityOrder?: Array<"high" | "medium" | "low">
 }
 
+type BatcherStatus = {
+  queueLength: number
+  activeBatches: number
+  paused: boolean
+  rateLimited: boolean
+  networkError?: boolean
+}
+
 class RequestBatcher {
   private queue: BatchableRequest[] = []
   private isProcessing = false
@@ -32,6 +40,7 @@ class RequestBatcher {
   private options: Required<BatcherOptions>
   private paused = false
   private rateLimited = false
+  private networkError = false
   private rateLimitResetTimer: NodeJS.Timeout | null = null
   private listeners: { [event: string]: Array<(...args: any[]) => void> } = {}
 
@@ -158,6 +167,11 @@ class RequestBatcher {
           if (this.isRateLimitError(error)) {
             this.handleRateLimit()
           }
+
+          // Check if this is a network error
+          if (this.isNetworkError(error)) {
+            this.handleNetworkError()
+          }
         }
       }),
     )
@@ -230,7 +244,7 @@ class RequestBatcher {
    */
   private isRetryableError(error: any): boolean {
     // Network errors are retryable
-    if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
+    if (this.isNetworkError(error)) {
       return true
     }
 
@@ -246,6 +260,26 @@ class RequestBatcher {
 
     // 429 Too Many Requests is retryable but handled separately
     if (error.status === 429 || error.message?.includes("429") || error.message?.includes("Too Many R")) {
+      return true
+    }
+
+    return false
+  }
+
+  /**
+   * Check if an error is a network error
+   */
+  private isNetworkError(error: any): boolean {
+    if (error instanceof TypeError && error.message.includes("Failed to fetch")) {
+      return true
+    }
+
+    if (
+      error.message?.includes("network") ||
+      error.message?.includes("Network") ||
+      error.message?.includes("internet") ||
+      error.message?.includes("connection")
+    ) {
       return true
     }
 
@@ -305,6 +339,47 @@ class RequestBatcher {
   }
 
   /**
+   * Handle network errors
+   */
+  private handleNetworkError(): void {
+    if (this.networkError) return
+
+    this.networkError = true
+    this.emit("networkError", { timestamp: Date.now() })
+
+    // Check network periodically
+    const checkNetwork = async () => {
+      try {
+        const response = await fetch("/api/health-check", {
+          method: "HEAD",
+          cache: "no-store",
+          signal: AbortSignal.timeout(5000),
+        })
+
+        if (response.ok) {
+          this.networkError = false
+          this.emit("networkRestored", { timestamp: Date.now() })
+
+          // Resume processing
+          if (this.queue.length > 0) {
+            this.scheduleProcessing()
+          }
+          return true
+        }
+      } catch (error) {
+        // Network still down
+      }
+
+      // Try again in 30 seconds
+      setTimeout(checkNetwork, 30000)
+      return false
+    }
+
+    // Start checking
+    setTimeout(checkNetwork, 5000)
+  }
+
+  /**
    * Pause the batcher
    */
   public pause(): void {
@@ -349,17 +424,13 @@ class RequestBatcher {
   /**
    * Get the current status of the batcher
    */
-  public getStatus(): {
-    queueLength: number
-    activeBatches: number
-    paused: boolean
-    rateLimited: boolean
-  } {
+  public getStatus(): BatcherStatus {
     return {
       queueLength: this.queue.length,
       activeBatches: this.activeBatches,
       paused: this.paused,
       rateLimited: this.rateLimited,
+      networkError: this.networkError,
     }
   }
 
