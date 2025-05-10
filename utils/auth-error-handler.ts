@@ -54,6 +54,7 @@ export enum AuthErrorType {
   EMAIL_SENDING_FAILED = "email_sending_failed",
   SMTP_ERROR = "smtp_error",
   EMAIL_TEMPLATE_ERROR = "email_template_error",
+  EMAIL_SERVICE_UNAVAILABLE = "email_service_unavailable",
 
   // Unknown errors
   UNKNOWN_ERROR = "unknown_error",
@@ -95,6 +96,18 @@ export function parseAuthError(error: any, context?: Record<string, any>): AuthE
 
   // Extract error message
   const errorMessage = error.message || error.error_description || error.error || String(error)
+
+  // Check for Supabase AuthApiError with unexpected_failure
+  if (error.__isAuthError === true && error.status === 500 && error.code === "unexpected_failure") {
+    return {
+      category: AuthErrorCategory.EMAIL,
+      type: AuthErrorType.EMAIL_SERVICE_UNAVAILABLE,
+      message: "Our email service is temporarily unavailable. Please try again later or contact support.",
+      originalError: error,
+      timestamp: Date.now(),
+      context,
+    }
+  }
 
   // Network errors
   if (
@@ -418,6 +431,13 @@ export function isSchemaError(error: any): boolean {
 export function isEmailSendingError(error: any): boolean {
   const parsedError = parseAuthError(error)
   return parsedError.category === AuthErrorCategory.EMAIL
+}
+
+/**
+ * Check if an error is specifically a 500 unexpected_failure from Supabase Auth API
+ */
+export function isSupabaseAuthFailure(error: any): boolean {
+  return error && error.__isAuthError === true && error.status === 500 && error.code === "unexpected_failure"
 }
 
 /**

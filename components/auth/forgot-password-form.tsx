@@ -8,10 +8,10 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertTriangle, CheckCircle, RefreshCw, Mail } from "lucide-react"
+import { AlertTriangle, CheckCircle, RefreshCw, Mail, Info } from "lucide-react"
 import { useAuth } from "@/context/auth-context"
 import { validateEmail } from "@/utils/auth-validation"
-import { handleAuthError, isEmailSendingError } from "@/utils/auth-error-handler"
+import { handleAuthError, isEmailSendingError, isSupabaseAuthFailure } from "@/utils/auth-error-handler"
 
 export function ForgotPasswordForm() {
   const [email, setEmail] = useState("")
@@ -23,6 +23,7 @@ export function ForgotPasswordForm() {
   const [autoRetry, setAutoRetry] = useState(false)
   const [retryCountdown, setRetryCountdown] = useState(0)
   const [isEmailError, setIsEmailError] = useState(false)
+  const [showAlternativeOptions, setShowAlternativeOptions] = useState(false)
   const { resetPassword } = useAuth()
 
   // Handle auto-retry countdown
@@ -50,6 +51,7 @@ export function ForgotPasswordForm() {
     setFieldErrors({})
     setAutoRetry(false)
     setIsEmailError(false)
+    setShowAlternativeOptions(false)
 
     // Validate email
     if (!email) {
@@ -80,16 +82,30 @@ export function ForgotPasswordForm() {
       if (resetError) {
         console.error("Password reset error details:", resetError)
 
+        // Check if it's a Supabase Auth API 500 unexpected_failure
+        if (typeof resetError === "object" && isSupabaseAuthFailure(resetError)) {
+          setIsEmailError(true)
+          setShowAlternativeOptions(true)
+          setError(
+            "Our email service is temporarily unavailable. Please try again later or use one of the alternative options below.",
+          )
+          setIsLoading(false)
+          return
+        }
+
         // Check if it's an email sending error
         const errorInfo = handleAuthError({ message: resetError }, { operation: "password-reset" })
 
         if (isEmailSendingError(errorInfo)) {
           setIsEmailError(true)
+          setShowAlternativeOptions(true)
           setError(
-            "We're having trouble sending emails right now. Please try again later or contact support if the problem persists.",
+            "We're having trouble sending emails right now. Please try again later or use one of the alternative options below.",
           )
         } else if (resetError.includes("500") || resetError.includes("unexpected_failure")) {
           setRetryCount((prev) => prev + 1)
+          setIsEmailError(true)
+          setShowAlternativeOptions(true)
 
           // After 2 manual retries, offer auto-retry
           if (retryCount >= 2) {
@@ -111,13 +127,25 @@ export function ForgotPasswordForm() {
     } catch (err: any) {
       console.error("Caught exception during password reset:", err)
 
+      // Check if it's a Supabase Auth API 500 unexpected_failure
+      if (isSupabaseAuthFailure(err)) {
+        setIsEmailError(true)
+        setShowAlternativeOptions(true)
+        setError(
+          "Our email service is temporarily unavailable. Please try again later or use one of the alternative options below.",
+        )
+        setIsLoading(false)
+        return
+      }
+
       // Check if it's an email sending error
       const errorInfo = handleAuthError(err, { operation: "password-reset" })
 
       if (isEmailSendingError(errorInfo)) {
         setIsEmailError(true)
+        setShowAlternativeOptions(true)
         setError(
-          "We're having trouble sending emails right now. Please try again later or contact support if the problem persists.",
+          "We're having trouble sending emails right now. Please try again later or use one of the alternative options below.",
         )
       } else if (
         err?.status === 500 ||
@@ -125,6 +153,8 @@ export function ForgotPasswordForm() {
         err?.message?.includes("unexpected_failure")
       ) {
         setRetryCount((prev) => prev + 1)
+        setIsEmailError(true)
+        setShowAlternativeOptions(true)
 
         // After 2 manual retries, offer auto-retry
         if (retryCount >= 2) {
@@ -149,7 +179,7 @@ export function ForgotPasswordForm() {
 
   // Special case for email sending errors - offer alternative recovery options
   const renderEmailErrorHelp = () => {
-    if (!isEmailError) return null
+    if (!showAlternativeOptions) return null
 
     return (
       <div className="mt-4 p-4 bg-blue-50 rounded-md text-blue-800 text-sm">
@@ -172,6 +202,32 @@ export function ForgotPasswordForm() {
             </Link>
           </li>
         </ul>
+      </div>
+    )
+  }
+
+  // Show a temporary account access option for development/testing
+  const renderDevModeHelp = () => {
+    if (process.env.NEXT_PUBLIC_APP_ENVIRONMENT !== "development" || !isEmailError) return null
+
+    return (
+      <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-md text-amber-800 text-sm">
+        <h3 className="font-medium flex items-center">
+          <Info className="h-4 w-4 mr-2" /> Development Mode Option
+        </h3>
+        <p className="mt-1">Since you're in development mode, you can use the temporary password option for testing:</p>
+        <div className="mt-2 bg-amber-100 p-2 rounded text-xs font-mono">
+          <code>
+            // In your browser console, run this:
+            <br />
+            localStorage.setItem('dev_temp_access', '{email}');
+            <br />
+            // Then navigate to:
+            <br />
+            /auth/dev-access
+          </code>
+        </div>
+        <p className="mt-2 text-xs">Note: This option is only available in development mode.</p>
       </div>
     )
   }
@@ -230,6 +286,7 @@ export function ForgotPasswordForm() {
       )}
 
       {isEmailError && renderEmailErrorHelp()}
+      {renderDevModeHelp()}
 
       <div className="space-y-2">
         <Label htmlFor="email" id="email-label">

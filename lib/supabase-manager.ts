@@ -179,6 +179,17 @@ export async function resetPassword(email: string, options?: { redirectTo?: stri
 
     // Check for specific error messages related to email sending
     if (result.error) {
+      if (
+        result.error.__isAuthError === true &&
+        result.error.status === 500 &&
+        result.error.code === "unexpected_failure"
+      ) {
+        supabaseLogger.error("Supabase Auth API 500 unexpected_failure:", result.error)
+        return {
+          error: result.error, // Return the full error object for better handling
+        }
+      }
+
       if (result.error.message?.includes("sending")) {
         supabaseLogger.error("Email sending error:", result.error)
         return {
@@ -193,6 +204,14 @@ export async function resetPassword(email: string, options?: { redirectTo?: stri
     return result
   } catch (error: any) {
     supabaseLogger.error("Error in resetPassword:", error)
+
+    // Check if the error is a Supabase Auth API 500 unexpected_failure
+    if (error.__isAuthError === true && error.status === 500 && error.code === "unexpected_failure") {
+      supabaseLogger.error("Supabase Auth API 500 unexpected_failure:", error)
+      return {
+        error, // Return the full error object for better handling
+      }
+    }
 
     // Check if the error is related to email sending
     if (
