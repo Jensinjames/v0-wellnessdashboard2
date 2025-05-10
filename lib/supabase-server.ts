@@ -1,7 +1,12 @@
+/**
+ * Supabase Server - Server-side client with enhanced features
+ * This file provides utilities for creating Supabase clients in server contexts
+ */
+
 import { createServerClient } from "@supabase/ssr"
-import { cookies } from "next/headers"
 import type { CookieOptions } from "@supabase/ssr"
 import type { Database } from "@/types/database"
+import { serverEnv, validateEnv } from "@/lib/env"
 
 // Connection health tracking for server
 let lastServerConnectionAttempt = 0
@@ -9,16 +14,15 @@ let serverConnectionAttempts = 0
 const SERVER_CONNECTION_BACKOFF_BASE = 1000 // ms
 
 // This is a helper function to create a server client in route handlers and server actions
-export function createServerSupabaseClient(
+export async function createServerSupabaseClient(
   options: {
     retryOnError?: boolean
     timeout?: number
   } = {},
 ) {
-  const cookieStore = cookies()
-
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
-    throw new Error("Supabase URL and anon key are required")
+  // Validate environment variables
+  if (!validateEnv()) {
+    throw new Error("Missing required environment variables for Supabase server client")
   }
 
   // Calculate timeout with exponential backoff if we've had failed attempts recently
@@ -42,7 +46,11 @@ export function createServerSupabaseClient(
       ? Math.min(SERVER_CONNECTION_BACKOFF_BASE * Math.pow(2, serverConnectionAttempts - 1), 15000)
       : 10000)
 
-  return createServerClient<Database>(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+  // Use a dynamic import to avoid the "next/headers" issue in client components
+  const { cookies } = await import("next/headers")
+  const cookieStore = cookies()
+
+  return createServerClient<Database>(serverEnv.SUPABASE_URL!, serverEnv.SUPABASE_ANON_KEY!, {
     cookies: {
       get(name: string) {
         return cookieStore.get(name)?.value
@@ -156,53 +164,4 @@ async function fetchWithServerTimeout(
 
     throw error
   }
-}
-
-// Helper for custom cookie handlers (used in middleware and route handlers)
-export function createClient(
-  cookieGetter: (name: string) => string | undefined,
-  cookieSetter: (name: string, value: string, options: CookieOptions) => void,
-  options: {
-    retryOnError?: boolean
-    timeout?: number
-  } = {},
-) {
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
-    throw new Error("Supabase URL and anon key are required")
-  }
-
-  // Calculate timeout with exponential backoff
-  const timeout = options.timeout || 10000
-
-  return createServerClient<Database>(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
-    cookies: {
-      get(name: string) {
-        return cookieGetter(name)
-      },
-      set(name: string, value: string, options: CookieOptions) {
-        cookieSetter(name, value, options)
-      },
-      remove(name: string, options: { path: string; domain?: string }) {
-        cookieSetter(name, "", { ...options, maxAge: 0 })
-      },
-    },
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: false,
-      flowType: "pkce",
-    },
-    global: {
-      headers: {
-        "x-application-name": "wellness-dashboard-server",
-      },
-      fetch: (url, options = {}) => {
-        // Create a custom fetch with timeout
-        return fetchWithServerTimeout(url, options, timeout, options.retryOnError || false)
-      },
-    },
-    db: {
-      schema: "public",
-    },
-  })
 }

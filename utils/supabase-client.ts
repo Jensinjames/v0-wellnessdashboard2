@@ -1,27 +1,27 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
+import { createLogger } from "@/utils/logger"
 
-// Define a safe global store that works in both browser and server environments
+// Create a dedicated logger
+const logger = createLogger("SupabaseClient")
+
 declare global {
-  // For browser environments
-  interface Window {
-    __supabase: SupabaseClient<Database> | undefined
-  }
-
-  // For server environments (Node.js)
+  // Tell TypeScript about our global cache
   var __supabase: SupabaseClient<Database> | undefined
 }
 
 /**
- * Gets a singleton Supabase client instance
- * Uses window.__supabase in browser environments
- * Falls back to global.__supabase in server environments
+ * Returns a shared Supabase client.
+ * - In browser: reuse `globalThis.__supabase`.
+ * - On server: create a new client.
  */
 export function getSupabaseClient(): SupabaseClient<Database> {
+  // Client-side: reuse or create once
   if (typeof window !== "undefined") {
-    // Browser environment - store on window
-    if (!window.__supabase) {
-      window.__supabase = createClient<Database>(
+    if (!globalThis.__supabase) {
+      logger.debug("Creating new Supabase client instance")
+
+      globalThis.__supabase = createClient<Database>(
         process.env.NEXT_PUBLIC_SUPABASE_URL!,
         process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
         {
@@ -30,66 +30,61 @@ export function getSupabaseClient(): SupabaseClient<Database> {
             autoRefreshToken: true,
             detectSessionInUrl: true,
             flowType: "pkce",
+            // Use a consistent storage key to prevent conflicts
             storageKey: "wellness-dashboard-auth-v3",
+          },
+          global: {
+            headers: {
+              "x-application-name": "wellness-dashboard",
+              "x-client-info": window.navigator.userAgent,
+            },
           },
         },
       )
     }
-    return window.__supabase
+    return globalThis.__supabase
   }
 
-  // Server-side environment - use Node.js global
-  if (typeof global !== "undefined") {
-    if (!global.__supabase) {
-      global.__supabase = createClient<Database>(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      )
-    }
-    return global.__supabase
-  }
-
-  // Fallback - create a new client each time (should never happen)
-  console.warn("Creating non-singleton Supabase client - this should not happen")
-  return createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!)
+  // Server-side: always fresh
+  return createClient<Database>(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!, {
+    auth: {
+      persistSession: false,
+    },
+    global: {
+      headers: {
+        "x-application-name": "wellness-dashboard-server",
+      },
+    },
+  })
 }
 
 /**
- * Resets the Supabase client singleton instance
- * Useful for testing or after sign-out
+ * Reset the client (useful for testing or when auth state changes)
  */
-export function resetSupabaseClient(): void {
+export function resetSupabaseClient() {
+  if (typeof window !== "undefined" && globalThis.__supabase) {
+    logger.debug("Resetting Supabase client")
+
+    // Clean up any listeners
+    try {
+      const { data } = globalThis.__supabase.auth.onAuthStateChange(() => {})
+      if (data && typeof data.subscription?.unsubscribe === "function") {
+        data.subscription.unsubscribe()
+      }
+    } catch (e) {
+      logger.error("Error cleaning up Supabase client:", e)
+    }
+
+    globalThis.__supabase = undefined
+  }
+}
+
+/**
+ * Get the current client without creating a new one
+ */
+export function getCurrentClient(): SupabaseClient<Database> | null {
   if (typeof window !== "undefined") {
-    window.__supabase = undefined
-  } else if (typeof global !== "undefined") {
-    global.__supabase = undefined
+    return globalThis.__supabase || null
   }
-}
-
-/**
- * Checks the connection to Supabase
- * Returns whether connected successfully and the connection latency
- */
-export async function checkSupabaseConnection(): Promise<{ isConnected: boolean; latency: number }> {
-  try {
-    const startTime = Date.now()
-    const client = getSupabaseClient()
-
-    // Simple query to check connection
-    const { data, error } = await client.from("profiles").select("id").limit(1).maybeSingle()
-
-    const endTime = Date.now()
-    const latency = endTime - startTime
-
-    return {
-      isConnected: !error,
-      latency,
-    }
-  } catch (err) {
-    console.error("Error checking Supabase connection:", err)
-    return {
-      isConnected: false,
-      latency: -1,
-    }
-  }
+  return null
 }

@@ -1,24 +1,36 @@
+"use client"
+
+import { useEffect, useState } from "react"
+import { EnhancedResetPasswordForm } from "@/components/auth/enhanced-reset-password-form"
+import { AuthLayout } from "@/components/auth/auth-layout"
+import { useAuth } from "@/context/auth-context"
+import { useRouter } from "next/navigation"
 import { Suspense } from "react"
-import { ResetPasswordForm } from "@/components/auth/reset-password-form"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 export default function ResetPasswordPage() {
+  const { user, isLoading } = useAuth()
+  const router = useRouter()
+  const [isClient, setIsClient] = useState(false)
+
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
+
+  useEffect(() => {
+    if (isClient && !isLoading && user) {
+      router.push("/dashboard")
+    }
+  }, [isClient, isLoading, user, router])
+
+  if (!isClient) {
+    return null
+  }
+
   return (
-    <main
-      id="main-content"
-      className="flex min-h-screen items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8"
-    >
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Reset Password</CardTitle>
-          <CardDescription>Create a new password for your account</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Suspense fallback={<div className="p-4 text-center">Loading form...</div>}>
-            <ResetPasswordForm />
-          </Suspense>
-        </CardContent>
-      </Card>
-    </main>
+    <AuthLayout title="Reset Password" description="Create a new password for your account">
+      <Suspense fallback={<div className="p-4 text-center">Loading form...</div>}>
+        <EnhancedResetPasswordForm />
+      </Suspense>
+    </AuthLayout>
   )
 }

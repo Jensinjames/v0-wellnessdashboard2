@@ -72,3 +72,32 @@ export const defaultActivities: Record<CategoryType, CategoryActivity[]> = {
     { id: "mental", name: "Mental Health", category: "health", defaultDuration: 0.5 },
   ],
 }
+
+export interface WellnessEntry {
+  id: string
+  category: string
+  activity: string
+  duration: number
+  notes?: string
+  timestamp: string
+  created_at: string
+  metadata?: Record<string, any>
+}
+
+export interface WellnessGoal {
+  id: string
+  category: string
+  goal_hours: number
+  created_at: string
+  updated_at: string
+}
+
+export interface WellnessCategory {
+  id: string
+  name: string
+  color: string
+  icon?: string | null
+  user_id?: string | null
+  created_at?: string
+  updated_at?: string
+}

@@ -1,14 +1,25 @@
-// Environment detection
-export const isServer = typeof window === "undefined"
-export const isBrowser = !isServer
+/**
+ * Environment Utilities
+ * Safe access to environment variables with proper client/server detection
+ */
 
-// Get environment (development, production, test)
-export function getEnvironment(): string {
-  if (isBrowser) {
-    return process.env.NEXT_PUBLIC_APP_ENVIRONMENT || "production"
-  } else {
-    return process.env.NODE_ENV || "production"
-  }
+// Client-side environment variables
+export const clientEnv = {
+  SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL,
+  SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+  APP_ENVIRONMENT: process.env.NEXT_PUBLIC_APP_ENVIRONMENT || "development",
+  DEBUG_MODE: process.env.NEXT_PUBLIC_DEBUG_MODE === "true",
+  APP_VERSION: process.env.NEXT_PUBLIC_APP_VERSION || "0.0.0",
+  SITE_URL: process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== "undefined" ? window.location.origin : ""),
+  STATSIG_CLIENT_KEY: process.env.NEXT_PUBLIC_STATSIG_CLIENT_KEY,
+}
+
+// Detect environment
+export function getEnvironment(): "development" | "test" | "production" {
+  // Use NEXT_PUBLIC_APP_ENVIRONMENT as the source of truth
+  if (clientEnv.APP_ENVIRONMENT === "production") return "production"
+  if (clientEnv.APP_ENVIRONMENT === "test") return "test"
+  return "development"
 }
 
 // Check if we're in development mode
@@ -26,47 +37,45 @@ export function isTest(): boolean {
   return getEnvironment() === "test"
 }
 
-// Get debug mode status
+// Check if debug mode is enabled
 export function isDebugMode(): boolean {
-  if (isBrowser) {
-    return process.env.NEXT_PUBLIC_DEBUG_MODE === "true" || localStorage.getItem("debug_mode") === "true"
-  } else {
-    return process.env.DEBUG_MODE === "true"
+  if (typeof window !== "undefined") {
+    return clientEnv.DEBUG_MODE || localStorage.getItem("debug_mode") === "true" || isDevelopment()
   }
-}
-
-// Safe access to environment variables
-export function getEnvVariable(key: string, defaultValue = ""): string {
-  // For client-side, only NEXT_PUBLIC_ variables are accessible
-  if (isBrowser) {
-    const publicKey = key.startsWith("NEXT_PUBLIC_") ? key : `NEXT_PUBLIC_${key}`
-    return (process.env[publicKey] as string) || defaultValue
-  }
-
-  // Server-side can access any environment variable
-  return (process.env[key] as string) || defaultValue
+  return clientEnv.DEBUG_MODE || isDevelopment()
 }
 
 // Get app version
 export function getAppVersion(): string {
-  return getEnvVariable("NEXT_PUBLIC_APP_VERSION", "1.0.0")
+  return clientEnv.APP_VERSION
+}
+
+// Get site URL
+export function getSiteUrl(): string {
+  return clientEnv.SITE_URL
 }
 
 // Validate required environment variables
-export function validateRequiredEnvVars(requiredVars: string[]): { valid: boolean; missing: string[] } {
-  const missing: string[] = []
+export function validateClientEnv(): { valid: boolean; missing: string[] } {
+  const requiredVars = ["SUPABASE_URL", "SUPABASE_ANON_KEY"]
+  const missing = requiredVars.filter((key) => !clientEnv[key as keyof typeof clientEnv])
 
-  for (const key of requiredVars) {
-    // For client-side, only check NEXT_PUBLIC_ variables
-    if (isBrowser && !key.startsWith("NEXT_PUBLIC_")) continue
-
-    if (!getEnvVariable(key)) {
-      missing.push(key)
-    }
+  if (missing.length > 0 && typeof window !== "undefined") {
+    console.error(`Missing required environment variables: ${missing.join(", ")}`)
   }
 
   return {
     valid: missing.length === 0,
     missing,
   }
+}
+
+// Server-side only environment check
+export function isServer(): boolean {
+  return typeof window === "undefined"
+}
+
+// Client-side only environment check
+export function isClient(): boolean {
+  return !isServer()
 }

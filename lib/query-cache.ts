@@ -1,168 +1,305 @@
+/**
+ * Query Cache System
+ * Provides caching for Supabase queries to minimize RLS calls
+ */
+import { createLogger } from "@/utils/logger"
+
+const logger = createLogger("QueryCache")
+
+// Cache entry type
 type CacheEntry<T> = {
   data: T
   timestamp: number
   expiresAt: number
+  tags: string[]
 }
 
-type QueryCache = {
-  [key: string]: CacheEntry<any>
+// Cache configuration
+type CacheConfig = {
+  defaultTTL: number // Default time-to-live in milliseconds
+  maxSize: number // Maximum number of entries in the cache
+  debug: boolean // Enable debug logging
 }
 
-// Default cache expiration times (in milliseconds)
-export const CACHE_EXPIRY = {
-  SHORT: 30 * 1000, // 30 seconds
-  MEDIUM: 5 * 60 * 1000, // 5 minutes
-  LONG: 30 * 60 * 1000, // 30 minutes
-  PERSISTENT: 24 * 60 * 60 * 1000, // 24 hours
+// Default configuration
+const DEFAULT_CONFIG: CacheConfig = {
+  defaultTTL: 5 * 60 * 1000, // 5 minutes
+  maxSize: 1000, // 1000 entries
+  debug: false,
 }
 
-class QueryCacheManager {
-  private cache: QueryCache = {}
-  private maxEntries: number
-  private debug: boolean
+// Cache statistics
+type CacheStats = {
+  size: number
+  hits: number
+  misses: number
+  expired: number
+  evictions: number
+}
 
-  constructor(maxEntries = 100, debug = false) {
-    this.maxEntries = maxEntries
-    this.debug = debug
-    this.cleanupInterval()
-  }
+/**
+ * Query Cache class
+ * Provides methods for caching and retrieving query results
+ */
+export class QueryCache {
+  private cache: Map<string, CacheEntry<any>>
+  private config: CacheConfig
+  private stats: CacheStats
+  private tagMap: Map<string, Set<string>> // Maps tags to cache keys
 
-  // Set a value in the cache
-  set<T>(key: string, data: T, expiryMs: number = CACHE_EXPIRY.MEDIUM): void {
-    const timestamp = Date.now()
-    const expiresAt = timestamp + expiryMs
-
-    this.cache[key] = {
-      data,
-      timestamp,
-      expiresAt,
+  constructor(config: Partial<CacheConfig> = {}) {
+    this.config = { ...DEFAULT_CONFIG, ...config }
+    this.cache = new Map()
+    this.tagMap = new Map()
+    this.stats = {
+      size: 0,
+      hits: 0,
+      misses: 0,
+      expired: 0,
+      evictions: 0,
     }
 
-    if (this.debug) {
-      console.log(`[QueryCache] Set: ${key}, expires in ${expiryMs / 1000}s`)
+    // Set up periodic cleanup
+    if (typeof window !== "undefined") {
+      setInterval(() => this.cleanup(), 60 * 1000) // Clean up every minute
     }
-
-    // If we've exceeded the max entries, remove the oldest
-    this.enforceMaxEntries()
   }
 
-  // Get a value from the cache
+  /**
+   * Get an item from the cache
+   * @param key Cache key
+   * @returns Cached data or null if not found or expired
+   */
   get<T>(key: string): T | null {
-    const entry = this.cache[key]
+    const entry = this.cache.get(key)
 
     if (!entry) {
-      if (this.debug) {
-        console.log(`[QueryCache] Miss: ${key}`)
+      this.stats.misses++
+      if (this.config.debug) {
+        logger.debug(`Cache miss: ${key}`)
       }
       return null
     }
 
-    // Check if the entry has expired
-    if (Date.now() > entry.expiresAt) {
-      if (this.debug) {
-        console.log(`[QueryCache] Expired: ${key}`)
+    const now = Date.now()
+    if (entry.expiresAt < now) {
+      // Entry has expired
+      this.cache.delete(key)
+      this.removeKeyFromTags(key)
+      this.stats.expired++
+      this.stats.size = this.cache.size
+      if (this.config.debug) {
+        logger.debug(`Cache expired: ${key}`)
       }
-      delete this.cache[key]
       return null
     }
 
-    if (this.debug) {
-      console.log(`[QueryCache] Hit: ${key}`)
+    // Cache hit
+    this.stats.hits++
+    if (this.config.debug) {
+      logger.debug(`Cache hit: ${key}`)
     }
-
     return entry.data as T
   }
 
-  // Remove a value from the cache
-  remove(key: string): void {
-    if (this.cache[key]) {
-      delete this.cache[key]
-      if (this.debug) {
-        console.log(`[QueryCache] Removed: ${key}`)
+  /**
+   * Set an item in the cache
+   * @param key Cache key
+   * @param data Data to cache
+   * @param options Caching options
+   */
+  set<T>(
+    key: string,
+    data: T,
+    options: {
+      ttl?: number
+      tags?: string[]
+    } = {},
+  ): void {
+    const ttl = options.ttl || this.config.defaultTTL
+    const tags = options.tags || []
+
+    // Ensure we don't exceed max size
+    if (this.cache.size >= this.config.maxSize && !this.cache.has(key)) {
+      this.evictOldest()
+    }
+
+    const now = Date.now()
+    const entry: CacheEntry<T> = {
+      data,
+      timestamp: now,
+      expiresAt: now + ttl,
+      tags,
+    }
+
+    this.cache.set(key, entry)
+    this.stats.size = this.cache.size
+
+    // Add key to tag maps
+    tags.forEach((tag) => {
+      if (!this.tagMap.has(tag)) {
+        this.tagMap.set(tag, new Set())
+      }
+      this.tagMap.get(tag)?.add(key)
+    })
+
+    if (this.config.debug) {
+      logger.debug(`Cache set: ${key}, expires in ${ttl}ms, tags: ${tags.join(", ")}`)
+    }
+  }
+
+  /**
+   * Delete an item from the cache
+   * @param key Cache key
+   */
+  delete(key: string): boolean {
+    const deleted = this.cache.delete(key)
+    if (deleted) {
+      this.removeKeyFromTags(key)
+      this.stats.size = this.cache.size
+      if (this.config.debug) {
+        logger.debug(`Cache delete: ${key}`)
       }
     }
+    return deleted
   }
 
-  // Clear all values from the cache
-  clear(): void {
-    this.cache = {}
-    if (this.debug) {
-      console.log(`[QueryCache] Cleared all entries`)
-    }
-  }
+  /**
+   * Invalidate cache entries by tag
+   * @param tag Tag to invalidate
+   */
+  invalidateByTag(tag: string): number {
+    const keys = this.tagMap.get(tag)
+    if (!keys) return 0
 
-  // Clear all values that match a pattern
-  clearPattern(pattern: string): void {
-    const regex = new RegExp(pattern)
     let count = 0
-
-    Object.keys(this.cache).forEach((key) => {
-      if (regex.test(key)) {
-        delete this.cache[key]
+    keys.forEach((key) => {
+      if (this.cache.delete(key)) {
         count++
       }
     })
 
-    if (this.debug && count > 0) {
-      console.log(`[QueryCache] Cleared ${count} entries matching pattern: ${pattern}`)
+    // Clear the tag set
+    this.tagMap.delete(tag)
+    this.stats.size = this.cache.size
+
+    if (this.config.debug && count > 0) {
+      logger.debug(`Invalidated ${count} entries by tag: ${tag}`)
+    }
+
+    return count
+  }
+
+  /**
+   * Invalidate cache entries by multiple tags
+   * @param tags Tags to invalidate
+   */
+  invalidateByTags(tags: string[]): number {
+    let count = 0
+    tags.forEach((tag) => {
+      count += this.invalidateByTag(tag)
+    })
+    return count
+  }
+
+  /**
+   * Clear the entire cache
+   */
+  clear(): void {
+    this.cache.clear()
+    this.tagMap.clear()
+    this.stats.size = 0
+    if (this.config.debug) {
+      logger.debug("Cache cleared")
     }
   }
 
-  // Get cache stats
-  getStats(): { size: number; entries: { key: string; expiresIn: number }[] } {
+  /**
+   * Get cache statistics
+   */
+  getStats(): CacheStats {
+    return { ...this.stats }
+  }
+
+  /**
+   * Clean up expired entries
+   */
+  private cleanup(): void {
     const now = Date.now()
-    const entries = Object.entries(this.cache).map(([key, entry]) => ({
-      key,
-      expiresIn: Math.max(0, Math.floor((entry.expiresAt - now) / 1000)),
-    }))
+    let expiredCount = 0
 
-    return {
-      size: Object.keys(this.cache).length,
-      entries,
-    }
-  }
-
-  // Enforce the maximum number of entries
-  private enforceMaxEntries(): void {
-    const keys = Object.keys(this.cache)
-    if (keys.length <= this.maxEntries) return
-
-    // Sort entries by timestamp (oldest first)
-    const sortedKeys = keys.sort((a, b) => this.cache[a].timestamp - this.cache[b].timestamp)
-
-    // Remove oldest entries until we're under the limit
-    const keysToRemove = sortedKeys.slice(0, keys.length - this.maxEntries)
-    keysToRemove.forEach((key) => {
-      delete this.cache[key]
+    this.cache.forEach((entry, key) => {
+      if (entry.expiresAt < now) {
+        this.cache.delete(key)
+        this.removeKeyFromTags(key)
+        expiredCount++
+        this.stats.expired++
+      }
     })
 
-    if (this.debug && keysToRemove.length > 0) {
-      console.log(`[QueryCache] Removed ${keysToRemove.length} oldest entries to enforce max size`)
+    this.stats.size = this.cache.size
+
+    if (this.config.debug && expiredCount > 0) {
+      logger.debug(`Cleaned up ${expiredCount} expired entries`)
     }
   }
 
-  // Periodically clean up expired entries
-  private cleanupInterval(): void {
-    setInterval(() => {
-      const now = Date.now()
-      let expiredCount = 0
+  /**
+   * Evict the oldest entry from the cache
+   */
+  private evictOldest(): void {
+    let oldestKey: string | null = null
+    let oldestTimestamp = Number.POSITIVE_INFINITY
 
-      Object.keys(this.cache).forEach((key) => {
-        if (now > this.cache[key].expiresAt) {
-          delete this.cache[key]
-          expiredCount++
-        }
-      })
-
-      if (this.debug && expiredCount > 0) {
-        console.log(`[QueryCache] Cleanup: removed ${expiredCount} expired entries`)
+    this.cache.forEach((entry, key) => {
+      if (entry.timestamp < oldestTimestamp) {
+        oldestTimestamp = entry.timestamp
+        oldestKey = key
       }
-    }, 60000) // Run cleanup every minute
+    })
+
+    if (oldestKey) {
+      this.cache.delete(oldestKey)
+      this.removeKeyFromTags(oldestKey)
+      this.stats.evictions++
+      if (this.config.debug) {
+        logger.debug(`Evicted oldest entry: ${oldestKey}`)
+      }
+    }
+  }
+
+  /**
+   * Remove a key from all tag sets
+   */
+  private removeKeyFromTags(key: string): void {
+    this.tagMap.forEach((keys, tag) => {
+      keys.delete(key)
+      if (keys.size === 0) {
+        this.tagMap.delete(tag)
+      }
+    })
   }
 }
 
-// Export a singleton instance
-export const queryCache = new QueryCacheManager(
-  200, // Max 200 entries
-  process.env.NODE_ENV === "development", // Debug in development
-)
+// Create a singleton instance
+let cacheInstance: QueryCache | null = null
+
+/**
+ * Get the global query cache instance
+ */
+export function getQueryCache(config?: Partial<CacheConfig>): QueryCache {
+  if (!cacheInstance) {
+    cacheInstance = new QueryCache(config)
+  }
+  return cacheInstance
+}
+
+/**
+ * Reset the query cache (useful for testing)
+ */
+export function resetQueryCache(): void {
+  if (cacheInstance) {
+    cacheInstance.clear()
+  }
+  cacheInstance = null
+}

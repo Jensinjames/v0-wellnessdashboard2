@@ -5,7 +5,8 @@ import "./globals.css"
 import { AuthProvider } from "@/context/auth-context"
 import { ProfileCompletionProvider } from "@/context/profile-completion-context"
 import { EnvProvider } from "@/components/providers/env-provider"
-import { CacheHydration } from "@/components/cache-hydration"
+import { NavigationProvider } from "@/context/navigation-context"
+import { SupabaseProvider } from "@/components/providers/supabase-provider"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -24,12 +25,13 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <EnvProvider>
-          <AuthProvider>
-            <ProfileCompletionProvider>
-              <CacheHydration />
-              {children}
-            </ProfileCompletionProvider>
-          </AuthProvider>
+          <SupabaseProvider>
+            <AuthProvider>
+              <ProfileCompletionProvider>
+                <NavigationProvider>{children}</NavigationProvider>
+              </ProfileCompletionProvider>
+            </AuthProvider>
+          </SupabaseProvider>
         </EnvProvider>
       </body>
     </html>

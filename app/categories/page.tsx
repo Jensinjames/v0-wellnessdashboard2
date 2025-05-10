@@ -1,45 +1,41 @@
-import { Navigation } from "@/components/navigation"
-import { CategoryList } from "@/components/categories/category-list"
-import { getCategories } from "@/app/actions/categories"
+import { Suspense } from "react"
 import { createServerSupabaseClient } from "@/lib/supabase-server"
-import { CACHE_KEYS } from "@/lib/cache-utils"
+import { CategoriesClient } from "./categories-client"
+import type { WellnessCategory } from "@/types/wellness"
+
+export const dynamic = "force-dynamic"
 
 export default async function CategoriesPage() {
-  // Get the current user
   const supabase = createServerSupabaseClient()
 
+  // Get the current user
   const {
-    data: { session },
-  } = await supabase.auth.getSession()
-  const userId = session?.user?.id
+    data: { user },
+  } = await supabase.auth.getUser()
 
-  // Fetch categories if we have a user
-  let categories = []
-  if (userId) {
-    try {
-      // Server-side fetch (will be cached on the client)
-      categories = await getCategories(userId)
-    } catch (error) {
-      console.error("Error fetching categories:", error)
-    }
+  if (!user) {
+    return <div>Please sign in to view categories</div>
   }
 
-  // If no categories were returned, use defaults
-  if (categories.length === 0) {
-    categories = [
-      { id: "faith", name: "Faith", color: "#8b5cf6" },
-      { id: "life", name: "Life", color: "#ec4899" },
-      { id: "work", name: "Work", color: "#f59e0b" },
-      { id: "health", name: "Health", color: "#10b981" },
-    ]
+  // Get system categories (no user_id) and user's custom categories
+  const { data: categories, error } = await supabase
+    .from("wellness_categories")
+    .select("*")
+    .or(`user_id.is.null,user_id.eq.${user.id}`)
+    .order("name")
+
+  if (error) {
+    console.error("Error fetching categories:", error)
+    return <div>Error loading categories</div>
   }
 
   return (
-    <>
-      <Navigation />
-      <div className="container mx-auto py-8">
-        <CategoryList categories={categories} cacheKey={userId ? CACHE_KEYS.CATEGORIES(userId) : undefined} />
-      </div>
-    </>
+    <div className="container py-8">
+      <h1 className="text-3xl font-bold mb-6">Wellness Categories</h1>
+
+      <Suspense fallback={<div>Loading categories...</div>}>
+        <CategoriesClient initialCategories={categories as WellnessCategory[]} />
+      </Suspense>
+    </div>
   )
 }

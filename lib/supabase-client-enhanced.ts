@@ -1,15 +1,14 @@
 import { createClient } from "@supabase/supabase-js"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
 
 // Global variables for singleton pattern
-let supabaseClient: SupabaseClient<Database> | ReturnType<typeof createClientComponentClient<Database>> | null = null
+let supabaseClient: SupabaseClient<Database> | null = null
 let isInitializing = false
 let initializationPromise: Promise<SupabaseClient<Database>> | null = null
 let clientInitTime: number | null = null
 let clientInstanceCount = 0
-let lastResetTime = Date.now()
+let lastResetTime: number | null = null
 let lastSuccessfulConnection: number | null = null
 let connectionAttempts = 0
 let consecutiveFailures = 0
@@ -51,16 +50,13 @@ export function getSupabaseClient(
     retryOnError?: boolean
     maxRetries?: number
   } = {},
-):
-  | SupabaseClient<Database>
-  | Promise<SupabaseClient<Database>>
-  | ReturnType<typeof createClientComponentClient<Database>> {
+): SupabaseClient<Database> | Promise<SupabaseClient<Database>> {
   if (typeof window === "undefined") {
-    //throw new Error("This client should only be used in the browser")
+    throw new Error("This client should only be used in the browser")
   }
 
   if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    //throw new Error("Supabase URL and anon key are required")
+    throw new Error("Supabase URL and anon key are required")
   }
 
   // If we already have a client and aren't forcing a new one, return it
@@ -232,9 +228,9 @@ export function getSupabaseClient(
 
 // Create an enhanced fetch implementation with timeout, retries, and telemetry
 function createEnhancedFetch(options: any = {}) {
-  return async (url: RequestInfo | URL, fetchOptions: RequestInit = {}) => {
+  return (url: RequestInfo | URL, fetchOptions: RequestInit = {}) => {
     const timeout = options.timeout || 15000
-    const maxRetries = options.maxRetries || 3
+    const maxRetries = options.maxRetries || 2
     const controller = new AbortController()
     const startTime = Date.now()
 
@@ -333,8 +329,8 @@ function recordConnectionHealth(success: boolean, latency: number): void {
 async function testConnection(client: SupabaseClient<Database>): Promise<boolean> {
   try {
     const startTime = Date.now()
-    // Simple health check query - use a simpler query without count(*)
-    const { error } = await client.from("profiles").select("id").limit(1)
+    // Simple health check query
+    const { error } = await client.from("profiles").select("count(*)", { count: "exact" }).limit(0)
 
     const latency = Date.now() - startTime
     recordConnectionHealth(!error, latency)
@@ -355,33 +351,52 @@ async function testConnection(client: SupabaseClient<Database>): Promise<boolean
 // Check the Supabase connection health
 export async function checkSupabaseConnection(): Promise<{ isConnected: boolean; latency: number }> {
   try {
+    // If we don't have a client yet, create one
+    if (!supabaseClient) {
+      debugLog("No client exists, creating one for connection check")
+      await getSupabaseClient({ timeout: 5000 })
+    }
+
+    // If we still don't have a client, return false
+    if (!supabaseClient) {
+      debugLog("Failed to create client for connection check")
+      return { isConnected: false, latency: 0 }
+    }
+
     const startTime = Date.now()
-    const client = createClientComponentClient<Database>()
+    const { data, error } = await supabaseClient.from("profiles").select("count(*)", { count: "exact" }).limit(0)
 
-    // Simple query to check connection
-    const { data, error } = await client.from("profiles").select("id").limit(1).maybeSingle()
+    const latency = Date.now() - startTime
 
-    const endTime = Date.now()
-    const latency = endTime - startTime
-
-    return {
-      isConnected: !error,
-      latency,
+    if (error) {
+      console.error("Supabase connection test error:", error.message)
+      return { isConnected: false, latency }
     }
-  } catch (err) {
-    console.error("Error checking Supabase connection:", err)
-    return {
-      isConnected: false,
-      latency: -1,
-    }
+
+    lastSuccessfulConnection = Date.now()
+    return { isConnected: true, latency }
+  } catch (error: any) {
+    console.error("Supabase connection test exception:", error.message || "Unknown error")
+    return { isConnected: false, latency: 0 }
   }
 }
 
 // Reset the client (useful for testing or when auth state changes)
 export function resetSupabaseClient() {
-  supabaseClient = null
+  debugLog("Resetting Supabase client")
+
+  // Record reset time
   lastResetTime = Date.now()
-  console.log("Supabase client reset")
+
+  // Clear the client and initialization state
+  supabaseClient = null
+  isInitializing = false
+  initializationPromise = null
+
+  // Clear the GoTrueClient registry
+  goTrueClientRegistry.clear()
+
+  debugLog("Supabase client reset complete")
 }
 
 // Get the current client without creating a new one
@@ -473,64 +488,20 @@ export function getClientDebugInfo() {
 }
 
 // Clear any orphaned GoTrueClient instances
-export function cleanupOrphanedClients(force = false) {
-  // Implementation would depend on how you're tracking clients
-  console.log("Cleaning up orphaned clients")
-}
+export function cleanupOrphanedClients() {
+  if (goTrueClientRegistry.size > 1) {
+    debugLog(`Cleaning up orphaned GoTrueClient instances. Before: ${goTrueClientRegistry.size}`)
 
-// New function to migrate anonymous user data to authenticated user
-export async function migrateAnonymousUserData(
-  anonymousId: string,
-  authenticatedId: string,
-): Promise<{
-  success: boolean
-  error: Error | null
-}> {
-  if (!supabaseClient) {
-    return {
-      success: false,
-      error: new Error("Supabase client not initialized"),
-    }
-  }
-
-  try {
-    debugLog(`Attempting to migrate data from anonymous user ${anonymousId} to authenticated user ${authenticatedId}`)
-
-    // Call a stored procedure to handle the migration
-    const { data, error } = await supabaseClient.rpc("migrate_user_data", {
-      anonymous_id: anonymousId,
-      authenticated_id: authenticatedId,
-    })
-
-    if (error) {
-      console.error("Error migrating user data:", error)
-      return {
-        success: false,
-        error: new Error(`Failed to migrate user data: ${error.message}`),
-      }
+    // Keep only the current client's GoTrueClient
+    if (supabaseClient && (supabaseClient.auth as any)._goTrueClient) {
+      const currentGoTrueClient = (supabaseClient.auth as any)._goTrueClient
+      goTrueClientRegistry.clear()
+      goTrueClientRegistry.add(currentGoTrueClient)
+    } else {
+      // If we don't have a current client, clear all
+      goTrueClientRegistry.clear()
     }
 
-    debugLog(`Successfully migrated data from anonymous user ${anonymousId} to authenticated user ${authenticatedId}`)
-    return { success: true, error: null }
-  } catch (error: any) {
-    console.error("Unexpected error during user data migration:", error)
-    return {
-      success: false,
-      error: error instanceof Error ? error : new Error(String(error)),
-    }
+    debugLog(`Cleanup complete. After: ${goTrueClientRegistry.size}`)
   }
 }
-
-// Get the Supabase client with enhanced error handling
-export function getEnhancedSupabaseClient() {
-  if (!supabaseClient) {
-    supabaseClient = createClientComponentClient<Database>()
-    clientInstanceCount++
-  }
-
-  return supabaseClient
-}
-
-export { supabaseClient }
-// If there are references to cleanupOrphanedClients, check our imports in auth-context.tsx to remove them
-// This ensures we're only using functions from our singleton supabase-client.ts

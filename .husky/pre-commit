@@ -1,4 +1,12 @@
 #!/bin/sh
 . "$(dirname "$0")/_/husky.sh"
 
+# Run lint-staged
 npx lint-staged
+
+# Run TypeScript check
+npm run type-check
+
+# Skip escape sequence check for now to avoid issues
+# echo "Checking for problematic escape sequences..."
+# npm run find-escape-issues

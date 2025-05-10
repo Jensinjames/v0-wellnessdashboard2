@@ -1,311 +1,136 @@
-// Token Manager - Handles token refresh and management
-import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Database } from "@/types/database"
+import { getSupabaseClient } from "@/utils/supabase-client"
+import { createLogger } from "@/utils/logger"
+import { isDebugMode } from "@/lib/env-utils"
 
-// Event names for token-related events
+// Create a dedicated logger
+const logger = createLogger("TokenManager")
+
+// Define custom events for token management
 export const TOKEN_EVENTS = {
-  REFRESH_SUCCESS: "token:refresh:success",
-  REFRESH_FAILURE: "token:refresh:failure",
-  SESSION_EXPIRED: "token:session:expired",
-  REFRESH_STARTED: "token:refresh:started",
+  REFRESH_SUCCESS: "auth:token:refresh:success",
+  REFRESH_FAILURE: "auth:token:refresh:failure",
+  SESSION_EXPIRED: "auth:session:expired",
 }
 
-// Global registry to track token managers
-const tokenManagerRegistry = new Map<string, any>()
+// Initialize token refresh monitoring
+export function initTokenRefreshMonitoring() {
+  if (typeof window === "undefined") return () => {}
 
-// Global singleton instance
-let globalTokenManager: ReturnType<typeof createTokenManager> | null = null
-
-// Default refresh buffer (5 minutes before expiry)
-const DEFAULT_REFRESH_BUFFER = 5 * 60 * 1000
-
-// Create a token manager for a Supabase client
-function createTokenManager(supabaseClient: SupabaseClient<Database>, debugMode = false) {
-  // Internal state
-  let refreshTimer: NodeJS.Timeout | null = null
-  let refreshInProgress = false
-  let refreshQueue: Array<{
-    resolve: (value: boolean) => void
-    reject: (reason: any) => void
-  }> = []
-  let lastRefreshAttempt = 0
-  let lastRefreshSuccess: number | null = null
-  let refreshAttempts = 0
-  let successCount = 0
-  let failureCount = 0
-  let currentSession: any = null
-  const instanceId = `tm-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
-
-  // Debug logging
-  const debug = (...args: any[]) => {
-    if (debugMode) {
-      console.log(`[TokenManager:${instanceId.substring(0, 8)}]`, ...args)
-    }
-  }
-
-  debug("Token manager created")
-
-  // Register this instance
-  tokenManagerRegistry.set(instanceId, {
-    created: Date.now(),
-    clientId: supabaseClient ? (supabaseClient as any).supabaseUrl : "unknown",
-  })
-
-  // Initialize by getting the current session
-  const initialize = async () => {
+  // Set up the auth state change listener
+  const setupTokenListener = async () => {
     try {
-      const { data } = await supabaseClient.auth.getSession()
-      currentSession = data.session
-      debug("Initialized with session:", currentSession ? "valid" : "none")
+      const supabase = getSupabaseClient()
 
-      if (currentSession) {
-        scheduleRefresh()
-      }
-    } catch (error) {
-      console.error("Error initializing token manager:", error)
-    }
-  }
-
-  // Schedule a token refresh
-  const scheduleRefresh = () => {
-    if (!currentSession) return
-
-    // Clear any existing timer
-    if (refreshTimer) {
-      clearTimeout(refreshTimer)
-      refreshTimer = null
-    }
-
-    // Calculate when the token expires
-    const expiresAt = currentSession.expires_at ? currentSession.expires_at * 1000 : null
-    if (!expiresAt) return
-
-    // Calculate when to refresh (5 minutes before expiry or immediately if already expired)
-    const now = Date.now()
-    const refreshAt = Math.max(0, expiresAt - now - DEFAULT_REFRESH_BUFFER)
-
-    debug(
-      `Token expires in ${Math.round((expiresAt - now) / 1000 / 60)} minutes, scheduling refresh in ${Math.round(refreshAt / 1000 / 60)} minutes`,
-    )
-
-    // Schedule the refresh
-    refreshTimer = setTimeout(() => {
-      debug("Scheduled refresh triggered")
-      refreshToken()
-    }, refreshAt)
-  }
-
-  // Refresh the token
-  const refreshToken = async (): Promise<boolean> => {
-    // If a refresh is already in progress, queue this request
-    if (refreshInProgress) {
-      debug("Refresh already in progress, queueing request")
-      return new Promise<boolean>((resolve, reject) => {
-        refreshQueue.push({ resolve, reject })
-      })
-    }
-
-    try {
-      refreshInProgress = true
-      lastRefreshAttempt = Date.now()
-      refreshAttempts++
-
-      // Dispatch refresh started event
-      window.dispatchEvent(
-        new CustomEvent(TOKEN_EVENTS.REFRESH_STARTED, {
-          detail: {
-            timestamp: lastRefreshAttempt,
-            attempt: refreshAttempts,
-          },
-        }),
-      )
-
-      debug("Refreshing token")
-      const { data, error } = await supabaseClient.auth.refreshSession()
-
-      if (error) {
-        debug("Token refresh failed:", error)
-        failureCount++
-
-        // Dispatch refresh failure event
-        window.dispatchEvent(
-          new CustomEvent(TOKEN_EVENTS.REFRESH_FAILURE, {
-            detail: {
-              timestamp: Date.now(),
-              error,
-              attempt: refreshAttempts,
-            },
-          }),
-        )
-
-        // If the session is expired, dispatch session expired event
-        if (error.message?.includes("expired")) {
-          window.dispatchEvent(new CustomEvent(TOKEN_EVENTS.SESSION_EXPIRED))
+      // Listen for auth state changes
+      const { data } = supabase.auth.onAuthStateChange((event, session) => {
+        if (isDebugMode()) {
+          logger.debug(`Auth state changed: ${event}`, { sessionExists: !!session })
         }
 
-        // Process queue with failure
-        processQueue(false)
-        return false
+        if (event === "TOKEN_REFRESHED" && session) {
+          // Dispatch a custom event for token refresh success
+          window.dispatchEvent(new CustomEvent(TOKEN_EVENTS.REFRESH_SUCCESS))
+        } else if (event === "SIGNED_OUT") {
+          // Dispatch a custom event for session expiration
+          window.dispatchEvent(new CustomEvent(TOKEN_EVENTS.SESSION_EXPIRED))
+        }
+      })
+
+      return () => {
+        data.subscription.unsubscribe()
       }
-
-      // Update session and schedule next refresh
-      currentSession = data.session
-      lastRefreshSuccess = Date.now()
-      successCount++
-
-      // Dispatch refresh success event
-      window.dispatchEvent(
-        new CustomEvent(TOKEN_EVENTS.REFRESH_SUCCESS, {
-          detail: {
-            timestamp: lastRefreshSuccess,
-            session: currentSession,
-          },
-        }),
-      )
-
-      debug("Token refreshed successfully")
-      scheduleRefresh()
-
-      // Process queue with success
-      processQueue(true)
-      return true
     } catch (error) {
-      console.error("Unexpected error refreshing token:", error)
-      failureCount++
+      logger.error("Error setting up token listener:", error)
+      return () => {}
+    }
+  }
 
-      // Dispatch refresh failure event
+  // Start monitoring
+  const unsubscribePromise = setupTokenListener()
+
+  // Return cleanup function
+  return () => {
+    unsubscribePromise.then((unsubscribe) => {
+      if (unsubscribe) unsubscribe()
+    })
+  }
+}
+
+// Manually refresh the token
+export async function refreshToken() {
+  if (typeof window === "undefined") return { success: false, error: "Cannot refresh token on server" }
+
+  try {
+    const supabase = getSupabaseClient()
+    const { data, error } = await supabase.auth.refreshSession()
+
+    if (error) {
+      logger.error("Error refreshing token:", error)
+
+      // Dispatch a custom event for token refresh failure
       window.dispatchEvent(
         new CustomEvent(TOKEN_EVENTS.REFRESH_FAILURE, {
-          detail: {
-            timestamp: Date.now(),
-            error,
-            attempt: refreshAttempts,
-          },
+          detail: { error },
         }),
       )
 
-      // Process queue with failure
-      processQueue(false)
-      return false
-    } finally {
-      refreshInProgress = false
-    }
-  }
-
-  // Process the queue of pending refresh requests
-  const processQueue = (success: boolean) => {
-    const queue = [...refreshQueue]
-    refreshQueue = []
-
-    for (const { resolve } of queue) {
-      resolve(success)
-    }
-  }
-
-  // Force an immediate token refresh
-  const forceRefresh = async (): Promise<boolean> => {
-    debug("Force refresh requested")
-    return refreshToken()
-  }
-
-  // Check if the token is valid
-  const isTokenValid = (): boolean => {
-    if (!currentSession) return false
-
-    const expiresAt = currentSession.expires_at ? currentSession.expires_at * 1000 : null
-    if (!expiresAt) return false
-
-    return Date.now() < expiresAt
-  }
-
-  // Get token status
-  const getStatus = () => {
-    if (!currentSession) {
-      return {
-        valid: false,
-        expiresSoon: false,
-        expiresAt: null,
-        telemetry: {
-          refreshAttempts,
-          lastRefreshAttempt,
-          lastRefreshSuccess,
-          successCount,
-          failureCount,
-        },
-      }
+      return { success: false, error: error.message }
     }
 
-    const expiresAt = currentSession.expires_at ? currentSession.expires_at * 1000 : null
-    const now = Date.now()
-    const valid = expiresAt ? now < expiresAt : false
-    const expiresSoon = expiresAt ? now > expiresAt - DEFAULT_REFRESH_BUFFER : false
+    if (!data.session) {
+      logger.warn("No session returned from token refresh")
 
-    return {
-      valid,
-      expiresSoon,
-      expiresAt,
-      telemetry: {
-        refreshAttempts,
-        lastRefreshAttempt,
-        lastRefreshSuccess,
-        successCount,
-        failureCount,
-      },
-    }
-  }
+      // Dispatch a custom event for session expiration
+      window.dispatchEvent(new CustomEvent(TOKEN_EVENTS.SESSION_EXPIRED))
 
-  // Clean up resources
-  const cleanup = () => {
-    debug("Cleaning up token manager")
-    if (refreshTimer) {
-      clearTimeout(refreshTimer)
-      refreshTimer = null
+      return { success: false, error: "No session returned" }
     }
 
-    // Unregister this instance
-    tokenManagerRegistry.delete(instanceId)
-  }
+    // Dispatch a custom event for token refresh success
+    window.dispatchEvent(new CustomEvent(TOKEN_EVENTS.REFRESH_SUCCESS))
 
-  // Initialize
-  initialize()
+    return { success: true, error: null }
+  } catch (error: any) {
+    logger.error("Unexpected error refreshing token:", error)
 
-  return {
-    refreshToken,
-    forceRefresh,
-    isTokenValid,
-    getStatus,
-    cleanup,
-    instanceId,
+    // Dispatch a custom event for token refresh failure
+    window.dispatchEvent(
+      new CustomEvent(TOKEN_EVENTS.REFRESH_FAILURE, {
+        detail: { error },
+      }),
+    )
+
+    return { success: false, error: error.message || "Failed to refresh token" }
   }
 }
 
-// Get the token manager (singleton pattern)
-export function getTokenManager(supabaseClient: SupabaseClient<Database>, debugMode = false) {
-  // If we already have a global instance, return it
-  if (globalTokenManager) {
-    return globalTokenManager
-  }
+// Check if the session is valid
+export async function isSessionValid() {
+  if (typeof window === "undefined") return false
 
-  // Create a new instance
-  globalTokenManager = createTokenManager(supabaseClient, debugMode)
-  return globalTokenManager
-}
-
-// Reset the token manager (useful for testing or when auth state changes)
-export function resetTokenManager() {
-  if (globalTokenManager) {
-    globalTokenManager.cleanup()
-    globalTokenManager = null
+  try {
+    const supabase = getSupabaseClient()
+    const { data } = await supabase.auth.getSession()
+    return !!data.session
+  } catch (error) {
+    logger.error("Error checking session validity:", error)
+    return false
   }
 }
 
-// Get token manager registry info (for debugging)
-export function getTokenManagerRegistry() {
-  return {
-    count: tokenManagerRegistry.size,
-    instances: Array.from(tokenManagerRegistry.entries()).map(([id, info]) => ({
-      id,
-      ...info,
-    })),
+// Get the current session expiration time
+export async function getSessionExpiration() {
+  if (typeof window === "undefined") return null
+
+  try {
+    const supabase = getSupabaseClient()
+    const { data } = await supabase.auth.getSession()
+
+    if (!data.session) return null
+
+    return new Date(data.session.expires_at! * 1000)
+  } catch (error) {
+    logger.error("Error getting session expiration:", error)
+    return null
   }
 }

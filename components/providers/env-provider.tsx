@@ -1,63 +1,70 @@
 "use client"
 
 import type React from "react"
-import { createContext, useContext, useEffect } from "react"
-import { APP_VERSION, enableDebugMode, disableDebugMode, isDebugMode } from "@/lib/version"
-import { getEnvironment, isDevelopment } from "@/lib/env-utils"
-import { monitorGoTrueClientInstances } from "@/lib/supabase-client"
+import { createContext, useContext, useEffect, useState } from "react"
 
-// Define the environment context type
-type EnvContextType = {
+// Define the shape of our environment context
+interface EnvContextType {
+  isProduction: boolean
+  isDevelopment: boolean
+  isTest: boolean
+  debugMode: boolean
   appVersion: string
-  environment: string
-  isDebugMode: boolean
-  enableDebugMode: () => void
-  disableDebugMode: () => void
+  appEnvironment: string
 }
 
-// Create the context
+// Create the context with default values
 const EnvContext = createContext<EnvContextType>({
-  appVersion: "1.0.0",
-  environment: "production",
-  isDebugMode: false,
-  enableDebugMode: () => {},
-  disableDebugMode: () => {},
+  isProduction: false,
+  isDevelopment: true,
+  isTest: false,
+  debugMode: false,
+  appVersion: "0.0.0",
+  appEnvironment: "development",
 })
 
-// Custom hook to use the environment context
+// Hook to use the environment context
 export const useEnv = () => useContext(EnvContext)
 
-// Environment Provider Component
-export function EnvProvider({ children }: { children: React.ReactNode }) {
-  // Check for debug mode on mount
+interface EnvProviderProps {
+  children: React.ReactNode
+}
+
+export function EnvProvider({ children }: EnvProviderProps) {
+  const [env, setEnv] = useState<EnvContextType>({
+    isProduction: false,
+    isDevelopment: true,
+    isTest: false,
+    debugMode: false,
+    appVersion: "0.0.0",
+    appEnvironment: "development",
+  })
+
   useEffect(() => {
-    // If we have NEXT_PUBLIC_DEBUG_MODE set to true, enable debug mode in localStorage
-    if (process.env.NEXT_PUBLIC_DEBUG_MODE === "true") {
-      enableDebugMode()
-    }
+    // Get environment variables
+    const appEnvironment = process.env.NEXT_PUBLIC_APP_ENVIRONMENT || "development"
+    const debugMode = process.env.NEXT_PUBLIC_DEBUG_MODE === "true"
+    const appVersion = process.env.NEXT_PUBLIC_APP_VERSION || "0.0.0"
 
-    // Start monitoring GoTrueClient instances in development mode
-    let stopMonitoring: (() => void) | undefined
+    // Set environment context
+    setEnv({
+      isProduction: appEnvironment === "production",
+      isDevelopment: appEnvironment === "development",
+      isTest: appEnvironment === "test",
+      debugMode,
+      appVersion,
+      appEnvironment,
+    })
 
-    if (isDevelopment()) {
-      stopMonitoring = monitorGoTrueClientInstances(30000) // Check every 30 seconds
-    }
-
-    return () => {
-      // Clean up the monitor when the component unmounts
-      if (stopMonitoring) {
-        stopMonitoring()
-      }
+    // Log environment info in development
+    if (appEnvironment === "development" || debugMode) {
+      console.log("[Environment]", {
+        appEnvironment,
+        debugMode,
+        appVersion,
+      })
     }
   }, [])
 
-  const value = {
-    appVersion: APP_VERSION,
-    environment: getEnvironment(),
-    isDebugMode: isDebugMode(),
-    enableDebugMode,
-    disableDebugMode,
-  }
-
-  return <EnvContext.Provider value={value}>{children}</EnvContext.Provider>
+  return <EnvContext.Provider value={env}>{children}</EnvContext.Provider>
 }
