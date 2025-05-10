@@ -193,16 +193,21 @@ export async function checkPasswordCompromised(
       return { compromised: false, occurrences: 0, error: `API error: ${response.status}` }
     }
 
-    // Parse the response
+    // Parse the response - FIXED: properly handle newlines
     const text = await response.text()
-    const lines = text.split("\n")
+    const lines = text.split(/\r?\n/)
 
     // Look for our hash suffix
     for (const line of lines) {
-      const [hashSuffix, count] = line.split(":")
+      if (!line.trim()) continue
+
+      const parts = line.split(":")
+      if (parts.length !== 2) continue
+
+      const [hashSuffix, countStr] = parts
 
       if (hashSuffix.trim() === suffix) {
-        const occurrences = Number.parseInt(count.trim(), 10)
+        const occurrences = Number.parseInt(countStr.trim(), 10) || 0
         return { compromised: true, occurrences, error: null }
       }
     }

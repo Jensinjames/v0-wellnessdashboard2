@@ -43,11 +43,13 @@ export function hasProblematicEscapes(input: string): boolean {
   return false
 }
 
+import type React from "react"
+
 /**
  * Safely formats a string for use in JSX by wrapping it in curly braces
  * if it contains apostrophes or other special characters.
  */
-export function safeJsxString(input: string): JSX.Element {
+export function safeJsxString(input: string): React.ReactNode {
   if (!input) return <>{input}</>
 
   // If the string contains apostrophes or quotes, wrap it in curly braces

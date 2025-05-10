@@ -13,11 +13,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { useAuth } from "@/context/auth-context"
-import { createLogger } from "@/utils/logger"
-import { handleAuthError } from "@/utils/auth-error-handler"
-
-// Create a dedicated logger for the sign-in form
-const logger = createLogger("SignInForm")
+import { safeLog, safeError } from "@/utils/safe-console"
 
 // Define the form schema
 const formSchema = z.object({
@@ -62,7 +58,7 @@ export function EnhancedSignInForm() {
       setIsRetrying(false)
 
       // Log the attempt (without sensitive data)
-      logger.info("Attempting sign-in", {
+      safeLog("Attempting sign-in", {
         emailProvided: !!data.email,
         passwordProvided: !!data.password,
       })
@@ -98,16 +94,15 @@ export function EnhancedSignInForm() {
       // Handle general errors
       if (signInError) {
         // Special handling for 500 errors
-        if (signInError.message.includes("temporarily unavailable")) {
-          setError("Authentication service is temporarily unavailable. We're automatically retrying your request.")
+        if (signInError.message.includes("unavailable")) {
+          setError("Authentication service is unavailable. Please try again later.")
         } else {
           // Process other errors
-          const authError = handleAuthError(signInError, { email: data.email })
-          setError(authError.message)
+          setError(signInError.message)
         }
       }
     } catch (err) {
-      logger.error("Unexpected error during sign-in:", err)
+      safeError("Unexpected error during sign-in:", err)
       setError("An unexpected error occurred. Please try again.")
     } finally {
       setIsLoading(false)
@@ -169,12 +164,12 @@ export function EnhancedSignInForm() {
         </div>
 
         {error && (
-          <Alert variant={error.includes("temporarily unavailable") ? "warning" : "destructive"}>
+          <Alert variant={error.includes("unavailable") ? "warning" : "destructive"}>
             <AlertTriangle className="h-4 w-4" />
             <AlertTitle>Authentication Error</AlertTitle>
             <AlertDescription className="flex flex-col gap-2">
               <span>{error}</span>
-              {error.includes("temporarily unavailable") && !isRetrying && (
+              {error.includes("unavailable") && !isRetrying && (
                 <Button
                   type="button"
                   variant="outline"

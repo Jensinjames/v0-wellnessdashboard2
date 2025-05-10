@@ -11,7 +11,6 @@ export const clientEnv = {
   DEBUG_MODE: process.env.NEXT_PUBLIC_DEBUG_MODE === "true",
   APP_VERSION: process.env.NEXT_PUBLIC_APP_VERSION || "0.0.0",
   SITE_URL: process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== "undefined" ? window.location.origin : ""),
-  STATSIG_CLIENT_KEY: process.env.NEXT_PUBLIC_STATSIG_CLIENT_KEY,
 }
 
 // Detect environment
