@@ -4,45 +4,68 @@
  */
 import { createBrowserClient } from "@supabase/ssr"
 import type { Database } from "@/types/database"
-import { isDebugMode } from "@/utils/environment"
+import { CLIENT_ENV, validateClientEnv } from "@/lib/env-config"
+import { createLogger } from "@/utils/logger"
+
+const logger = createLogger("SupabaseClient")
+
+// Track all client instances for debugging
+const clientInstances = new Map<string, any>()
 
 // Singleton instance for the client
 let supabaseClient: ReturnType<typeof createBrowserClient<Database>> | null = null
+let clientId = `supabase-client-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
 
 // Create and return a Supabase client for browser usage
 export function getSupabaseClient(): ReturnType<typeof createBrowserClient<Database>> {
   if (!supabaseClient) {
     try {
-      // Check if required environment variables are available
-      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-        console.error("Missing Supabase environment variables")
+      // Validate environment variables
+      const { valid, missing } = validateClientEnv()
+      if (!valid) {
+        logger.error(`Missing Supabase environment variables: ${missing.join(", ")}`)
         throw new Error("Supabase configuration is missing. Please check your environment variables.")
       }
 
       // Create a new client if one doesn't exist - ONLY use anon key on client side
-      supabaseClient = createBrowserClient<Database>(
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        {
-          auth: {
-            persistSession: true,
-            autoRefreshToken: true,
-            detectSessionInUrl: true,
-            flowType: "pkce",
-          },
-          global: {
-            headers: {
-              "x-application-name": "wellness-dashboard-client",
-            },
+      const url = CLIENT_ENV.SUPABASE_URL
+      const key = CLIENT_ENV.SUPABASE_ANON_KEY
+
+      if (!url || !key) {
+        throw new Error("Supabase URL or Anon Key is missing")
+      }
+
+      // Generate a consistent storage key based on the URL
+      const storageKey = `sb-${url.replace(/^https?:\/\//, "").replace(/\..*$/, "")}-auth`
+
+      supabaseClient = createBrowserClient<Database>(url, key, {
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: true,
+          flowType: "pkce",
+          storageKey,
+        },
+        global: {
+          headers: {
+            "x-application-name": "wellness-dashboard-client",
+            "x-client-id": clientId,
           },
         },
-      )
+      })
 
-      if (isDebugMode()) {
-        console.log("Supabase client created successfully")
+      // Track this instance for debugging
+      clientInstances.set(clientId, {
+        createdAt: new Date().toISOString(),
+        url,
+      })
+
+      if (CLIENT_ENV.DEBUG_MODE) {
+        logger.info(`Supabase client created successfully (${clientId})`)
+        logger.debug(`Active client instances: ${clientInstances.size}`)
       }
     } catch (error) {
-      console.error("Error initializing Supabase client:", error)
+      logger.error("Error initializing Supabase client:", error)
       throw error
     }
   }
@@ -52,7 +75,16 @@ export function getSupabaseClient(): ReturnType<typeof createBrowserClient<Datab
 
 // Reset the client (useful for testing or when auth state changes)
 export function resetSupabaseClient() {
-  supabaseClient = null
+  if (supabaseClient) {
+    logger.info(`Resetting Supabase client (${clientId})`)
+
+    // Remove from tracking
+    clientInstances.delete(clientId)
+
+    // Reset the client
+    supabaseClient = null
+    clientId = `supabase-client-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
+  }
 }
 
 // Get the current auth state
@@ -61,7 +93,7 @@ export async function getCurrentSession() {
   const { data, error } = await supabase.auth.getSession()
 
   if (error) {
-    console.error("Error getting session:", error)
+    logger.error("Error getting session:", error)
     return { session: null, error }
   }
 
@@ -75,7 +107,7 @@ export async function getCurrentUser() {
     const { data, error } = await supabase.auth.getUser()
 
     if (error) {
-      console.error("Error getting user:", error)
+      logger.error("Error getting user:", error)
       return { user: null, error }
     }
 
@@ -85,7 +117,7 @@ export async function getCurrentUser() {
 
     return { user: data.user, error: null }
   } catch (error) {
-    console.error("Unexpected error getting user:", error)
+    logger.error("Unexpected error getting user:", error)
     return { user: null, error }
   }
 }
@@ -95,10 +127,9 @@ export async function getCurrentUser() {
  * This helps track authentication client instances to prevent memory leaks
  */
 export function monitorGoTrueClientInstances() {
-  if (!isDebugMode()) return { start: () => {}, stop: () => {} }
+  if (!CLIENT_ENV.DEBUG_MODE) return { start: () => {}, stop: () => {} }
 
   let intervalId: NodeJS.Timeout | null = null
-  const instanceCounts = new Map<string, number>()
 
   const start = () => {
     if (intervalId) return
@@ -106,26 +137,46 @@ export function monitorGoTrueClientInstances() {
     // Check for GoTrue instances in global scope (for debugging only)
     intervalId = setInterval(() => {
       try {
-        // This is a simplified version that just logs the client instance
-        if (supabaseClient) {
-          const clientId = (supabaseClient as any)?.auth?.id || "unknown"
-          const count = instanceCounts.get(clientId) || 0
-          instanceCounts.set(clientId, count + 1)
+        logger.debug(`[Auth Monitor] Active client instances: ${clientInstances.size}`)
 
-          console.debug(`[Auth Monitor] Active GoTrue client: ${clientId}`)
-        }
+        // Log each active instance
+        clientInstances.forEach((instance, id) => {
+          logger.debug(`[Auth Monitor] Instance ${id} created at ${instance.createdAt}`)
+        })
       } catch (err) {
-        console.error("[Auth Monitor] Error monitoring GoTrue instances:", err)
+        logger.error("[Auth Monitor] Error monitoring GoTrue instances:", err)
       }
-    }, 30000) // Check every 30 seconds
+    }, 60000) // Check every minute
+
+    logger.info("[Auth Monitor] Started monitoring GoTrue instances")
   }
 
   const stop = () => {
     if (intervalId) {
       clearInterval(intervalId)
       intervalId = null
+      logger.info("[Auth Monitor] Stopped monitoring GoTrue instances")
     }
   }
 
   return { start, stop }
+}
+
+// Get all active client instances (for debugging)
+export function getClientInstances() {
+  return Array.from(clientInstances.entries()).map(([id, instance]) => ({
+    id,
+    ...instance,
+  }))
+}
+
+// Clear all client instances except the current one
+export function clearOtherClientInstances() {
+  clientInstances.forEach((_, id) => {
+    if (id !== clientId) {
+      clientInstances.delete(id)
+    }
+  })
+
+  logger.info(`Cleared other client instances. Active count: ${clientInstances.size}`)
 }

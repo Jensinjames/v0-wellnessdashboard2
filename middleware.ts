@@ -1,31 +1,46 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { createClient } from "@/lib/supabase-server"
+import { createClient } from "@supabase/supabase-js"
 
+// Simplified middleware that doesn't rely on validateServerEnv
 export async function middleware(request: NextRequest) {
   try {
+    // Create a response object
+    const response = NextResponse.next()
+
+    // Get supabase URL and anon key directly from environment
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+    // Check if required environment variables are available
+    if (!supabaseUrl || !supabaseAnonKey) {
+      console.error("Middleware: Missing required Supabase environment variables")
+      return response
+    }
+
     // Create a Supabase client configured to use cookies
-    const supabase = createClient()
+    const supabase = createClient(supabaseUrl, supabaseAnonKey, {
+      auth: {
+        persistSession: false,
+      },
+    })
 
-    // Refresh session if expired - required for Server Components
-    // https://supabase.com/docs/guides/auth/auth-helpers/nextjs#managing-session-with-middleware
-    const {
-      data: { session },
-    } = await supabase.auth.getSession()
+    // Get the session from the request cookie
+    const authCookie = request.cookies.get("sb-auth-token")?.value
 
-    // If user is not signed in and the current path is not /auth/*, redirect to /auth/sign-in
-    if (!session && !request.nextUrl.pathname.startsWith("/auth")) {
+    // If no auth cookie, redirect unauthenticated users from protected routes
+    if (!authCookie && !request.nextUrl.pathname.startsWith("/auth")) {
       const redirectUrl = new URL("/auth/sign-in", request.url)
       redirectUrl.searchParams.set("redirect", request.nextUrl.pathname)
       return NextResponse.redirect(redirectUrl)
     }
 
-    // If user is signed in and the current path is /auth/*, redirect to /
-    if (session && request.nextUrl.pathname.startsWith("/auth")) {
+    // If auth cookie exists and user is on auth pages, redirect to home
+    if (authCookie && request.nextUrl.pathname.startsWith("/auth")) {
       return NextResponse.redirect(new URL("/", request.url))
     }
 
-    return NextResponse.next()
+    return response
   } catch (error) {
     console.error("Middleware error:", error)
 

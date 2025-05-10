@@ -1,28 +1,35 @@
 /**
  * Edge Function Configuration
- * Configuration and utilities for Supabase Edge Functions
+ * Centralized configuration for Supabase Edge Functions
  */
 
-// Email service status tracking
+// Track the status of the email service
 let emailServiceAvailable = true
+let lastEmailServiceCheck = 0
+const EMAIL_SERVICE_CHECK_INTERVAL = 5 * 60 * 1000 // 5 minutes
 
-// Check if email service is likely available
-export async function isEmailServiceLikelyAvailable(): Promise<boolean> {
-  try {
-    // Simple check - in a real app, this might make an API call to verify
-    // For now, we'll just assume it's available if we're in a browser environment
-    return typeof window !== "undefined"
-  } catch (error) {
-    console.error("Error checking email service:", error)
-    return false
+/**
+ * Check if the email service is likely available based on previous errors
+ * @returns boolean True if the email service is likely available
+ */
+export function isEmailServiceLikelyAvailable(): boolean {
+  // If we haven't checked in a while, assume it's available
+  if (Date.now() - lastEmailServiceCheck > EMAIL_SERVICE_CHECK_INTERVAL) {
+    emailServiceAvailable = true
   }
+
+  return emailServiceAvailable
 }
 
 /**
  * Update the status of the email service
+ * @param available Whether the email service is available
  */
 export function updateEmailServiceStatus(available: boolean): void {
   emailServiceAvailable = available
+  lastEmailServiceCheck = Date.now()
+
+  // Log the status change
   console.log(`Email service status updated: ${available ? "Available" : "Unavailable"}`)
 }
 
@@ -33,18 +40,18 @@ export function checkEmailServiceAvailability(): Promise<boolean> {
   return Promise.resolve(isEmailServiceLikelyAvailable())
 }
 
-// Base URL for edge functions
+// Base URL for edge functions - CLIENT SAFE
 const getEdgeFunctionBaseUrl = (): string => {
-  // Use environment variable if available
-  if (process.env.SUPABASE_EDGE_FUNCTION_URL) {
-    return process.env.SUPABASE_EDGE_FUNCTION_URL.replace(/\/$/, "")
+  // Use environment variable if available - but only the URL, not the key
+  if (typeof window !== "undefined" && process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1`
   }
 
   // Fallback to default URL pattern based on project reference
   return "https://jziyyspmahgrvfkpuisa.supabase.co/functions/v1"
 }
 
-// Edge function endpoints
+// Edge function endpoints - CLIENT SAFE
 export const EDGE_FUNCTIONS = {
   // Wellness score calculation endpoint
   WELLNESS_SCORE: `${getEdgeFunctionBaseUrl()}/wellness-score`,
@@ -56,7 +63,7 @@ export const EDGE_FUNCTIONS = {
   EMAIL_SERVICE_STATUS: `${getEdgeFunctionBaseUrl()}/email-service-status`,
 }
 
-// Edge function configuration
+// Edge function configuration - CLIENT SAFE
 export const EDGE_FUNCTION_CONFIG = {
   // Default timeout for edge function calls (in milliseconds)
   DEFAULT_TIMEOUT: 5000,
@@ -68,30 +75,30 @@ export const EDGE_FUNCTION_CONFIG = {
   RETRY_DELAY: 1000,
 
   // Debug level (0: none, 1: errors, 2: warnings, 3: info, 4: debug, 5: verbose)
-  DEBUG_LEVEL: process.env.EDGE_FUNCTION_DEBUG_LEVEL ? Number.parseInt(process.env.EDGE_FUNCTION_DEBUG_LEVEL) : 1,
+  DEBUG_LEVEL: process.env.NEXT_PUBLIC_DEBUG_LEVEL ? Number.parseInt(process.env.NEXT_PUBLIC_DEBUG_LEVEL) : 1,
 }
 
-// Check if edge functions are configured
+// Check if edge functions are configured - CLIENT SAFE
 export const isEdgeFunctionConfigured = (): boolean => {
-  return Boolean(process.env.SUPABASE_EDGE_FUNCTION_URL)
+  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL)
 }
 
-// Check if we're in development mode
+// Check if we're in development mode - CLIENT SAFE
 export const isDevMode = (): boolean => {
   return process.env.NEXT_PUBLIC_APP_ENVIRONMENT === "development" || process.env.NODE_ENV === "development"
 }
 
-// Check if debug mode is enabled
+// Check if debug mode is enabled - CLIENT SAFE
 export const isDebugMode = (): boolean => {
   return process.env.NEXT_PUBLIC_DEBUG_MODE === "true" || process.env.DEBUG_MODE === "true"
 }
 
-// Get the site URL for redirects
+// Get the site URL for redirects - CLIENT SAFE
 export const getSiteUrl = (): string => {
   return process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== "undefined" ? window.location.origin : "")
 }
 
-// Email service configuration
+// Email service configuration - CLIENT SAFE
 export const EMAIL_SERVICE_CONFIG = {
   // Check interval for email service status (in milliseconds)
   STATUS_CHECK_INTERVAL: 60000 * 30, // 30 minutes
@@ -105,15 +112,4 @@ export const EMAIL_SERVICE_CONFIG = {
 
   // Maximum number of consecutive errors before considering the service down
   MAX_ERROR_COUNT: 3,
-}
-
-// Get edge function URL
-export function getEdgeFunctionUrl(functionName: string): string {
-  const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
-  return `${baseUrl}/functions/v1/${functionName}`
-}
-
-// Check if edge functions are enabled
-export function areEdgeFunctionsEnabled(): boolean {
-  return process.env.NEXT_PUBLIC_EDGE_FUNCTIONS_ENABLED === "true"
 }

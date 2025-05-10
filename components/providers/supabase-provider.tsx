@@ -1,66 +1,91 @@
 "use client"
 
-import type React from "react"
-
-import { createContext, useContext, useEffect, useState, useRef } from "react"
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Database } from "@/types/database"
+import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from "react"
+import { getSupabaseClient, monitorGoTrueClientInstances, resetSupabaseClient } from "@/lib/supabase-client"
+import { startDatabaseHeartbeat } from "@/utils/db-heartbeat"
+import { createLogger } from "@/utils/logger"
 import { CLIENT_ENV } from "@/lib/env-config"
+
+const logger = createLogger("SupabaseProvider")
 
 // Create a context for the Supabase client
 type SupabaseContext = {
-  supabase: SupabaseClient<Database>
+  initialized: boolean
+  error: Error | null
 }
 
-const SupabaseContext = createContext<SupabaseContext | undefined>(undefined)
+const SupabaseContext = createContext<SupabaseContext>({
+  initialized: false,
+  error: null,
+})
 
 // Provider component that wraps your app and makes Supabase client available
-export function SupabaseProvider({ children }: { children: React.ReactNode }) {
-  // Validate environment variables
-  if (!CLIENT_ENV.SUPABASE_URL || !CLIENT_ENV.SUPABASE_ANON_KEY) {
-    console.error("Missing required Supabase environment variables")
-    // Render an error message or fallback UI
+export function SupabaseProvider({ children }: { children: ReactNode }) {
+  const [initialized, setInitialized] = useState(false)
+  const [error, setError] = useState<Error | null>(null)
+  const heartbeatCleanup = useRef<(() => void) | null>(null)
+  const monitorCleanup = useRef<{ start: () => void; stop: () => void } | null>(null)
+
+  useEffect(() => {
+    // Initialize Supabase client
+    try {
+      // Get the client (this will initialize it if it doesn't exist)
+      const supabase = getSupabaseClient()
+
+      // Start the database heartbeat
+      heartbeatCleanup.current = startDatabaseHeartbeat(supabase)
+
+      // Start monitoring GoTrue instances if in debug mode
+      if (CLIENT_ENV.DEBUG_MODE) {
+        monitorCleanup.current = monitorGoTrueClientInstances()
+        monitorCleanup.current.start()
+      }
+
+      // Mark as initialized
+      setInitialized(true)
+
+      logger.info("Supabase provider initialized successfully")
+    } catch (err) {
+      logger.error("Error initializing Supabase provider:", err)
+      setError(err instanceof Error ? err : new Error(String(err)))
+    }
+
+    // Cleanup function
+    return () => {
+      // Stop the database heartbeat
+      if (heartbeatCleanup.current) {
+        heartbeatCleanup.current()
+        heartbeatCleanup.current = null
+      }
+
+      // Stop monitoring GoTrue instances
+      if (monitorCleanup.current) {
+        monitorCleanup.current.stop()
+        monitorCleanup.current = null
+      }
+
+      // Reset the client on unmount to prevent memory leaks
+      resetSupabaseClient()
+
+      logger.info("Supabase provider cleaned up")
+    }
+  }, [])
+
+  // If there's an error, show an error message
+  if (error) {
     return (
       <div className="p-4 bg-red-50 text-red-800 rounded-md">
-        <h2 className="text-lg font-semibold">Configuration Error</h2>
-        <p>Missing required Supabase environment variables. Please check your configuration.</p>
+        <h2 className="text-lg font-semibold">Supabase Configuration Error</h2>
+        <p>{error.message}</p>
+        <p className="mt-2 text-sm">Please check your environment variables and make sure they are correctly set.</p>
       </div>
     )
   }
 
-  // Create a Supabase client for use in the browser
-  const supabaseClient = useRef<SupabaseClient<Database> | null>(null)
-  const [supabase] = useState(() => {
-    supabaseClient.current = createClientComponentClient<Database>()
-    return supabaseClient.current
-  })
-
-  useEffect(() => {
-    // Optional: Set up any listeners or initialization logic here
-    const setupClient = async () => {
-      try {
-        // Test the connection
-        const { error } = await supabase.auth.getSession()
-        if (error) {
-          console.error("Error initializing Supabase client:", error.message)
-        }
-      } catch (err) {
-        console.error("Failed to initialize Supabase client:", err)
-      }
-    }
-
-    setupClient()
-  }, [supabase])
-
-  return <SupabaseContext.Provider value={{ supabase }}>{children}</SupabaseContext.Provider>
+  return <SupabaseContext.Provider value={{ initialized, error }}>{children}</SupabaseContext.Provider>
 }
 
-// Hook to use the Supabase client
-export function useSupabase() {
-  const context = useContext(SupabaseContext)
-  if (context === undefined) {
-    throw new Error("useSupabase must be used within a SupabaseProvider")
-  }
-  return context.supabase
+// Hook to check if Supabase is initialized
+export function useSupabaseStatus() {
+  return useContext(SupabaseContext)
 }

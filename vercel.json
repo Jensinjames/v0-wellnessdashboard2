@@ -1,0 +1,9 @@
+{
+  "buildCommand": "pnpm run vercel-build",
+  "installCommand": "pnpm install --no-frozen-lockfile",
+  "framework": "nextjs",
+  "outputDirectory": ".next",
+  "env": {
+    "PNPM_FLAGS": "--no-frozen-lockfile --strict-peer-dependencies=false"
+  }
+}

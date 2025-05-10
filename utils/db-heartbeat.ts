@@ -20,6 +20,7 @@ let heartbeatInterval: NodeJS.Timeout | null = null
 let failureCount = 0
 let lastFailureTime = 0
 let isActive = false
+let activeClient: SupabaseClient | null = null
 
 /**
  * Perform a simple database query to keep the connection alive
@@ -27,11 +28,19 @@ let isActive = false
 async function performHeartbeat(supabase: SupabaseClient) {
   try {
     const startTime = Date.now()
-    const { data, error } = await supabase.from("health_check").select("count").limit(1).maybeSingle()
+
+    // Try a simple query that should always work
+    const { data, error } = await supabase.rpc("heartbeat_check", {})
 
     if (error) {
-      handleHeartbeatFailure(error)
-      return false
+      // If RPC fails, try a simple table query
+      logger.debug("RPC heartbeat failed, trying table query")
+      const { data: tableData, error: tableError } = await supabase.from("profiles").select("count").limit(1)
+
+      if (tableError) {
+        handleHeartbeatFailure(tableError)
+        return false
+      }
     }
 
     const duration = Date.now() - startTime
@@ -70,12 +79,18 @@ function handleHeartbeatFailure(error: any) {
  */
 export function startDatabaseHeartbeat(supabase: SupabaseClient) {
   if (isActive) {
-    logger.warn("Heartbeat already active, not starting another")
-    return () => {}
+    if (activeClient === supabase) {
+      logger.warn("Heartbeat already active for this client, not starting another")
+      return () => {}
+    } else {
+      // If active with a different client, stop the current one
+      stopDatabaseHeartbeat()
+    }
   }
 
   logger.info(`Starting database heartbeat (interval: ${HEARTBEAT_INTERVAL}ms)`)
   isActive = true
+  activeClient = supabase
 
   // Perform an immediate heartbeat
   performHeartbeat(supabase)
@@ -91,6 +106,7 @@ export function startDatabaseHeartbeat(supabase: SupabaseClient) {
       clearInterval(heartbeatInterval)
       heartbeatInterval = null
       isActive = false
+      activeClient = null
     }
   }
 }
@@ -104,6 +120,7 @@ export function stopDatabaseHeartbeat() {
     clearInterval(heartbeatInterval)
     heartbeatInterval = null
     isActive = false
+    activeClient = null
   }
 }
 
