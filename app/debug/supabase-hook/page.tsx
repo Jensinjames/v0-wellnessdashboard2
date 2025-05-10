@@ -1,4 +1,5 @@
-import { SupabaseHookTester } from "@/components/debug/supabase-hook-tester"
+import { Suspense } from "react"
+import { SupabaseHookTesterWrapper } from "@/components/debug/supabase-hook-tester-wrapper"
 
 export default function SupabaseHookTestPage() {
   return (
@@ -8,7 +9,9 @@ export default function SupabaseHookTestPage() {
         This page tests the useSupabase hook to ensure it's working correctly after fixing syntax errors.
       </p>
 
-      <SupabaseHookTester />
+      <Suspense fallback={<div className="p-6 text-center">Loading Supabase Hook Tester...</div>}>
+        <SupabaseHookTesterWrapper />
+      </Suspense>
     </div>
   )
 }
