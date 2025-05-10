@@ -1,119 +1,78 @@
 "use client"
 
-import { useState } from "react"
-import { DailyMetrics } from "@/components/daily-metrics"
-import { CategoryOverview } from "@/components/category-overview"
-import { CategoryDetails } from "@/components/category-details"
-import { AddEntryForm } from "@/components/add-entry-form"
-import { EntriesList } from "@/components/entries-list"
-import { DashboardHeader } from "@/components/dashboard-header"
-import { WellnessTrends } from "@/components/wellness-trends"
-import { ActiveTracking } from "@/components/active-tracking"
-import { WellnessProvider } from "@/context/wellness-context"
-import { TrackingProvider } from "@/context/tracking-context"
-import type { WellnessEntryData } from "@/types/wellness"
-import { Button } from "@/components/ui/button"
-import { BarChart3, Grid2X2 } from "lucide-react"
+import { useEffect, useState } from "react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { Auth } from "@supabase/auth-ui-react"
+import { ThemeSupa } from "@supabase/auth-ui-shared"
+import { Loader2 } from "lucide-react"
 
-export default function Dashboard() {
-  const [isAddEntryOpen, setIsAddEntryOpen] = useState(false)
-  const [entryToEdit, setEntryToEdit] = useState<WellnessEntryData | null>(null)
-  const [comparisonMode, setComparisonMode] = useState(false)
+export default function Home() {
+  const [session, setSession] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const supabase = createClientComponentClient()
 
-  // Open the form for a new entry
-  const handleAddNewEntry = () => {
-    setEntryToEdit(null)
-    setIsAddEntryOpen(true)
-  }
+  useEffect(() => {
+    const checkSession = async () => {
+      try {
+        const {
+          data: { session: activeSession },
+        } = await supabase.auth.getSession()
+        setSession(activeSession)
 
-  // Handle editing an entry
-  const handleEditEntry = (entry: WellnessEntryData) => {
-    setEntryToEdit(entry)
-    setIsAddEntryOpen(true)
-  }
+        if (activeSession) {
+          // If user is logged in, redirect to dashboard
+          window.location.href = "/dashboard"
+          return
+        }
 
-  // Toggle comparison mode
-  const toggleComparisonMode = () => {
-    setComparisonMode(!comparisonMode)
+        setLoading(false)
+      } catch (error) {
+        console.error("Error checking session:", error)
+        setLoading(false)
+      }
+    }
+
+    checkSession()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setSession(session)
+      if (session) {
+        window.location.href = "/dashboard"
+      }
+    })
+
+    return () => subscription.unsubscribe()
+  }, [supabase.auth])
+
+  if (loading) {
+    return (
+      <div className="flex justify-center items-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin text-gray-500" />
+        <span className="ml-2 text-gray-700">Loading...</span>
+      </div>
+    )
   }
 
   return (
-    <WellnessProvider>
-      <TrackingProvider>
-        <div className="min-h-screen bg-gray-50">
-          <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-            <div className="space-y-6">
-              <DashboardHeader onAddEntry={handleAddNewEntry} />
+    <div className="flex flex-col items-center justify-center min-h-screen bg-gray-100 p-4">
+      <div className="w-full max-w-md bg-white p-8 rounded-lg shadow-md">
+        <h1 className="text-2xl font-bold mb-6 text-center">Welcome to Wellness Dashboard</h1>
 
-              <div className="grid gap-6">
-                <section>
-                  <h2 className="mb-3 text-sm font-medium">Daily Overview</h2>
-                  <DailyMetrics />
-                </section>
-
-                <section>
-                  <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-sm font-medium">Category Performance</h2>
-                    <div className="flex items-center gap-2">
-                      <div className="text-xs text-muted-foreground mr-2">
-                        {comparisonMode ? "Comparison Mode" : "Daily Progress"}
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-1"
-                        onClick={toggleComparisonMode}
-                        aria-pressed={comparisonMode}
-                        aria-label={comparisonMode ? "Switch to standard view" : "Switch to comparison view"}
-                      >
-                        {comparisonMode ? (
-                          <>
-                            <Grid2X2 className="h-4 w-4" />
-                            <span className="hidden sm:inline">Standard View</span>
-                          </>
-                        ) : (
-                          <>
-                            <BarChart3 className="h-4 w-4" />
-                            <span className="hidden sm:inline">Compare Categories</span>
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                  <CategoryOverview
-                    showGoals={true}
-                    showTimeAllocations={true}
-                    showSubcategoryProgress={true}
-                    interactive={!comparisonMode}
-                    maxCategories={7}
-                    comparisonMode={comparisonMode}
-                  />
-                </section>
-
-                <section>
-                  <ActiveTracking />
-                </section>
-
-                <section>
-                  <h2 className="mb-3 text-sm font-medium">Detailed Analysis</h2>
-                  <CategoryDetails />
-                </section>
-
-                <section>
-                  <h2 className="mb-3 text-sm font-medium">Wellness Trends</h2>
-                  <WellnessTrends />
-                </section>
-
-                <section>
-                  <EntriesList onEdit={handleEditEntry} />
-                </section>
-              </div>
-            </div>
-          </div>
-
-          <AddEntryForm open={isAddEntryOpen} onOpenChange={setIsAddEntryOpen} entryToEdit={entryToEdit} />
+        <div className="mb-8">
+          <Auth
+            supabaseClient={supabase}
+            appearance={{ theme: ThemeSupa }}
+            providers={[]}
+            redirectTo={`${window.location.origin}/auth/callback`}
+          />
         </div>
-      </TrackingProvider>
-    </WellnessProvider>
+
+        <div className="text-center text-sm text-gray-500 mt-4">
+          <p>By signing in, you agree to our terms of service and privacy policy.</p>
+        </div>
+      </div>
+    </div>
   )
 }
