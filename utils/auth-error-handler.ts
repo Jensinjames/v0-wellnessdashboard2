@@ -1,7 +1,11 @@
+/**
+ * Authentication Error Handler
+ * Provides utilities for handling authentication errors
+ */
 import { createLogger } from "@/utils/logger"
 
 // Create a dedicated logger for auth errors
-const logger = createLogger("AuthErrorHandler")
+const logger = createLogger("AuthErrors")
 
 // Error categories
 export enum AuthErrorCategory {
@@ -47,11 +51,10 @@ export enum AuthErrorType {
 
   // Unknown errors
   UNKNOWN_ERROR = "unknown_error",
-  UNEXPECTED_AUTH_FAILURE = "unexpected_auth_failure",
 }
 
 // Auth error interface
-export interface AuthErrorInterface {
+export interface AuthError {
   category: AuthErrorCategory
   type: AuthErrorType
   message: string
@@ -62,132 +65,236 @@ export interface AuthErrorInterface {
 }
 
 // Error tracking
-const recentErrors: AuthErrorInterface[] = []
+const recentErrors: AuthError[] = []
 const MAX_RECENT_ERRORS = 10
 
-interface ErrorContext {
-  email?: string
-  [key: string]: any
-}
-
-interface ProcessedError {
-  message: string
-  code?: string
-  context?: ErrorContext
-}
-
 /**
- * Processes authentication errors and returns user-friendly messages
+ * Parse an error from Supabase or other sources into a standardized AuthError
  */
-export function handleAuthError(error: Error | AuthErrorInterface, context: ErrorContext = {}): ProcessedError {
-  // Log the error for debugging
-  logger.debug("Processing auth error", { error, context })
-
-  // Handle Supabase Auth errors
-  if (error && (error as any).__isAuthError) {
-    const authError = error as AuthErrorInterface
-    const { message, status, code } = error as any
-
-    // Handle specific error codes
-    switch (code) {
-      case "invalid_credentials":
-        return {
-          message: "Invalid email or password. Please check your credentials and try again.",
-          code,
-          context,
-        }
-      case "user_not_found":
-        return {
-          message: "No account found with this email address. Please sign up first.",
-          code,
-          context,
-        }
-      case "email_not_confirmed":
-        return {
-          message: "Please verify your email address before signing in.",
-          code,
-          context,
-        }
-      case "unexpected_failure":
-        if (status === 500) {
-          return {
-            message: "Authentication service is temporarily unavailable. Please try again in a moment.",
-            code,
-            context,
-          }
-        }
-        break
-      case "invalid_email":
-        return {
-          message: "Please enter a valid email address.",
-          code,
-          context,
-        }
-      case "weak_password":
-        return {
-          message: "Password is too weak. Please use a stronger password.",
-          code,
-          context,
-        }
-      case "email_taken":
-        return {
-          message: "An account with this email already exists. Please sign in instead.",
-          code,
-          context,
-        }
-      case "rate_limit_exceeded":
-        return {
-          message: "Too many attempts. Please try again later.",
-          code,
-          context,
-        }
-    }
-
-    // For other auth errors, use the message from the error but make it user-friendly
-    return {
-      message: message.replace(/^error:/i, "").trim() || "Authentication failed. Please try again.",
-      code,
-      context,
-    }
-  }
-
-  // Handle network errors
-  if (error && error.message && error.message.includes("fetch")) {
-    return {
-      message: "Unable to connect to the authentication service. Please check your internet connection.",
-      context,
-    }
-  }
-
-  // For other errors, provide a generic message
-  return {
-    message: error?.message || "An unexpected error occurred. Please try again.",
+export function parseAuthError(error: any, context?: Record<string, any>): AuthError {
+  // Default error
+  const defaultError: AuthError = {
+    category: AuthErrorCategory.UNKNOWN,
+    type: AuthErrorType.UNKNOWN_ERROR,
+    message: "An unexpected error occurred",
+    originalError: error,
+    timestamp: Date.now(),
     context,
   }
-}
 
-/**
- * Determines if an error is a temporary/retryable error
- */
-export function isRetryableError(error: Error | AuthErrorInterface): boolean {
-  // Network errors are retryable
-  if (error?.message?.includes("fetch") || error?.message?.includes("network")) {
-    return true
+  // If no error, return default
+  if (!error) {
+    return defaultError
   }
 
-  // Supabase 500 errors are retryable
-  if ((error as any).__isAuthError) {
-    const authError = error as AuthErrorInterface
-    return (error as any).status === 500 || (error as any).code === "unexpected_failure"
+  // Extract error message
+  const errorMessage = error.message || error.error_description || error.error || String(error)
+
+  // Network errors
+  if (
+    errorMessage.includes("fetch") ||
+    errorMessage.includes("network") ||
+    errorMessage.includes("Failed to fetch") ||
+    error instanceof TypeError
+  ) {
+    return {
+      category: AuthErrorCategory.NETWORK,
+      type: navigator.onLine ? AuthErrorType.NETWORK_FAILED : AuthErrorType.NETWORK_OFFLINE,
+      message: navigator.onLine
+        ? "Network request failed. Please check your connection and try again."
+        : "You appear to be offline. Please check your internet connection and try again.",
+      originalError: error,
+      timestamp: Date.now(),
+      context,
+    }
   }
 
-  return false
+  // Timeout errors
+  if (errorMessage.includes("timeout") || errorMessage.includes("timed out") || error.name === "AbortError") {
+    return {
+      category: AuthErrorCategory.NETWORK,
+      type: AuthErrorType.NETWORK_TIMEOUT,
+      message: "The request timed out. Please try again.",
+      originalError: error,
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
+  // Rate limit errors
+  if (
+    error.status === 429 ||
+    errorMessage.includes("429") ||
+    errorMessage.includes("too many") ||
+    errorMessage.includes("rate limit") ||
+    errorMessage.includes("Too Many Requests")
+  ) {
+    return {
+      category: AuthErrorCategory.RATE_LIMIT,
+      type: AuthErrorType.TOO_MANY_REQUESTS,
+      message: "Too many requests. Please wait a moment and try again.",
+      originalError: error,
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
+  // Invalid email
+  if (
+    errorMessage.includes("valid email") ||
+    errorMessage.includes("invalid email") ||
+    errorMessage.includes("Invalid email")
+  ) {
+    return {
+      category: AuthErrorCategory.VALIDATION,
+      type: AuthErrorType.INVALID_EMAIL,
+      message: "Please enter a valid email address.",
+      originalError: error,
+      fieldErrors: { email: "Please enter a valid email address." },
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
+  // Invalid password
+  if (
+    errorMessage.includes("password") &&
+    (errorMessage.includes("too short") || errorMessage.includes("too weak") || errorMessage.includes("requirements"))
+  ) {
+    return {
+      category: AuthErrorCategory.VALIDATION,
+      type: AuthErrorType.PASSWORD_TOO_WEAK,
+      message:
+        "Password is too weak. It should be at least 8 characters long and include uppercase, lowercase, numbers, and special characters.",
+      originalError: error,
+      fieldErrors: {
+        password:
+          "Password is too weak. It should be at least 8 characters long and include uppercase, lowercase, numbers, and special characters.",
+      },
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
+  // Email already in use
+  if (
+    errorMessage.includes("already exists") ||
+    errorMessage.includes("already registered") ||
+    errorMessage.includes("already in use") ||
+    errorMessage.includes("already taken")
+  ) {
+    return {
+      category: AuthErrorCategory.CREDENTIALS,
+      type: AuthErrorType.EMAIL_IN_USE,
+      message: "This email is already registered. Please sign in or use a different email.",
+      originalError: error,
+      fieldErrors: { email: "This email is already registered. Please sign in or use a different email." },
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
+  // Email not confirmed
+  if (
+    errorMessage.includes("email not confirmed") ||
+    errorMessage.includes("not verified") ||
+    errorMessage.includes("verify your email")
+  ) {
+    return {
+      category: AuthErrorCategory.CREDENTIALS,
+      type: AuthErrorType.EMAIL_NOT_CONFIRMED,
+      message: "Please verify your email address before signing in.",
+      originalError: error,
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
+  // Invalid credentials
+  if (
+    errorMessage.includes("Invalid login") ||
+    errorMessage.includes("Invalid credentials") ||
+    errorMessage.includes("incorrect username or password") ||
+    errorMessage.includes("Invalid email or password")
+  ) {
+    return {
+      category: AuthErrorCategory.CREDENTIALS,
+      type: AuthErrorType.INVALID_CREDENTIALS,
+      message: "Invalid email or password. Please check your credentials and try again.",
+      originalError: error,
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
+  // User not found
+  if (errorMessage.includes("user not found") || errorMessage.includes("User not found")) {
+    return {
+      category: AuthErrorCategory.CREDENTIALS,
+      type: AuthErrorType.USER_NOT_FOUND,
+      message: "No account found with this email address. Please check your email or sign up.",
+      originalError: error,
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
+  // Database schema errors - specifically check for the user_changes_log error
+  if (
+    errorMessage.includes('relation "user_changes_log" does not exist') ||
+    errorMessage.includes("Database error granting user") ||
+    errorMessage.includes("granting user undefined") ||
+    (error.__isAuthError && error.status === 500 && error.code === "unexpected_failure")
+  ) {
+    return {
+      category: AuthErrorCategory.SERVER,
+      type: AuthErrorType.SCHEMA_ERROR,
+      message: "There is a database configuration issue. Please contact support with error code: SCHEMA-001.",
+      originalError: error,
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
+  // Database errors
+  if (
+    errorMessage.includes("database error") ||
+    errorMessage.includes("Database error") ||
+    errorMessage.includes("granting user undefined")
+  ) {
+    return {
+      category: AuthErrorCategory.SERVER,
+      type: AuthErrorType.DATABASE_ERROR,
+      message: "There was a problem with the authentication service. Please try again later.",
+      originalError: error,
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
+  // Server errors
+  if (error.status >= 500 || errorMessage.includes("server error") || errorMessage.includes("internal error")) {
+    return {
+      category: AuthErrorCategory.SERVER,
+      type: AuthErrorType.SERVER_ERROR,
+      message: "A server error occurred. Please try again later.",
+      originalError: error,
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
+  // Default to unknown error
+  return {
+    ...defaultError,
+    message: errorMessage || defaultError.message,
+  }
 }
 
 /**
  * Track an authentication error
  */
-export function trackAuthError(error: AuthErrorInterface): void {
+export function trackAuthError(error: AuthError): void {
   // Add to recent errors
   recentErrors.unshift(error)
 
@@ -213,7 +320,7 @@ export function trackAuthError(error: AuthErrorInterface): void {
 /**
  * Get recent authentication errors
  */
-export function getRecentAuthErrors(): AuthErrorInterface[] {
+export function getRecentAuthErrors(): AuthError[] {
   return [...recentErrors]
 }
 
@@ -253,6 +360,16 @@ export function getFieldErrors(error: any): Record<string, string> {
 }
 
 /**
+ * Handle an authentication error
+ * This parses, tracks, and returns the error
+ */
+export function handleAuthError(error: any, context?: Record<string, any>): AuthError {
+  const parsedError = parseAuthError(error, context)
+  trackAuthError(parsedError)
+  return parsedError
+}
+
+/**
  * Check if an error is a database schema error
  */
 export function isSchemaError(error: any): boolean {
@@ -278,15 +395,4 @@ export function getTechnicalErrorDetails(error: any): string {
     null,
     2,
   )
-}
-
-function parseAuthError(error: any): AuthErrorInterface {
-  // Implement your parsing logic here. This is a placeholder.
-  // Replace with actual parsing based on your error structure.
-  return {
-    category: AuthErrorCategory.UNKNOWN,
-    type: AuthErrorType.UNKNOWN_ERROR,
-    message: error?.message || "Unknown error",
-    timestamp: Date.now(),
-  }
 }

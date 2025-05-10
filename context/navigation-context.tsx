@@ -1,66 +1,88 @@
 "use client"
 
-import type React from "react"
-import { createContext, useContext, useState, useEffect } from "react"
+import { createContext, useContext, useState, useEffect, type ReactNode } from "react"
 import { usePathname, useSearchParams } from "next/navigation"
 
-// Define the shape of our navigation context
+interface NavigationHistory {
+  previousPaths: string[]
+  currentPath: string | null
+}
+
 interface NavigationContextType {
-  previousPath: string | null
-  currentPath: string
-  navigateBack: () => void
-  canNavigateBack: boolean
+  history: NavigationHistory
+  addToHistory: (path: string) => void
+  getPreviousPath: () => string | null
+  clearHistory: () => void
 }
 
-// Create the context with default values
-const NavigationContext = createContext<NavigationContextType>({
-  previousPath: null,
-  currentPath: "/",
-  navigateBack: () => {},
-  canNavigateBack: false,
-})
+const NavigationContext = createContext<NavigationContextType | undefined>(undefined)
 
-// Hook to use the navigation context
-export const useNavigationContext = () => useContext(NavigationContext)
-
-interface NavigationProviderProps {
-  children: React.ReactNode
-}
-
-export function NavigationProvider({ children }: NavigationProviderProps) {
+export function NavigationProvider({ children }: { children: ReactNode }) {
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const [previousPath, setPreviousPath] = useState<string | null>(null)
-  const [currentPath, setCurrentPath] = useState<string>(pathname)
+  const [history, setHistory] = useState<NavigationHistory>({
+    previousPaths: [],
+    currentPath: null,
+  })
 
-  // Update paths when navigation occurs
+  // Update history when path changes
   useEffect(() => {
-    if (pathname !== currentPath) {
-      setPreviousPath(currentPath)
-      setCurrentPath(pathname)
-    }
-  }, [pathname, currentPath])
+    if (!pathname) return
 
-  // Function to navigate back
-  const navigateBack = () => {
-    if (previousPath) {
-      window.history.back()
-    }
+    setHistory((prev) => {
+      // Don't add the same path twice in a row
+      if (prev.currentPath === pathname) return prev
+
+      // Add current path to history
+      return {
+        previousPaths: prev.currentPath ? [...prev.previousPaths, prev.currentPath] : [...prev.previousPaths],
+        currentPath: pathname,
+      }
+    })
+  }, [pathname, searchParams])
+
+  // Add a path to history
+  const addToHistory = (path: string) => {
+    setHistory((prev) => ({
+      previousPaths: prev.currentPath ? [...prev.previousPaths, prev.currentPath] : [...prev.previousPaths],
+      currentPath: path,
+    }))
   }
 
-  // Check if we can navigate back
-  const canNavigateBack = Boolean(previousPath && previousPath !== pathname)
+  // Get the previous path
+  const getPreviousPath = (): string | null => {
+    // First check for returnTo query param
+    const returnTo = searchParams?.get("returnTo")
+    if (returnTo) return returnTo
+
+    // Then check history
+    if (history.previousPaths.length > 0) {
+      return history.previousPaths[history.previousPaths.length - 1]
+    }
+
+    // Default to dashboard
+    return "/dashboard"
+  }
+
+  // Clear history
+  const clearHistory = () => {
+    setHistory({
+      previousPaths: [],
+      currentPath: pathname || null,
+    })
+  }
 
   return (
-    <NavigationContext.Provider
-      value={{
-        previousPath,
-        currentPath,
-        navigateBack,
-        canNavigateBack,
-      }}
-    >
+    <NavigationContext.Provider value={{ history, addToHistory, getPreviousPath, clearHistory }}>
       {children}
     </NavigationContext.Provider>
   )
+}
+
+export function useNavigationContext() {
+  const context = useContext(NavigationContext)
+  if (context === undefined) {
+    throw new Error("useNavigationContext must be used within a NavigationProvider")
+  }
+  return context
 }

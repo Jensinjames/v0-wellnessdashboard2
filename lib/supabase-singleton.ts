@@ -1,76 +1,99 @@
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createClient } from "@supabase/supabase-js"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
-import { createLogger } from "@/utils/logger"
+import { logger } from "@/utils/logger"
 
-// Create a dedicated logger
-const logger = createLogger("SupabaseSingleton")
-
-// Global client instance
+// Global singleton instance
 let supabaseInstance: SupabaseClient<Database> | null = null
 let isInitializing = false
 let initializationPromise: Promise<SupabaseClient<Database>> | null = null
+let instanceCount = 0
+let lastInitTime: number | null = null
+
+// Registry to track GoTrueClient instances
+const goTrueRegistry = new Set<any>()
 
 /**
  * Get the Supabase client singleton
  * This ensures only one client instance is created per browser context
  */
-export function getSupabaseClient(): SupabaseClient<Database> | Promise<SupabaseClient<Database>> {
-  // If we already have a client, return it
+export function getSupabaseSingleton(): SupabaseClient<Database> | Promise<SupabaseClient<Database>> {
+  // Return existing instance if available
   if (supabaseInstance) {
     return supabaseInstance
   }
 
-  // If we're already initializing, return the promise
+  // Return existing initialization promise if in progress
   if (isInitializing && initializationPromise) {
     return initializationPromise
   }
 
-  // Set initializing flag and create a promise
+  // Set initializing flag
   isInitializing = true
+  instanceCount++
 
-  // Create a new initialization promise
+  // Create initialization promise
   initializationPromise = new Promise<SupabaseClient<Database>>((resolve, reject) => {
     try {
-      logger.debug("Creating new Supabase client instance")
+      logger.debug("Creating new Supabase singleton instance")
 
-      // Create the client with enhanced options
-      const newClient = createClientComponentClient<Database>({
-        supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL,
-        supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        options: {
+      // Record initialization time
+      lastInitTime = Date.now()
+
+      // Check if required environment variables are available
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        throw new Error("Supabase configuration is missing. Please check your environment variables.")
+      }
+
+      // Create client with enhanced options
+      const newClient = createClient<Database>(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        {
           auth: {
             persistSession: true,
             autoRefreshToken: true,
             detectSessionInUrl: true,
             flowType: "pkce",
             // Use a consistent storage key to prevent conflicts
-            storageKey: "wellness-dashboard-auth-v3",
+            storageKey: "wellness-dashboard-auth-singleton",
           },
           global: {
             headers: {
               "x-application-name": "wellness-dashboard",
-              "x-client-info": typeof window !== "undefined" ? window.navigator.userAgent : "unknown",
+              "x-client-instance": `singleton-${instanceCount}`,
+              "x-client-init-time": lastInitTime.toString(),
             },
           },
         },
-      })
+      )
 
       // Store the client
       supabaseInstance = newClient
 
+      // Track the GoTrueClient instance
+      if (newClient.auth && (newClient.auth as any)._goTrueClient) {
+        const goTrueClient = (newClient.auth as any)._goTrueClient
+
+        // Clear any existing instances before adding the new one
+        goTrueRegistry.clear()
+        goTrueRegistry.add(goTrueClient)
+
+        logger.debug(`Registered GoTrueClient instance in singleton. Total instances: ${goTrueRegistry.size}`)
+      }
+
       // Reset initialization state
       isInitializing = false
 
-      // Resolve the promise with the client
+      // Resolve with the client
       resolve(newClient)
     } catch (error) {
       // Reset initialization state
       isInitializing = false
       initializationPromise = null
 
-      // Log and reject the promise
-      logger.error("Error creating Supabase client:", error)
+      // Log and reject
+      logger.error("Error creating Supabase singleton:", error)
       reject(error)
     }
   })
@@ -79,47 +102,38 @@ export function getSupabaseClient(): SupabaseClient<Database> | Promise<Supabase
 }
 
 /**
- * Reset the client (useful for testing or when auth state changes)
+ * Reset the Supabase singleton instance
+ * Useful for testing or when auth state changes
  */
-export function resetSupabaseClient() {
-  logger.debug("Resetting Supabase client")
+export function resetSupabaseSingleton(): void {
+  logger.debug("Resetting Supabase singleton")
+
+  // Clear the client and initialization state
   supabaseInstance = null
   isInitializing = false
   initializationPromise = null
+
+  // Clear the GoTrueClient registry
+  goTrueRegistry.clear()
+
+  logger.debug("Supabase singleton reset complete")
 }
 
 /**
- * Get the current client without creating a new one
+ * Get debug information about the singleton
  */
-export function getCurrentClient(): SupabaseClient<Database> | null {
-  return supabaseInstance
-}
-
-/**
- * Alias for getSupabaseClient for backward compatibility
- */
-export function getSupabaseSingleton(): SupabaseClient<Database> | Promise<SupabaseClient<Database>> {
-  return getSupabaseClient()
-}
-
-/**
- * Alias for resetSupabaseClient for backward compatibility
- */
-export function resetSupabaseSingleton(): void {
-  resetSupabaseClient()
-}
-
-/**
- * Get debug information about the Supabase singleton
- */
-export function getSupabaseSingletonDebugInfo(): {
-  hasInstance: boolean
-  isInitializing: boolean
-  hasInitPromise: boolean
-} {
+export function getSupabaseSingletonDebugInfo() {
   return {
-    hasInstance: supabaseInstance !== null,
+    hasInstance: !!supabaseInstance,
     isInitializing,
-    hasInitPromise: initializationPromise !== null,
+    hasInitPromise: !!initializationPromise,
+    instanceCount,
+    goTrueClientCount: goTrueRegistry.size,
+    lastInitTime,
   }
 }
+
+/**
+ * Alias for getSupabaseSingleton to maintain compatibility with other modules
+ */
+export const getSupabaseClient = getSupabaseSingleton

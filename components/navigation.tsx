@@ -5,32 +5,14 @@ import { usePathname } from "next/navigation"
 import { useAuth } from "@/context/auth-context"
 import { Button } from "@/components/ui/button"
 import { ArrowLeft, Menu, X } from "lucide-react"
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import { useNavigation } from "@/hooks/use-navigation"
 
 export function Navigation() {
-  const { user, signOut } = useAuth()
-  const [mounted, setMounted] = useState(false)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const pathname = usePathname()
+  const { user, signOut } = useAuth()
   const { goBack, getPreviousPath } = useNavigation()
-
-  // Handle hydration mismatch
-  useEffect(() => {
-    setMounted(true)
-  }, [])
-
-  if (!mounted) {
-    return (
-      <nav className="border-b bg-background sticky top-0 z-50" aria-label="Main Navigation">
-        <div className="container flex h-16 items-center justify-between">
-          <div className="flex items-center gap-2">
-            <div className="text-xl font-bold hidden md:block">Wellness Dashboard</div>
-          </div>
-        </div>
-      </nav>
-    )
-  }
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   const canGoBack = getPreviousPath() !== null && pathname !== "/dashboard"
 

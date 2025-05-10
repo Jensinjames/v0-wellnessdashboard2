@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useState } from "react"
-import { EnhancedResetPasswordForm } from "@/components/auth/enhanced-reset-password-form"
+import { ResetPasswordForm } from "@/components/auth/reset-password-form"
 import { AuthLayout } from "@/components/auth/auth-layout"
 import { useAuth } from "@/context/auth-context"
 import { useRouter } from "next/navigation"
@@ -29,7 +29,7 @@ export default function ResetPasswordPage() {
   return (
     <AuthLayout title="Reset Password" description="Create a new password for your account">
       <Suspense fallback={<div className="p-4 text-center">Loading form...</div>}>
-        <EnhancedResetPasswordForm />
+        <ResetPasswordForm />
       </Suspense>
     </AuthLayout>
   )

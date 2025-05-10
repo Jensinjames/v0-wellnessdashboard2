@@ -1,7 +1,7 @@
-import { NextResponse } from "next/server"
-import type { NextRequest } from "next/server"
 import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
+import { NextResponse } from "next/server"
+import type { NextRequest } from "next/server"
 import type { Database } from "@/types/database"
 
 export async function GET(request: NextRequest) {
@@ -101,19 +101,6 @@ export async function GET(request: NextRequest) {
             email: session.user.email,
             updated_at: new Date().toISOString(),
           })
-
-          // Log the profile creation event
-          try {
-            await supabase.from("user_changes_log").insert({
-              user_id: session.user.id,
-              action: "profile_created",
-              new_values: { email: session.user.email },
-              client_info: request.headers.get("user-agent") || "unknown",
-            })
-          } catch (logError) {
-            // Don't fail if logging fails
-            console.error("Error logging profile creation:", logError)
-          }
 
           // Redirect to profile completion page
           return NextResponse.redirect(new URL("/profile/complete", request.url))

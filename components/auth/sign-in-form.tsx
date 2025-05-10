@@ -15,9 +15,6 @@ import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAuth } from "@/context/auth-context"
 import { createLogger } from "@/utils/logger"
 import { handleAuthError, isSchemaError, getTechnicalErrorDetails } from "@/utils/auth-error-handler"
-import { fixSchemaIssue } from "@/utils/schema-utils" // Import the schema fix utility
-// Import the AuthServiceStatus component
-import { AuthServiceStatus } from "@/components/auth/auth-service-status"
 
 // Create a dedicated logger for the sign-in form
 const logger = createLogger("SignInForm")
@@ -40,9 +37,7 @@ export function SignInForm() {
   const [isSchemaIssue, setIsSchemaIssue] = useState(false)
   const [technicalDetails, setTechnicalDetails] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
-  const [isFixingSchema, setIsFixingSchema] = useState(false)
   const MAX_RETRIES = 2
-  const [isRetrying, setIsRetrying] = useState(false)
 
   // Get the redirect URL from the query string
   const redirectTo = searchParams?.get("redirectTo") || "/dashboard"
@@ -61,30 +56,6 @@ export function SignInForm() {
     },
   })
 
-  // Handle schema fix
-  const handleSchemaFix = async () => {
-    try {
-      setIsFixingSchema(true)
-      setError("Attempting to fix database schema issue...")
-
-      // Call the schema fix utility
-      const result = await fixSchemaIssue()
-
-      if (result.success) {
-        setError("Database schema fixed. Please try signing in again.")
-        setIsSchemaIssue(false)
-        setTechnicalDetails(null)
-      } else {
-        setError(`Schema fix failed: ${result.error || "Unknown error"}. Please contact support.`)
-      }
-    } catch (err) {
-      logger.error("Error fixing schema:", err)
-      setError("Failed to fix schema issue. Please contact support.")
-    } finally {
-      setIsFixingSchema(false)
-    }
-  }
-
   // Handle form submission
   const handleSubmit = async (data: FormData) => {
     try {
@@ -92,18 +63,12 @@ export function SignInForm() {
       setError(null)
       setIsSchemaIssue(false)
       setTechnicalDetails(null)
-      setIsRetrying(false)
 
       // Log the attempt (without sensitive data)
       logger.info("Attempting sign-in", {
         emailProvided: !!data.email,
         passwordProvided: !!data.password,
       })
-
-      // Check if we need to show the retrying UI
-      if (retryCount > 0) {
-        setIsRetrying(true)
-      }
 
       // Call the signIn function from the auth context
       const { error: signInError, fieldErrors } = await signIn(
@@ -132,9 +97,23 @@ export function SignInForm() {
         const authError = handleAuthError(signInError, { email: data.email })
 
         // Check if it's a schema error
-        if (isSchemaError(signInError)) {
+        if (
+          isSchemaError(signInError) ||
+          (signInError.__isAuthError && signInError.status === 500 && signInError.code === "unexpected_failure")
+        ) {
           setIsSchemaIssue(true)
           setTechnicalDetails(getTechnicalErrorDetails(signInError))
+          setError(
+            "Database configuration issue detected. This is likely a server-side setup problem, not an issue with your credentials.",
+          )
+
+          // Log detailed error for debugging
+          logger.error("Schema error details:", {
+            error: signInError,
+            isAuthError: signInError.__isAuthError,
+            status: signInError.status,
+            code: signInError.code,
+          })
 
           // If we haven't exceeded max retries, try again after a delay
           if (retryCount < MAX_RETRIES) {
@@ -164,122 +143,88 @@ export function SignInForm() {
   }
 
   return (
-    <>
-      <AuthServiceStatus />
-      <div className="grid gap-6">
-        <form onSubmit={hookFormSubmit(handleSubmit)} className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="email">Email</Label>
-            <Input
-              id="email"
-              type="email"
-              placeholder="name@example.com"
-              autoCapitalize="none"
-              autoComplete="email"
-              autoCorrect="off"
-              disabled={isLoading || isFixingSchema}
-              {...register("email")}
-            />
-            {errors.email && <p className="text-sm text-red-500">{errors.email.message}</p>}
-          </div>
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <Label htmlFor="password">Password</Label>
-              <Link href="/auth/forgot-password" className="text-sm text-primary hover:underline">
-                Forgot password?
-              </Link>
-            </div>
-            <div className="relative">
-              <Input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                placeholder="••••••••"
-                autoComplete="current-password"
-                disabled={isLoading || isFixingSchema}
-                {...register("password")}
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                className="absolute right-2 top-1/2 -translate-y-1/2 px-2"
-                onClick={() => setShowPassword(!showPassword)}
-                disabled={isLoading || isFixingSchema}
-              >
-                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
-              </Button>
-            </div>
-            {errors.password && <p className="text-sm text-red-500">{errors.password.message}</p>}
-          </div>
-
-          {error && (
-            <Alert variant="destructive">
-              <AlertDescription>{error}</AlertDescription>
-              {isSchemaIssue && (
-                <div className="mt-2">
-                  <p className="text-sm font-medium">This appears to be a database configuration issue.</p>
-                  <p className="text-xs mt-1">Error code: SCHEMA-001</p>
-                  {technicalDetails && (
-                    <details className="mt-2">
-                      <summary className="text-xs cursor-pointer">Technical Details</summary>
-                      <pre className="text-xs mt-1 p-2 bg-gray-100 rounded overflow-x-auto">{technicalDetails}</pre>
-                    </details>
-                  )}
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mt-2"
-                    onClick={handleSchemaFix}
-                    disabled={isFixingSchema}
-                  >
-                    {isFixingSchema ? (
-                      <>
-                        <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                        Fixing Schema...
-                      </>
-                    ) : (
-                      "Fix Schema Issue"
-                    )}
-                  </Button>
-                </div>
-              )}
-              {isRetrying && (
-                <div className="mt-2">
-                  <p className="text-sm font-medium">Retrying connection to authentication service...</p>
-                  <div className="mt-1 flex items-center">
-                    <Loader2 className="mr-2 h-3 w-3 animate-spin" />
-                    <span className="text-xs">Please wait</span>
-                  </div>
-                </div>
-              )}
-            </Alert>
-          )}
-
-          <Button type="submit" className="w-full" disabled={isLoading || isFixingSchema}>
-            {isLoading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {isRetrying
-                  ? "Connecting to auth service..."
-                  : retryCount > 0
-                    ? `Retrying (${retryCount}/${MAX_RETRIES})...`
-                    : "Signing in..."}
-              </>
-            ) : (
-              "Sign In"
-            )}
-          </Button>
-        </form>
-
-        <div className="text-center text-sm">
-          Don&apos;t have an account?{" "}
-          <Link href="/auth/sign-up" className="text-primary hover:underline">
-            Sign up
-          </Link>
+    <div className="grid gap-6">
+      <form onSubmit={hookFormSubmit(handleSubmit)} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            placeholder="name@example.com"
+            autoCapitalize="none"
+            autoComplete="email"
+            autoCorrect="off"
+            disabled={isLoading}
+            {...register("email")}
+          />
+          {errors.email && <p className="text-sm text-red-500">{errors.email.message}</p>}
         </div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password">Password</Label>
+            <Link href="/auth/forgot-password" className="text-sm text-primary hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+          <div className="relative">
+            <Input
+              id="password"
+              type={showPassword ? "text" : "password"}
+              placeholder="••••••••"
+              autoComplete="current-password"
+              disabled={isLoading}
+              {...register("password")}
+            />
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="absolute right-2 top-1/2 -translate-y-1/2 px-2"
+              onClick={() => setShowPassword(!showPassword)}
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
+            </Button>
+          </div>
+          {errors.password && <p className="text-sm text-red-500">{errors.password.message}</p>}
+        </div>
+
+        {error && (
+          <Alert variant="destructive">
+            <AlertDescription>{error}</AlertDescription>
+            {isSchemaIssue && (
+              <div className="mt-2">
+                <p className="text-sm font-medium">This appears to be a database configuration issue.</p>
+                <p className="text-xs mt-1">Please contact support with the following error code: SCHEMA-001</p>
+                {technicalDetails && (
+                  <details className="mt-2">
+                    <summary className="text-xs cursor-pointer">Technical Details</summary>
+                    <pre className="text-xs mt-1 p-2 bg-gray-100 rounded overflow-x-auto">{technicalDetails}</pre>
+                  </details>
+                )}
+              </div>
+            )}
+          </Alert>
+        )}
+
+        <Button type="submit" className="w-full" disabled={isLoading}>
+          {isLoading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              {retryCount > 0 ? `Retrying (${retryCount}/${MAX_RETRIES})...` : "Signing in..."}
+            </>
+          ) : (
+            "Sign In"
+          )}
+        </Button>
+      </form>
+
+      <div className="text-center text-sm">
+        Don&apos;t have an account?{" "}
+        <Link href="/auth/sign-up" className="text-primary hover:underline">
+          Sign up
+        </Link>
       </div>
-    </>
+    </div>
   )
 }

@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -19,13 +19,35 @@ export function ForgotPasswordForm() {
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<{ email?: string }>({})
   const [success, setSuccess] = useState(false)
+  const [retryCount, setRetryCount] = useState(0)
+  const [autoRetry, setAutoRetry] = useState(false)
+  const [retryCountdown, setRetryCountdown] = useState(0)
   const { resetPassword } = useAuth()
+
+  // Handle auto-retry countdown
+  useEffect(() => {
+    let timer: NodeJS.Timeout | null = null
+
+    if (autoRetry && retryCountdown > 0) {
+      timer = setTimeout(() => {
+        setRetryCountdown((prev) => prev - 1)
+      }, 1000)
+    } else if (autoRetry && retryCountdown === 0) {
+      setAutoRetry(false)
+      handleSubmit(new Event("submit") as any)
+    }
+
+    return () => {
+      if (timer) clearTimeout(timer)
+    }
+  }, [autoRetry, retryCountdown])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
     setFieldErrors({})
+    setAutoRetry(false)
 
     // Validate email
     if (!email) {
@@ -55,8 +77,24 @@ export function ForgotPasswordForm() {
 
       if (resetError) {
         console.error("Password reset error details:", resetError)
-        const errorInfo = handleAuthError({ message: resetError }, { operation: "password-reset" })
-        setError(errorInfo.message)
+
+        // Special handling for 500 errors which are likely SMTP or database pool issues
+        if (resetError.includes("500") || resetError.includes("unexpected_failure")) {
+          setRetryCount((prev) => prev + 1)
+
+          // After 2 manual retries, offer auto-retry
+          if (retryCount >= 2) {
+            setError("The password reset service is temporarily unavailable. We'll automatically retry in 10 seconds.")
+            setAutoRetry(true)
+            setRetryCountdown(10)
+          } else {
+            setError("The password reset service is temporarily unavailable. Please try again in a moment.")
+          }
+        } else {
+          const errorInfo = handleAuthError({ message: resetError }, { operation: "password-reset" })
+          setError(errorInfo.message)
+        }
+
         setIsLoading(false)
         return
       }
@@ -64,11 +102,35 @@ export function ForgotPasswordForm() {
       setSuccess(true)
     } catch (err: any) {
       console.error("Caught exception during password reset:", err)
-      const errorInfo = handleAuthError(err, { operation: "password-reset" })
-      setError(errorInfo.message)
+
+      // Special handling for 500 errors
+      if (
+        err?.status === 500 ||
+        (err?.error && err.error.status === 500) ||
+        err?.message?.includes("unexpected_failure")
+      ) {
+        setRetryCount((prev) => prev + 1)
+
+        // After 2 manual retries, offer auto-retry
+        if (retryCount >= 2) {
+          setError("The password reset service is temporarily unavailable. We'll automatically retry in 10 seconds.")
+          setAutoRetry(true)
+          setRetryCountdown(10)
+        } else {
+          setError("The password reset service is temporarily unavailable. Please try again in a moment.")
+        }
+      } else {
+        const errorInfo = handleAuthError(err, { operation: "password-reset" })
+        setError(errorInfo.message)
+      }
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const cancelAutoRetry = () => {
+    setAutoRetry(false)
+    setRetryCountdown(0)
   }
 
   if (success) {
@@ -105,7 +167,22 @@ export function ForgotPasswordForm() {
         <Alert className="rounded-md bg-red-50 p-4 text-sm text-red-700" role="alert" aria-live="assertive">
           <AlertTriangle className="h-4 w-4 mr-2" aria-hidden="true" />
           <AlertTitle>Password Reset Failed</AlertTitle>
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>
+            {error}
+            {autoRetry && retryCountdown > 0 && (
+              <div className="mt-2">
+                <p className="text-xs">Retrying in {retryCountdown} seconds...</p>
+                <button type="button" onClick={cancelAutoRetry} className="text-xs underline mt-1">
+                  Cancel
+                </button>
+              </div>
+            )}
+            {retryCount > 0 && error.includes("temporarily unavailable") && !autoRetry && (
+              <p className="mt-2 text-xs">
+                This is often due to the email service warming up. Please try again in a few moments.
+              </p>
+            )}
+          </AlertDescription>
         </Alert>
       )}
 
@@ -119,7 +196,7 @@ export function ForgotPasswordForm() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           required
-          disabled={isLoading}
+          disabled={isLoading || autoRetry}
           aria-labelledby="email-label"
           aria-required="true"
           autoComplete="email"
@@ -134,11 +211,22 @@ export function ForgotPasswordForm() {
         )}
       </div>
 
-      <Button type="submit" className="w-full" disabled={isLoading} aria-busy={isLoading} aria-live="polite">
+      <Button
+        type="submit"
+        className="w-full"
+        disabled={isLoading || autoRetry}
+        aria-busy={isLoading}
+        aria-live="polite"
+      >
         {isLoading ? (
           <>
             <RefreshCw className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
             Sending Reset Link...
+          </>
+        ) : autoRetry ? (
+          <>
+            <RefreshCw className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+            Retrying in {retryCountdown}s...
           </>
         ) : (
           "Send Reset Link"

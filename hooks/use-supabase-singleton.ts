@@ -5,6 +5,9 @@ import { getSupabaseSingleton, resetSupabaseSingleton, getSupabaseSingletonDebug
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 
+// Track the number of hook instances created
+export let instanceCount = 0
+
 export function useSupabaseSingleton() {
   const [supabase, setSupabase] = useState<SupabaseClient<Database> | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -12,6 +15,10 @@ export function useSupabaseSingleton() {
 
   useEffect(() => {
     let isMounted = true
+
+    // Increment instance count when hook is initialized
+    instanceCount++
+    const currentInstance = instanceCount
 
     const initializeSupabase = async () => {
       try {
@@ -38,6 +45,8 @@ export function useSupabaseSingleton() {
 
     return () => {
       isMounted = false
+      // We don't decrement instanceCount to keep track of total instances created
+      console.log(`Cleaning up Supabase hook instance ${currentInstance}`)
     }
   }, [])
 
@@ -67,6 +76,3 @@ export function useSupabaseSingleton() {
     debugInfo: getSupabaseSingletonDebugInfo(),
   }
 }
-
-// Export the instance count for external monitoring
-export const instanceCount = () => getSupabaseSingletonDebugInfo().instanceCount

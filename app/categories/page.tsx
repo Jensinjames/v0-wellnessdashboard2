@@ -1,41 +1,107 @@
-import { Suspense } from "react"
-import { createServerSupabaseClient } from "@/lib/supabase-server"
-import { CategoriesClient } from "./categories-client"
-import type { WellnessCategory } from "@/types/wellness"
+"use client"
 
-export const dynamic = "force-dynamic"
+import { useState, useEffect, Suspense } from "react"
+import { useAuth } from "@/context/auth-context"
+import { Navigation } from "@/components/navigation"
+import { Button } from "@/components/ui/button"
+import { Plus } from "lucide-react"
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
+import { BackButton } from "@/components/ui/back-button"
+import { CategoryList } from "@/components/categories/category-list"
+import { CategoryForm } from "@/components/categories/category-form"
 
-export default async function CategoriesPage() {
-  const supabase = createServerSupabaseClient()
+// Loading fallback component
+function LoadingFallback() {
+  return (
+    <div className="w-full p-4 flex justify-center">
+      <div className="animate-pulse text-muted-foreground">Loading...</div>
+    </div>
+  )
+}
 
-  // Get the current user
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+export default function CategoriesPage() {
+  const { user, isLoading } = useAuth()
+  const [isClient, setIsClient] = useState(false)
+  const [isDialogOpen, setIsDialogOpen] = useState(false)
+  const [refreshKey, setRefreshKey] = useState(0)
 
-  if (!user) {
-    return <div>Please sign in to view categories</div>
+  useEffect(() => {
+    setIsClient(true)
+  }, [])
+
+  if (!isClient) {
+    return null
   }
 
-  // Get system categories (no user_id) and user's custom categories
-  const { data: categories, error } = await supabase
-    .from("wellness_categories")
-    .select("*")
-    .or(`user_id.is.null,user_id.eq.${user.id}`)
-    .order("name")
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <main className="container py-6">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold">Loading...</h1>
+          </div>
+        </main>
+      </div>
+    )
+  }
 
-  if (error) {
-    console.error("Error fetching categories:", error)
-    return <div>Error loading categories</div>
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-background">
+        <Navigation />
+        <main className="container py-6">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-2xl font-bold">Categories</h1>
+          </div>
+          <p>Please sign in to view your categories.</p>
+        </main>
+      </div>
+    )
+  }
+
+  const handleCategoryAdded = () => {
+    setIsDialogOpen(false)
+    setRefreshKey((prev) => prev + 1)
   }
 
   return (
-    <div className="container py-8">
-      <h1 className="text-3xl font-bold mb-6">Wellness Categories</h1>
+    <div className="min-h-screen bg-background">
+      <Navigation />
+      <main className="container py-6">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-2xl font-bold">Categories</h1>
+          <div className="flex gap-2">
+            <Suspense
+              fallback={
+                <Button variant="outline" disabled>
+                  Back
+                </Button>
+              }
+            >
+              <BackButton />
+            </Suspense>
+            <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="flex items-center gap-2">
+                  <Plus className="h-4 w-4" />
+                  Add Category
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Add New Category</DialogTitle>
+                </DialogHeader>
+                <CategoryForm onSuccess={handleCategoryAdded} />
+              </DialogContent>
+            </Dialog>
+          </div>
+        </div>
 
-      <Suspense fallback={<div>Loading categories...</div>}>
-        <CategoriesClient initialCategories={categories as WellnessCategory[]} />
-      </Suspense>
+        <Suspense fallback={<LoadingFallback />}>
+          <CategoryList key={refreshKey} />
+        </Suspense>
+      </main>
     </div>
   )
 }

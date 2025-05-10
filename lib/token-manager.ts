@@ -1,136 +1,258 @@
-import { getSupabaseClient } from "@/utils/supabase-client"
-import { createLogger } from "@/utils/logger"
-import { isDebugMode } from "@/lib/env-utils"
+/**
+ * Token Manager
+ * Handles JWT token refresh, validation, and expiration
+ */
+"use client"
 
-// Create a dedicated logger
-const logger = createLogger("TokenManager")
+import type { SupabaseClient } from "@supabase/supabase-js"
+import type { Database } from "@/types/database"
 
-// Define custom events for token management
+// Event names for token-related events
 export const TOKEN_EVENTS = {
-  REFRESH_SUCCESS: "auth:token:refresh:success",
-  REFRESH_FAILURE: "auth:token:refresh:failure",
-  SESSION_EXPIRED: "auth:session:expired",
+  REFRESH_SUCCESS: "supabase:token:refresh:success",
+  REFRESH_FAILURE: "supabase:token:refresh:failure",
+  SESSION_EXPIRED: "supabase:session:expired",
 }
 
-// Initialize token refresh monitoring
-export function initTokenRefreshMonitoring() {
-  if (typeof window === "undefined") return () => {}
+// Token manager state
+interface TokenManagerState {
+  valid: boolean
+  expiresSoon: boolean
+  expiresAt: number | null
+  telemetry: {
+    refreshAttempts: number
+    successCount: number
+    failureCount: number
+    lastRefreshSuccess: number | null
+    lastRefreshFailure: number | null
+  }
+}
 
-  // Set up the auth state change listener
-  const setupTokenListener = async () => {
+// Singleton instance
+let tokenManagerInstance: ReturnType<typeof createTokenManager> | null = null
+
+/**
+ * Creates a token manager for handling JWT token refresh and validation
+ */
+function createTokenManager(client: SupabaseClient<Database>, debug = false) {
+  // Token state
+  const state: TokenManagerState = {
+    valid: false,
+    expiresSoon: false,
+    expiresAt: null,
+    telemetry: {
+      refreshAttempts: 0,
+      successCount: 0,
+      failureCount: 0,
+      lastRefreshSuccess: null,
+      lastRefreshFailure: null,
+    },
+  }
+
+  // Debug logging
+  const log = (...args: any[]) => {
+    if (debug) {
+      console.log("[TokenManager]", ...args)
+    }
+  }
+
+  // Refresh timer
+  let refreshTimer: NodeJS.Timeout | null = null
+
+  // Initialize token state
+  const initialize = async () => {
     try {
-      const supabase = getSupabaseClient()
+      const { data, error } = await client.auth.getSession()
 
-      // Listen for auth state changes
-      const { data } = supabase.auth.onAuthStateChange((event, session) => {
-        if (isDebugMode()) {
-          logger.debug(`Auth state changed: ${event}`, { sessionExists: !!session })
-        }
-
-        if (event === "TOKEN_REFRESHED" && session) {
-          // Dispatch a custom event for token refresh success
-          window.dispatchEvent(new CustomEvent(TOKEN_EVENTS.REFRESH_SUCCESS))
-        } else if (event === "SIGNED_OUT") {
-          // Dispatch a custom event for session expiration
-          window.dispatchEvent(new CustomEvent(TOKEN_EVENTS.SESSION_EXPIRED))
-        }
-      })
-
-      return () => {
-        data.subscription.unsubscribe()
+      if (error) {
+        log("Error getting session:", error)
+        state.valid = false
+        return false
       }
+
+      if (!data.session) {
+        log("No session found")
+        state.valid = false
+        return false
+      }
+
+      // Extract expiration from JWT
+      const { session } = data
+      const expiresAt = session.expires_at ? session.expires_at * 1000 : null // Convert to milliseconds
+
+      state.valid = true
+      state.expiresAt = expiresAt
+      state.expiresSoon = expiresAt ? expiresAt - Date.now() < 5 * 60 * 1000 : false // 5 minutes
+
+      log("Session initialized, expires at:", new Date(expiresAt || 0).toISOString())
+
+      // Schedule refresh if needed
+      scheduleRefresh()
+
+      return true
     } catch (error) {
-      logger.error("Error setting up token listener:", error)
-      return () => {}
+      log("Error initializing token manager:", error)
+      state.valid = false
+      return false
     }
   }
 
-  // Start monitoring
-  const unsubscribePromise = setupTokenListener()
-
-  // Return cleanup function
-  return () => {
-    unsubscribePromise.then((unsubscribe) => {
-      if (unsubscribe) unsubscribe()
-    })
-  }
-}
-
-// Manually refresh the token
-export async function refreshToken() {
-  if (typeof window === "undefined") return { success: false, error: "Cannot refresh token on server" }
-
-  try {
-    const supabase = getSupabaseClient()
-    const { data, error } = await supabase.auth.refreshSession()
-
-    if (error) {
-      logger.error("Error refreshing token:", error)
-
-      // Dispatch a custom event for token refresh failure
-      window.dispatchEvent(
-        new CustomEvent(TOKEN_EVENTS.REFRESH_FAILURE, {
-          detail: { error },
-        }),
-      )
-
-      return { success: false, error: error.message }
+  // Schedule token refresh
+  const scheduleRefresh = () => {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer)
+      refreshTimer = null
     }
 
-    if (!data.session) {
-      logger.warn("No session returned from token refresh")
-
-      // Dispatch a custom event for session expiration
-      window.dispatchEvent(new CustomEvent(TOKEN_EVENTS.SESSION_EXPIRED))
-
-      return { success: false, error: "No session returned" }
+    if (!state.expiresAt) {
+      log("No expiration time, not scheduling refresh")
+      return
     }
 
-    // Dispatch a custom event for token refresh success
-    window.dispatchEvent(new CustomEvent(TOKEN_EVENTS.REFRESH_SUCCESS))
+    const now = Date.now()
+    const timeUntilExpiry = state.expiresAt - now
 
-    return { success: true, error: null }
-  } catch (error: any) {
-    logger.error("Unexpected error refreshing token:", error)
+    if (timeUntilExpiry <= 0) {
+      log("Token already expired")
+      state.valid = false
+      dispatchEvent(TOKEN_EVENTS.SESSION_EXPIRED, { expiresAt: state.expiresAt })
+      return
+    }
 
-    // Dispatch a custom event for token refresh failure
-    window.dispatchEvent(
-      new CustomEvent(TOKEN_EVENTS.REFRESH_FAILURE, {
-        detail: { error },
-      }),
-    )
+    // Refresh at 80% of the token's lifetime
+    const refreshAt = Math.max(timeUntilExpiry * 0.2, 60000) // At least 1 minute before expiry
+    const refreshIn = timeUntilExpiry - refreshAt
 
-    return { success: false, error: error.message || "Failed to refresh token" }
+    log(`Scheduling refresh in ${Math.round(refreshIn / 1000)}s (${new Date(now + refreshIn).toISOString()})`)
+
+    refreshTimer = setTimeout(() => {
+      log("Executing scheduled token refresh")
+      refreshToken()
+    }, refreshIn)
+  }
+
+  // Refresh the token
+  const refreshToken = async () => {
+    try {
+      log("Refreshing token")
+      state.telemetry.refreshAttempts++
+
+      const { data, error } = await client.auth.refreshSession()
+
+      if (error) {
+        log("Error refreshing token:", error)
+        state.telemetry.failureCount++
+        state.telemetry.lastRefreshFailure = Date.now()
+        dispatchEvent(TOKEN_EVENTS.REFRESH_FAILURE, { error })
+        return false
+      }
+
+      if (!data.session) {
+        log("No session returned from refresh")
+        state.telemetry.failureCount++
+        state.telemetry.lastRefreshFailure = Date.now()
+        dispatchEvent(TOKEN_EVENTS.REFRESH_FAILURE, { error: "No session returned" })
+        return false
+      }
+
+      // Update state with new session data
+      const { session } = data
+      const expiresAt = session.expires_at ? session.expires_at * 1000 : null // Convert to milliseconds
+
+      state.valid = true
+      state.expiresAt = expiresAt
+      state.expiresSoon = expiresAt ? expiresAt - Date.now() < 5 * 60 * 1000 : false // 5 minutes
+      state.telemetry.successCount++
+      state.telemetry.lastRefreshSuccess = Date.now()
+
+      log("Token refreshed successfully, new expiry:", new Date(expiresAt || 0).toISOString())
+
+      // Schedule next refresh
+      scheduleRefresh()
+
+      // Dispatch success event
+      dispatchEvent(TOKEN_EVENTS.REFRESH_SUCCESS, { expiresAt })
+
+      return true
+    } catch (error) {
+      log("Unexpected error refreshing token:", error)
+      state.telemetry.failureCount++
+      state.telemetry.lastRefreshFailure = Date.now()
+      dispatchEvent(TOKEN_EVENTS.REFRESH_FAILURE, { error })
+      return false
+    }
+  }
+
+  // Force a token refresh
+  const forceRefresh = async () => {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer)
+      refreshTimer = null
+    }
+
+    return refreshToken()
+  }
+
+  // Check if token is valid
+  const isTokenValid = () => {
+    if (!state.valid || !state.expiresAt) {
+      return false
+    }
+
+    return state.expiresAt > Date.now()
+  }
+
+  // Get token status
+  const getStatus = () => {
+    return { ...state }
+  }
+
+  // Clean up resources
+  const cleanup = () => {
+    if (refreshTimer) {
+      clearTimeout(refreshTimer)
+      refreshTimer = null
+    }
+  }
+
+  // Helper to dispatch custom events
+  const dispatchEvent = (eventName: string, detail: any) => {
+    if (typeof window !== "undefined") {
+      const event = new CustomEvent(eventName, { detail })
+      window.dispatchEvent(event)
+    }
+  }
+
+  // Initialize on creation
+  initialize()
+
+  // Return public API
+  return {
+    initialize,
+    refreshToken,
+    forceRefresh,
+    isTokenValid,
+    getStatus,
+    cleanup,
   }
 }
 
-// Check if the session is valid
-export async function isSessionValid() {
-  if (typeof window === "undefined") return false
-
-  try {
-    const supabase = getSupabaseClient()
-    const { data } = await supabase.auth.getSession()
-    return !!data.session
-  } catch (error) {
-    logger.error("Error checking session validity:", error)
-    return false
+/**
+ * Get the token manager singleton
+ */
+export function getTokenManager(client: SupabaseClient<Database>, debug = false) {
+  if (!tokenManagerInstance) {
+    tokenManagerInstance = createTokenManager(client, debug)
   }
+  return tokenManagerInstance
 }
 
-// Get the current session expiration time
-export async function getSessionExpiration() {
-  if (typeof window === "undefined") return null
-
-  try {
-    const supabase = getSupabaseClient()
-    const { data } = await supabase.auth.getSession()
-
-    if (!data.session) return null
-
-    return new Date(data.session.expires_at! * 1000)
-  } catch (error) {
-    logger.error("Error getting session expiration:", error)
-    return null
+/**
+ * Reset the token manager singleton
+ */
+export function resetTokenManager() {
+  if (tokenManagerInstance) {
+    tokenManagerInstance.cleanup()
+    tokenManagerInstance = null
   }
 }
