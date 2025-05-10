@@ -1,18 +1,24 @@
 /**
  * Safe console utilities that don't reference process.env directly
  */
-import { ENV, logger } from "./env-checker"
+import { ENV } from "@/lib/env-config"
 
 export function safeWarn(message: string, ...args: any[]): void {
-  logger.warn(message, ...args)
+  if (!ENV.isProduction) {
+    console.warn(message, ...args)
+  }
 }
 
 export function safeLog(message: string, ...args: any[]): void {
-  logger.log(message, ...args)
+  if (!ENV.isProduction) {
+    console.log(message, ...args)
+  }
 }
 
 export function safeError(message: string, ...args: any[]): void {
-  logger.error(message, ...args)
+  if (!ENV.isProduction) {
+    console.error(message, ...args)
+  }
 }
 
 /**
@@ -20,6 +26,6 @@ export function safeError(message: string, ...args: any[]): void {
  */
 export function safeDevLog(message: string, ...args: any[]): void {
   if (ENV.isDevelopment) {
-    logger.log(`[DEV] ${message}`, ...args)
+    console.log(`[DEV] ${message}`, ...args)
   }
 }

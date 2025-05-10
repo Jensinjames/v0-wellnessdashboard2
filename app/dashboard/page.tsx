@@ -3,18 +3,21 @@ import { Suspense } from "react"
 export default function DashboardPage() {
   return (
     <Suspense fallback={<DashboardSkeleton />}>
-      {/* @ts-expect-error Async Server Component */}
-      <DashboardClient />
+      <DashboardContent />
     </Suspense>
   )
 }
 
-// Use a dynamic import to ensure the client component is properly isolated
-async function DashboardClient() {
-  const { DashboardContent } = await import("@/components/dashboard/dashboard-client")
-  return <DashboardContent />
+// Use a server component to load the client component
+function DashboardContent() {
+  // This is a server component that dynamically imports the client component
+  return <DashboardClientContent />
 }
 
+// Import the client component directly
+import { DashboardClientContent } from "@/components/dashboard/dashboard-client-content"
+
+// Skeleton loader for the dashboard
 function DashboardSkeleton() {
   return (
     <div className="min-h-screen bg-background">

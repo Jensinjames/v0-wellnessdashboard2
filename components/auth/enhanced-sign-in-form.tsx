@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { z } from "zod"
@@ -31,9 +31,15 @@ export function EnhancedSignInForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isRetrying, setIsRetrying] = useState(false)
+  const [isMounted, setIsMounted] = useState(false)
 
   // Get the redirect URL from the query string
   const redirectTo = searchParams?.get("redirectTo") || "/dashboard"
+
+  // Set mounted state to prevent hydration issues
+  useEffect(() => {
+    setIsMounted(true)
+  }, [])
 
   // Initialize the form
   const {
@@ -93,8 +99,14 @@ export function EnhancedSignInForm() {
 
       // Handle general errors
       if (signInError) {
+        // Special handling for database error granting user
+        if (signInError.message.includes("Database error granting user")) {
+          setError(
+            "There was an issue setting up your user profile. Please try again or contact support if the issue persists.",
+          )
+        }
         // Special handling for 500 errors
-        if (signInError.message.includes("unavailable")) {
+        else if (signInError.message.includes("unavailable")) {
           setError("Authentication service is unavailable. Please try again later.")
         } else {
           // Process other errors
@@ -113,6 +125,44 @@ export function EnhancedSignInForm() {
   const handleRetry = () => {
     const values = getValues()
     handleSubmit(values)
+  }
+
+  // Handle profile creation retry
+  const handleProfileCreationRetry = async () => {
+    try {
+      setIsLoading(true)
+      setError(null)
+
+      const values = getValues()
+
+      // Call the API to manually create a profile
+      const response = await fetch("/api/create-profile", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ email: values.email }),
+      })
+
+      const data = await response.json()
+
+      if (!response.ok) {
+        setError(data.error || "Failed to create profile. Please try again.")
+        return
+      }
+
+      // If profile creation was successful, try signing in again
+      handleSubmit(values)
+    } catch (err) {
+      safeError("Error during profile creation retry:", err)
+      setError("Failed to create profile. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  if (!isMounted) {
+    return null // Prevent hydration issues
   }
 
   return (
@@ -179,6 +229,18 @@ export function EnhancedSignInForm() {
                 >
                   <RefreshCw className="mr-2 h-4 w-4" />
                   Retry Manually
+                </Button>
+              )}
+              {error.includes("issue setting up your user profile") && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="mt-2 w-full sm:w-auto"
+                  onClick={handleProfileCreationRetry}
+                >
+                  <RefreshCw className="mr-2 h-4 w-4" />
+                  Retry Profile Creation
                 </Button>
               )}
             </AlertDescription>
