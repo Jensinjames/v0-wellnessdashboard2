@@ -131,9 +131,9 @@ export function useBatchedSupabase() {
   const executeBatched = useCallback(
     <T>(executeFunction: () => Promise<T>, options: BatchOptions = {}): Promise<T> => {
       if (!batcher) {
-        return executeFunction()
+        return executeFunction();
       }
-      return batcher.add(executeFunction, options)
+      return batcher.add(executeFunction, options);
     },
     [batcher],
   )

@@ -9,8 +9,9 @@ import { Button } from "@/components/ui/button"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { useToast } from "@/hooks/use-toast"
-import { useAuth } from "@/context/auth-context"
-import { checkEmailServiceAvailability } from "@/lib/supabase-manager"
+import { getSupabaseClient } from "@/lib/supabase-client"
+import { AlertCircle } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 // Form schema
 const formSchema = z.object({
@@ -18,11 +19,11 @@ const formSchema = z.object({
 })
 
 export function ForgotPasswordForm() {
-  const { resetPassword } = useAuth()
   const { toast } = useToast()
   const router = useRouter()
   const [isLoading, setIsLoading] = useState(false)
   const [emailSent, setEmailSent] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   // Initialize form
   const form = useForm<z.infer<typeof formSchema>>({
@@ -35,29 +36,23 @@ export function ForgotPasswordForm() {
   // Handle form submission
   async function onSubmit(values: z.infer<typeof formSchema>) {
     setIsLoading(true)
+    setError(null)
 
     try {
-      // Check if email service is available
-      const isEmailAvailable = await checkEmailServiceAvailability()
+      const supabase = getSupabaseClient()
 
-      if (!isEmailAvailable) {
-        toast({
-          title: "Email Service Unavailable",
-          description: "The email service is currently unavailable. Please try again later.",
-          variant: "destructive",
-        })
-        return
-      }
+      // Get the current origin for the redirect URL
+      const origin = typeof window !== "undefined" ? window.location.origin : ""
+      const redirectTo = `${origin}/auth/reset-password`
 
       // Send password reset email
-      const { error } = await resetPassword(values.email)
+      const { error } = await supabase.auth.resetPasswordForEmail(values.email, {
+        redirectTo,
+      })
 
       if (error) {
-        toast({
-          title: "Error",
-          description: error.message || "Failed to send password reset email",
-          variant: "destructive",
-        })
+        console.error("Password reset error:", error)
+        setError(error.message || "Failed to send password reset email")
         return
       }
 
@@ -68,11 +63,8 @@ export function ForgotPasswordForm() {
         description: "Check your email for a password reset link",
       })
     } catch (error: any) {
-      toast({
-        title: "Error",
-        description: error.message || "An unexpected error occurred",
-        variant: "destructive",
-      })
+      console.error("Unexpected error:", error)
+      setError(error?.message || "An unexpected error occurred")
     } finally {
       setIsLoading(false)
     }
@@ -115,6 +107,13 @@ export function ForgotPasswordForm() {
                 </FormItem>
               )}
             />
+
+            {error && (
+              <Alert variant="destructive">
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription>{error}</AlertDescription>
+              </Alert>
+            )}
 
             <Button type="submit" className="w-full" disabled={isLoading}>
               {isLoading ? "Sending..." : "Send Reset Link"}
