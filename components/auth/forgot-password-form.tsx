@@ -1,10 +1,10 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { useRouter } from "next/navigation"
+import { useRouter, useSearchParams } from "next/navigation"
 import { AlertCircle, ArrowRight, Loader2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -12,8 +12,7 @@ import { Input } from "@/components/ui/input"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { useSupabase } from "@/hooks/use-supabase"
-import { isEmailSendingError, isSupabaseAuthFailure } from "@/utils/auth-error-handler"
+import { useAuth } from "@/context/auth-context"
 
 // Form schema with validation
 const formSchema = z.object({
@@ -24,11 +23,22 @@ type FormValues = z.infer<typeof formSchema>
 
 export function ForgotPasswordForm() {
   const router = useRouter()
-  const { supabase } = useSupabase()
+  const searchParams = useSearchParams()
+  const { resetPassword } = useAuth()
   const [isLoading, setIsLoading] = useState(false)
   const [emailSent, setEmailSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isEmailServiceDown, setIsEmailServiceDown] = useState(false)
+  const [isExpiredLink, setIsExpiredLink] = useState(false)
+
+  // Check for expired error in URL
+  useEffect(() => {
+    const errorParam = searchParams.get("error")
+    if (errorParam === "expired") {
+      setIsExpiredLink(true)
+      setError("Your password reset link has expired. Please request a new one.")
+    }
+  }, [searchParams])
 
   // Initialize form
   const form = useForm<FormValues>({
@@ -45,45 +55,25 @@ export function ForgotPasswordForm() {
     setIsEmailServiceDown(false)
 
     try {
-      // Set up a timeout to detect if the request is taking too long
-      const timeoutPromise = new Promise((_, reject) => {
-        setTimeout(() => reject(new Error("Request timed out")), 10000)
-      })
+      // Send password reset email
+      const result = await resetPassword(data.email)
 
-      // Create the reset password request
-      const resetPromise = supabase.auth.resetPasswordForEmail(data.email, {
-        redirectTo: `${window.location.origin}/auth/reset-password`,
-      })
+      if (!result.success) {
+        console.error("Password reset error:", result.error)
 
-      // Race the reset request against the timeout
-      const { error } = (await Promise.race([
-        resetPromise,
-        timeoutPromise.then(() => ({ error: new Error("Request timed out") })),
-      ])) as { error: Error | null }
-
-      if (error) {
-        console.error("Password reset error:", error)
-
-        // Check if it's an email service issue
-        if (isSupabaseAuthFailure(error) || isEmailSendingError(error)) {
+        if (result.isEmailError) {
           setIsEmailServiceDown(true)
           setError("Our email service is temporarily unavailable. Please try again later or contact support.")
         } else {
-          setError(error.message || "Failed to send password reset email. Please try again.")
+          setError(result.error || "Failed to send password reset email. Please try again.")
         }
       } else {
+        // Success - email was sent
         setEmailSent(true)
       }
     } catch (err: any) {
       console.error("Password reset exception:", err)
-
-      // Check if it's an email service issue
-      if (isSupabaseAuthFailure(err) || isEmailSendingError(err)) {
-        setIsEmailServiceDown(true)
-        setError("Our email service is temporarily unavailable. Please try again later or contact support.")
-      } else {
-        setError(err.message || "An unexpected error occurred. Please try again.")
-      }
+      setError(err.message || "An unexpected error occurred. Please try again.")
     } finally {
       setIsLoading(false)
     }
@@ -113,8 +103,12 @@ export function ForgotPasswordForm() {
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
-        <CardTitle>Reset your password</CardTitle>
-        <CardDescription>Enter your email address and we'll send you a link to reset your password.</CardDescription>
+        <CardTitle>{isExpiredLink ? "Reset Link Expired" : "Reset your password"}</CardTitle>
+        <CardDescription>
+          {isExpiredLink
+            ? "Your password reset link has expired. Please request a new one."
+            : "Enter your email address and we'll send you a link to reset your password."}
+        </CardDescription>
       </CardHeader>
       <CardContent>
         <Form {...form}>

@@ -1,114 +1,52 @@
-/**
- * Database Heartbeat Utility
- *
- * This utility maintains a periodic connection to the database to prevent
- * connection timeouts and ensure the connection pool remains active.
- */
-
-import type { SupabaseClient } from "@supabase/supabase-js"
+import { getClient } from "@/lib/supabase"
 import { createLogger } from "@/utils/logger"
 
-const logger = createLogger("DatabaseHeartbeat")
+const logger = createLogger("DBHeartbeat")
 
-// Configuration
-const HEARTBEAT_INTERVAL = 4 * 60 * 1000 // 4 minutes
-const MAX_FAILURES = 3
-const FAILURE_RESET_TIME = 10 * 60 * 1000 // 10 minutes
-
-// State
 let heartbeatInterval: NodeJS.Timeout | null = null
-let failureCount = 0
-let lastFailureTime = 0
-let isActive = false
-let activeClient: SupabaseClient | null = null
+const HEARTBEAT_INTERVAL = 5 * 60 * 1000 // 5 minutes
 
 /**
- * Perform a simple database query to keep the connection alive
+ * Sends a simple query to keep the database connection alive
  */
-async function performHeartbeat(supabase: SupabaseClient) {
+async function sendHeartbeat() {
   try {
-    const startTime = Date.now()
+    const supabase = getClient()
+    const start = Date.now()
 
-    // Try a simple query that should always work
-    const { data, error } = await supabase.rpc("heartbeat_check", {})
+    // Simple query to keep the connection alive
+    const { error } = await supabase.from("profiles").select("count", { count: "exact", head: true })
+
+    const duration = Date.now() - start
 
     if (error) {
-      // If RPC fails, try a simple table query
-      logger.debug("RPC heartbeat failed, trying table query")
-      const { data: tableData, error: tableError } = await supabase.from("profiles").select("count").limit(1)
-
-      if (tableError) {
-        handleHeartbeatFailure(tableError)
-        return false
-      }
+      logger.error(`Database heartbeat failed (${duration}ms):`, error)
+      return false
     }
 
-    const duration = Date.now() - startTime
     logger.debug(`Database heartbeat successful (${duration}ms)`)
-
-    // Reset failure count if it's been a while since the last failure
-    if (failureCount > 0 && Date.now() - lastFailureTime > FAILURE_RESET_TIME) {
-      failureCount = 0
-      logger.info("Heartbeat failure count reset after period of stability")
-    }
-
     return true
   } catch (error) {
-    handleHeartbeatFailure(error)
+    logger.error("Database heartbeat error:", error)
     return false
   }
 }
 
 /**
- * Handle a heartbeat failure
+ * Start the database heartbeat to keep the connection pool warm
  */
-function handleHeartbeatFailure(error: any) {
-  failureCount++
-  lastFailureTime = Date.now()
-
-  logger.warn(`Database heartbeat failed (attempt ${failureCount})`, { error })
-
-  if (failureCount >= MAX_FAILURES) {
-    logger.error(`Database connection appears unstable after ${failureCount} failed heartbeats`)
-    // Here you could trigger additional recovery actions
-  }
-}
-
-/**
- * Start the database heartbeat
- */
-export function startDatabaseHeartbeat(supabase: SupabaseClient) {
-  if (isActive) {
-    if (activeClient === supabase) {
-      logger.warn("Heartbeat already active for this client, not starting another")
-      return () => {}
-    } else {
-      // If active with a different client, stop the current one
-      stopDatabaseHeartbeat()
-    }
+export function startDatabaseHeartbeat() {
+  if (heartbeatInterval) {
+    return
   }
 
-  logger.info(`Starting database heartbeat (interval: ${HEARTBEAT_INTERVAL}ms)`)
-  isActive = true
-  activeClient = supabase
-
-  // Perform an immediate heartbeat
-  performHeartbeat(supabase)
+  // Send an initial heartbeat
+  sendHeartbeat()
 
   // Set up the interval
-  heartbeatInterval = setInterval(() => {
-    performHeartbeat(supabase)
-  }, HEARTBEAT_INTERVAL)
+  heartbeatInterval = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL)
 
-  // Return a cleanup function
-  return () => {
-    if (heartbeatInterval) {
-      clearInterval(heartbeatInterval)
-      heartbeatInterval = null
-      isActive = false
-      activeClient = null
-    }
-  }
+  logger.info(`Database heartbeat started (interval: ${HEARTBEAT_INTERVAL / 1000}s)`)
 }
 
 /**
@@ -116,29 +54,8 @@ export function startDatabaseHeartbeat(supabase: SupabaseClient) {
  */
 export function stopDatabaseHeartbeat() {
   if (heartbeatInterval) {
-    logger.info("Stopping database heartbeat")
     clearInterval(heartbeatInterval)
     heartbeatInterval = null
-    isActive = false
-    activeClient = null
-  }
-}
-
-/**
- * Check if the heartbeat is currently active
- */
-export function isHeartbeatActive() {
-  return isActive
-}
-
-/**
- * Get the current heartbeat status
- */
-export function getHeartbeatStatus() {
-  return {
-    active: isActive,
-    failureCount,
-    lastFailureTime: lastFailureTime > 0 ? new Date(lastFailureTime).toISOString() : null,
-    timeSinceLastFailure: lastFailureTime > 0 ? Date.now() - lastFailureTime : null,
+    logger.info("Database heartbeat stopped")
   }
 }

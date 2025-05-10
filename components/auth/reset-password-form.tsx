@@ -2,13 +2,14 @@
 
 import type React from "react"
 
-import { useState } from "react"
-import { useRouter } from "next/navigation"
+import { useState, useEffect } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { handleAuthError } from "@/utils/auth-error-handler"
-import { getSupabaseClient } from "@/lib/supabase-client"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { AlertCircle, ArrowLeft } from "lucide-react"
+import { useAuth } from "@/context/auth-context"
 
 export function ResetPasswordForm() {
   const [password, setPassword] = useState("")
@@ -17,6 +18,18 @@ export function ResetPasswordForm() {
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const { updatePassword } = useAuth()
+
+  // Check for error parameters
+  useEffect(() => {
+    const errorParam = searchParams.get("error")
+    const errorDescription = searchParams.get("error_description")
+
+    if (errorParam === "access_denied" && errorDescription?.includes("otp_expired")) {
+      router.push("/auth/forgot-password?error=expired")
+    }
+  }, [searchParams, router])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -30,13 +43,10 @@ export function ResetPasswordForm() {
     }
 
     try {
-      const supabase = getSupabaseClient()
-      const { error: updateError } = await supabase.auth.updateUser({
-        password,
-      })
+      const result = await updatePassword(password)
 
-      if (updateError) {
-        setError(handleAuthError(updateError, "password-update"))
+      if (!result.success) {
+        setError(result.error || "Failed to update password")
         return
       }
 
@@ -45,7 +55,7 @@ export function ResetPasswordForm() {
         router.push("/auth/sign-in")
       }, 2000)
     } catch (err: any) {
-      setError(handleAuthError(err, "password-update"))
+      setError(err.message || "An unexpected error occurred")
     } finally {
       setIsLoading(false)
     }
@@ -61,7 +71,12 @@ export function ResetPasswordForm() {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {error && <div className="rounded-md bg-red-50 p-4 text-sm text-red-700">{error}</div>}
+      {error && (
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
 
       <div className="space-y-2">
         <Label htmlFor="password">New Password</Label>
@@ -72,7 +87,9 @@ export function ResetPasswordForm() {
           onChange={(e) => setPassword(e.target.value)}
           required
           disabled={isLoading}
+          minLength={8}
         />
+        <p className="text-xs text-muted-foreground">Password must be at least 8 characters long</p>
       </div>
 
       <div className="space-y-2">
@@ -90,6 +107,13 @@ export function ResetPasswordForm() {
       <Button type="submit" className="w-full" disabled={isLoading}>
         {isLoading ? "Resetting Password..." : "Reset Password"}
       </Button>
+
+      <div className="text-center">
+        <Button variant="link" onClick={() => router.push("/auth/forgot-password")} type="button">
+          <ArrowLeft className="mr-2 h-4 w-4" />
+          Request New Reset Link
+        </Button>
+      </div>
     </form>
   )
 }

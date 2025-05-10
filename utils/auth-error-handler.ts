@@ -464,15 +464,38 @@ export function isDatabaseGrantError(error: any): boolean {
  * Check if an error is an email sending error
  */
 export function isEmailSendingError(error: any): boolean {
-  const parsedError = parseAuthError(error)
-  return parsedError.category === AuthErrorCategory.EMAIL
+  if (!error) return false
+
+  // Check error message
+  const errorMessage = error.message || error.error?.message || ""
+
+  return (
+    errorMessage.includes("sending email") ||
+    errorMessage.includes("recovery email") ||
+    errorMessage.includes("email service") ||
+    errorMessage.includes("rate limited") ||
+    errorMessage.includes("too many requests") ||
+    (error.status && error.status === 429) || // Too many requests
+    (error.status && error.status === 500 && errorMessage.includes("email")) || // Server error with email
+    (error.code && error.code === "500") || // Generic server error
+    (error.code && error.code === "unexpected_failure") // Unexpected failure (often email related)
+  )
 }
 
 /**
  * Check if an error is specifically a 500 unexpected_failure from Supabase Auth API
  */
 export function isSupabaseAuthFailure(error: any): boolean {
-  return error && error.__isAuthError === true && error.status === 500 && error.code === "unexpected_failure"
+  return (
+    error &&
+    (error.__isAuthError === true || // Supabase auth error flag
+      error.name === "AuthApiError" || // Supabase auth API error
+      error.name === "AuthError" || // General auth error
+      (error.status && (error.status === 400 || error.status === 401 || error.status === 403)) || // Status codes
+      (error.error &&
+        error.error.status &&
+        (error.error.status === 400 || error.error.status === 401 || error.error.status === 403)))
+  )
 }
 
 /**
@@ -493,4 +516,43 @@ export function getTechnicalErrorDetails(error: any): string {
     null,
     2,
   )
+}
+
+/**
+ * Get a user-friendly error message for auth errors
+ * @param error The error to format
+ * @returns A user-friendly error message
+ */
+export function getAuthErrorMessage(error: any): string {
+  if (!error) return "An unknown error occurred"
+
+  const errorMessage = error.message || error.error?.message || ""
+
+  // Email sending errors
+  if (isEmailSendingError(error)) {
+    return "Our email service is temporarily unavailable. Please try again later or contact support."
+  }
+
+  // Invalid credentials
+  if (errorMessage.includes("Invalid login credentials") || errorMessage.includes("Invalid email or password")) {
+    return "Invalid email or password. Please try again."
+  }
+
+  // User not found
+  if (errorMessage.includes("user not found") || errorMessage.includes("User not found")) {
+    return "No account found with this email address. Please check your email or sign up."
+  }
+
+  // Email already in use
+  if (errorMessage.includes("already in use") || errorMessage.includes("already registered")) {
+    return "This email is already registered. Please sign in or reset your password."
+  }
+
+  // Password requirements
+  if (errorMessage.includes("password")) {
+    return "Password must be at least 8 characters long and include a mix of letters and numbers."
+  }
+
+  // Fallback to the original message or a generic one
+  return errorMessage || "An authentication error occurred. Please try again."
 }

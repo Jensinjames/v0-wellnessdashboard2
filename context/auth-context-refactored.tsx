@@ -7,58 +7,50 @@
 import type React from "react"
 import { createContext, useContext, useEffect, useState, useRef } from "react"
 import { useRouter } from "next/navigation"
-import type { User, Session } from "@supabase/supabase-js"
+import { getSupabaseAuthProvider } from "@/lib/auth/supabase-auth-provider"
+import type {
+  AuthUser,
+  AuthSession,
+  AuthCredentials,
+  AuthResult,
+  PasswordResetResult,
+  PasswordUpdateResult,
+} from "@/lib/auth/types"
+import { createLogger } from "@/utils/logger"
 import type { UserProfile, ProfileFormData } from "@/types/auth"
 import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
-import { validateEmail, validatePassword } from "@/utils/auth-validation"
-import { useToast } from "@/hooks/use-toast"
-import { createLogger } from "@/utils/logger"
-import { getClient } from "@/lib/supabase"
 
-// Create a dedicated logger for auth operations
-const logger = createLogger("Auth")
+const logger = createLogger("AuthContext")
 
 interface AuthContextType {
-  user: User | null
+  user: AuthUser | null
   profile: UserProfile | null
-  session: Session | null
+  session: AuthSession | null
   isLoading: boolean
-  signIn: (
-    credentials: { email: string; password: string },
-    redirectPath?: string,
-  ) => Promise<{
-    success: boolean
-    error: Error | null
-    fieldErrors?: { email?: string; password?: string }
-  }>
-  signUp: (credentials: { email: string; password: string }) => Promise<{
-    success: boolean
-    error: Error | null
-    fieldErrors?: { email?: string; password?: string }
-    emailVerificationSent?: boolean
-  }>
+  signIn: (credentials: AuthCredentials, redirectPath?: string) => Promise<AuthResult>
+  signUp: (credentials: AuthCredentials) => Promise<AuthResult>
   signOut: (redirectPath?: string) => Promise<void>
   refreshProfile: () => Promise<UserProfile | null>
   updateProfile: (data: ProfileFormData) => Promise<{ success: boolean; error: Error | null }>
-  resetPassword: (email: string) => Promise<{ success: boolean; error: string | null; isEmailError?: boolean }>
-  updatePassword: (password: string) => Promise<{ success: boolean; error: string | null }>
+  resetPassword: (email: string) => Promise<PasswordResetResult>
+  updatePassword: (password: string) => Promise<PasswordUpdateResult>
   isProfileComplete: boolean
+  handleOtpExpired: () => Promise<void>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<User | null>(null)
+  const [user, setUser] = useState<AuthUser | null>(null)
   const [profile, setProfile] = useState<UserProfile | null>(null)
-  const [session, setSession] = useState<Session | null>(null)
+  const [session, setSession] = useState<AuthSession | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const router = useRouter()
-  const { toast } = useToast()
   const isMounted = useRef(true)
   const isInitialized = useRef(false)
   const redirectInProgressRef = useRef(false)
-  const supabase = getClient()
+  const authProvider = getSupabaseAuthProvider()
 
   // Compute if profile is complete
   const isProfileComplete = profile ? Boolean(profile.first_name && profile.last_name && profile.email) : false
@@ -71,13 +63,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const initializeAuth = async () => {
       try {
         setIsLoading(true)
+        logger.debug("Initializing auth state")
 
-        // Get session
-        const {
-          data: { session: initialSession },
-        } = await supabase.auth.getSession()
+        // Get current session
+        const initialSession = await authProvider.getSession()
 
         if (initialSession?.user) {
+          logger.debug("User is authenticated, setting session and user")
           setSession(initialSession)
           setUser(initialSession.user)
 
@@ -85,11 +77,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           const cachedProfile = getCacheItem<UserProfile>(CACHE_KEYS.PROFILE(initialSession.user.id))
 
           if (cachedProfile) {
+            logger.debug("Using cached profile data")
             setProfile(cachedProfile)
             setIsLoading(false)
           } else {
             // Fetch profile
             try {
+              logger.debug("Fetching profile data")
               const { profile: fetchedProfile, error } = await fetchProfileSafely(initialSession.user.id)
 
               if (error) {
@@ -97,6 +91,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
                 // If no profile found, try to create one
                 if (initialSession.user.email) {
+                  logger.debug("No profile found, creating one")
                   const { profile: createdProfile, error: createError } = await createProfileSafely(
                     initialSession.user.id,
                     initialSession.user.email,
@@ -105,12 +100,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
                   if (createError) {
                     logger.error("Error creating profile:", createError)
                   } else if (createdProfile) {
+                    logger.debug("Profile created successfully")
                     setProfile(createdProfile)
                     // Cache the profile
                     setCacheItem(CACHE_KEYS.PROFILE(initialSession.user.id), createdProfile)
                   }
                 }
               } else if (fetchedProfile) {
+                logger.debug("Profile fetched successfully")
                 setProfile(fetchedProfile)
                 // Cache the profile
                 setCacheItem(CACHE_KEYS.PROFILE(initialSession.user.id), fetchedProfile)
@@ -124,6 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             }
           }
         } else {
+          logger.debug("User is not authenticated")
           setIsLoading(false)
         }
       } catch (error) {
@@ -141,31 +139,38 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   // Set up auth state change listener
   useEffect(() => {
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, payload) => {
+    const removeListener = authProvider.onAuthStateChange((event, newSession) => {
       if (!isMounted.current) return
 
+      logger.debug("Auth state change:", event)
+
       if (event === "SIGNED_OUT") {
+        logger.debug("User signed out, clearing state")
         setUser(null)
         setProfile(null)
         setSession(null)
-      } else if (event === "SIGNED_IN" && payload?.session?.user) {
-        setSession(payload.session)
-        setUser(payload.session.user)
+      } else if (event === "SIGNED_IN" && newSession?.user) {
+        logger.debug("User signed in, updating state")
+        setSession(newSession)
+        setUser(newSession.user)
 
         // Fetch profile on sign in
-        fetchProfileSafely(payload.session.user.id).then(({ profile, error }) => {
+        fetchProfileSafely(newSession.user.id).then(({ profile, error }) => {
           if (error) {
             logger.error("Error fetching profile after sign in:", error)
           } else if (profile) {
+            logger.debug("Profile fetched after sign in")
             setProfile(profile)
             // Cache the profile
-            setCacheItem(CACHE_KEYS.PROFILE(payload.session.user.id), profile)
+            setCacheItem(CACHE_KEYS.PROFILE(newSession.user.id), profile)
           }
         })
-      } else if (event === "TOKEN_REFRESHED" && payload?.session) {
-        setSession(payload.session)
+      } else if (event === "TOKEN_REFRESHED" && newSession) {
+        logger.debug("Token refreshed, updating session")
+        setSession(newSession)
+      } else if (event === "OTP_EXPIRED") {
+        logger.debug("OTP expired, redirecting to forgot password")
+        router.push("/auth/forgot-password?error=expired")
       }
 
       // Refresh the page to update server components
@@ -173,7 +178,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     })
 
     return () => {
-      subscription.unsubscribe()
+      removeListener()
     }
   }, [router])
 
@@ -184,6 +189,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
+      logger.debug("Updating profile for user", user.id, data)
+
       // Use the server action to update the profile
       const result = await fetch("/api/update-profile", {
         method: "POST",
@@ -199,6 +206,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const responseData = await result.json()
 
       if (!result.ok) {
+        logger.error("Error updating profile:", responseData.error)
         return {
           success: false,
           error: new Error(responseData.error || "Failed to update profile"),
@@ -227,131 +235,62 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const signIn = async (credentials: { email: string; password: string }, redirectPath?: string) => {
+  const signIn = async (credentials: AuthCredentials, redirectPath?: string): Promise<AuthResult> => {
     try {
-      // Validate email and password
-      if (!validateEmail(credentials.email)) {
-        return {
-          success: false,
-          error: new Error("Invalid email format"),
-          fieldErrors: { email: "Please enter a valid email address" },
+      logger.debug("Attempting sign in", { email: credentials.email })
+
+      const result = await authProvider.signIn(credentials)
+
+      if (result.success && result.session) {
+        // Handle redirect after successful sign-in
+        if (!redirectInProgressRef.current && redirectPath) {
+          redirectInProgressRef.current = true
+
+          // Redirect to the specified path or dashboard
+          setTimeout(() => {
+            router.push(redirectPath || "/dashboard")
+            redirectInProgressRef.current = false
+          }, 100)
         }
       }
 
-      if (!validatePassword(credentials.password)) {
-        return {
-          success: false,
-          error: new Error("Invalid password"),
-          fieldErrors: { password: "Password must be at least 8 characters long" },
-        }
-      }
-
-      logger.info("Attempting sign in", { email: credentials.email })
-
-      // Attempt sign-in with validated credentials
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email: credentials.email,
-        password: credentials.password,
-      })
-
-      if (error) {
-        logger.error("Sign in error:", { error, email: credentials.email })
-        return {
-          success: false,
-          error: new Error(error.message),
-        }
-      }
-
-      // Check if we have valid user data before proceeding
-      if (!data?.user) {
-        logger.error("Sign in error: No user data returned", { email: credentials.email })
-        return {
-          success: false,
-          error: new Error("Authentication failed: No user data returned"),
-        }
-      }
-
-      // Handle redirect after successful sign-in
-      if (!redirectInProgressRef.current && redirectPath) {
-        redirectInProgressRef.current = true
-
-        // Redirect to the specified path or dashboard
-        setTimeout(() => {
-          router.push(redirectPath || "/dashboard")
-          redirectInProgressRef.current = false
-        }, 100)
-      }
-
-      return { success: true, error: null }
-    } catch (error: any) {
+      return result
+    } catch (error) {
       logger.error("Sign in error:", error)
       return {
         success: false,
-        error: error instanceof Error ? error : new Error(String(error)),
+        error: {
+          code: AuthErrorCode.UNKNOWN_ERROR,
+          message: error instanceof Error ? error.message : String(error),
+        },
       }
     }
   }
 
-  const signUp = async (credentials: { email: string; password: string }) => {
+  const signUp = async (credentials: AuthCredentials): Promise<AuthResult> => {
     try {
-      // Validate email and password
-      if (!validateEmail(credentials.email)) {
-        return {
-          success: false,
-          error: new Error("Invalid email format"),
-          fieldErrors: { email: "Please enter a valid email address" },
-        }
-      }
+      logger.debug("Attempting sign up", { email: credentials.email })
 
-      if (!validatePassword(credentials.password)) {
-        return {
-          success: false,
-          error: new Error("Invalid password"),
-          fieldErrors: { password: "Password must be at least 8 characters long" },
-        }
-      }
+      const result = await authProvider.signUp(credentials)
 
-      logger.info("Attempting sign up", { email: credentials.email })
-
-      const { data, error } = await supabase.auth.signUp({
-        email: credentials.email,
-        password: credentials.password,
-        options: {
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
-        },
-      })
-
-      if (error) {
-        logger.error("Sign up error:", { error, email: credentials.email })
-        return {
-          success: false,
-          error: new Error(error.message),
-        }
-      }
-
-      // Explicitly indicate that an email verification was sent
-      return {
-        success: true,
-        error: null,
-        emailVerificationSent: true,
-      }
-    } catch (error: any) {
+      return result
+    } catch (error) {
       logger.error("Sign up error:", error)
       return {
         success: false,
-        error: error instanceof Error ? error : new Error(String(error)),
+        error: {
+          code: AuthErrorCode.UNKNOWN_ERROR,
+          message: error instanceof Error ? error.message : String(error),
+        },
       }
     }
   }
 
-  const signOut = async (redirectPath = "/auth/sign-in") => {
+  const signOut = async (redirectPath = "/auth/sign-in"): Promise<void> => {
     try {
-      logger.info("Attempting sign out")
-      const { error } = await supabase.auth.signOut()
+      logger.debug("Attempting sign out")
 
-      if (error) {
-        logger.error("Sign out error:", error)
-      }
+      await authProvider.signOut()
 
       // Explicitly clear state
       setUser(null)
@@ -383,65 +322,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const resetPassword = async (
-    email: string,
-  ): Promise<{ success: boolean; error: string | null; isEmailError?: boolean }> => {
+  const resetPassword = async (email: string): Promise<PasswordResetResult> => {
     try {
-      // Validate email format
-      if (!validateEmail(email)) {
-        return { success: false, error: "Please enter a valid email address" }
-      }
+      logger.debug("Attempting password reset", { email })
 
-      logger.info("Attempting password reset", { email })
-
-      // Add the redirectTo option with the correct URL
-      const origin = typeof window !== "undefined" ? window.location.origin : process.env.NEXT_PUBLIC_SITE_URL || ""
-      const redirectTo = `${origin}/auth/reset-password`
-
-      // Attempt to send the password reset email
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo,
-      })
-
-      if (error) {
-        logger.error("Reset password error:", error)
-        return {
-          success: false,
-          error: error.message || "Failed to reset password",
-          isEmailError: error.message?.includes("sending email") || error.message?.includes("500"),
-        }
-      }
-
-      return { success: true, error: null }
-    } catch (error: any) {
+      return await authProvider.resetPassword(email)
+    } catch (error) {
       logger.error("Reset password error:", error)
       return {
         success: false,
-        error: error.message || "Failed to reset password",
-        isEmailError: error.message?.includes("sending email") || error.message?.includes("500"),
+        error: {
+          code: AuthErrorCode.UNKNOWN_ERROR,
+          message: error instanceof Error ? error.message : String(error),
+        },
       }
     }
   }
 
-  const updatePassword = async (password: string): Promise<{ success: boolean; error: string | null }> => {
+  const updatePassword = async (password: string): Promise<PasswordUpdateResult> => {
     try {
-      // Validate password strength
-      if (!validatePassword(password)) {
-        return { success: false, error: "Password must be at least 8 characters long" }
-      }
+      logger.debug("Attempting password update")
 
-      logger.info("Attempting password update")
-      const { error } = await supabase.auth.updateUser({ password })
-
-      if (error) {
-        logger.error("Update password error:", error)
-        return { success: false, error: error.message }
-      }
-
-      return { success: true, error: null }
-    } catch (error: any) {
+      return await authProvider.updatePassword(password)
+    } catch (error) {
       logger.error("Update password error:", error)
-      return { success: false, error: error.message || "Failed to update password" }
+      return {
+        success: false,
+        error: {
+          code: AuthErrorCode.UNKNOWN_ERROR,
+          message: error instanceof Error ? error.message : String(error),
+        },
+      }
     }
   }
 
@@ -451,20 +362,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
+      logger.debug("Refreshing profile for user", user.id)
       setIsLoading(true)
 
-      const { data, error } = await supabase.from("profiles").select("*").eq("id", user.id).single()
+      const { profile: fetchedProfile, error } = await fetchProfileSafely(user.id)
 
       if (error) {
         logger.error("Error fetching profile:", error)
         return null
       }
 
-      if (data) {
-        setProfile(data)
+      if (fetchedProfile) {
+        setProfile(fetchedProfile)
         // Cache the refreshed profile
-        setCacheItem(CACHE_KEYS.PROFILE(user.id), data)
-        return data
+        setCacheItem(CACHE_KEYS.PROFILE(user.id), fetchedProfile)
+        return fetchedProfile
       }
 
       return null
@@ -474,6 +386,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // Handle OTP expired error
+  const handleOtpExpired = async (): Promise<void> => {
+    logger.debug("Handling OTP expired error")
+    router.push("/auth/forgot-password?error=expired")
   }
 
   const value = {
@@ -489,6 +407,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     resetPassword,
     updatePassword,
     isProfileComplete,
+    handleOtpExpired,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

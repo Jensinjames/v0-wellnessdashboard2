@@ -1,24 +1,45 @@
 /**
  * Edge Function Configuration
- * Centralized configuration for Supabase Edge Functions
+ * Provides configuration and utilities for edge functions
  */
+import { createLogger } from "@/utils/logger"
+
+const logger = createLogger("EdgeFunctionConfig")
 
 // Track the status of the email service
 let emailServiceAvailable = true
 let lastEmailServiceCheck = 0
 const EMAIL_SERVICE_CHECK_INTERVAL = 5 * 60 * 1000 // 5 minutes
 
+// Edge function endpoints
+export const EDGE_FUNCTION_ENDPOINTS = {
+  WELLNESS_SCORE: "/functions/v1/wellness-score",
+}
+
+// Edge function configuration
+export const EDGE_FUNCTION_CONFIG = {
+  DEFAULT_TIMEOUT: 10000, // 10 seconds
+  RETRY_COUNT: 2,
+  RETRY_DELAY: 1000, // 1 second
+}
+
 /**
  * Check if the email service is likely available based on previous errors
  * @returns boolean True if the email service is likely available
  */
 export function isEmailServiceLikelyAvailable(): boolean {
-  // If we haven't checked in a while, assume it's available
-  if (Date.now() - lastEmailServiceCheck > EMAIL_SERVICE_CHECK_INTERVAL) {
-    emailServiceAvailable = true
-  }
+  try {
+    // In development, check if we're mocking email success
+    if (process.env.NEXT_PUBLIC_APP_ENVIRONMENT === "development") {
+      return process.env.NEXT_PUBLIC_MOCK_EMAIL_SUCCESS === "true"
+    }
 
-  return emailServiceAvailable
+    // In production, assume the email service is available
+    return true
+  } catch (error) {
+    logger.error("Error checking email service availability:", error)
+    return false
+  }
 }
 
 /**
@@ -64,19 +85,19 @@ export const EDGE_FUNCTIONS = {
 }
 
 // Edge function configuration
-export const EDGE_FUNCTION_CONFIG = {
-  // Default timeout for edge function calls (in milliseconds)
-  DEFAULT_TIMEOUT: 5000,
+// export const EDGE_FUNCTION_CONFIG = {
+//   // Default timeout for edge function calls (in milliseconds)
+//   DEFAULT_TIMEOUT: 5000,
 
-  // Maximum retries for edge function calls
-  MAX_RETRIES: 2,
+//   // Maximum retries for edge function calls
+//   MAX_RETRIES: 2,
 
-  // Retry delay (in milliseconds)
-  RETRY_DELAY: 1000,
+//   // Retry delay (in milliseconds)
+//   RETRY_DELAY: 1000,
 
-  // Debug level (0: none, 1: errors, 2: warnings, 3: info, 4: debug, 5: verbose)
-  DEBUG_LEVEL: process.env.EDGE_FUNCTION_DEBUG_LEVEL ? Number.parseInt(process.env.EDGE_FUNCTION_DEBUG_LEVEL) : 1,
-}
+//   // Debug level (0: none, 1: errors, 2: warnings, 3: info, 4: debug, 5: verbose)
+//   DEBUG_LEVEL: process.env.EDGE_FUNCTION_DEBUG_LEVEL ? Number.parseInt(process.env.EDGE_FUNCTION_DEBUG_LEVEL) : 1,
+// }
 
 // Check if edge functions are configured
 export const isEdgeFunctionConfigured = (): boolean => {
@@ -116,11 +137,16 @@ export const EMAIL_SERVICE_CONFIG = {
 
 /**
  * Get the URL for an edge function
- * @param functionName The name of the edge function
- * @returns The full URL to the edge function
  */
-export function getEdgeFunctionUrl(functionName: string): string {
-  return `${getEdgeFunctionBaseUrl()}/${functionName}`
+export function getEdgeFunctionUrl(functionName: keyof typeof EDGE_FUNCTION_ENDPOINTS): string {
+  const baseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || ""
+  const endpoint = EDGE_FUNCTION_ENDPOINTS[functionName]
+
+  if (!baseUrl) {
+    throw new Error("NEXT_PUBLIC_SUPABASE_URL is not defined")
+  }
+
+  return `${baseUrl}${endpoint}`
 }
 
 /**
@@ -145,57 +171,83 @@ export async function isEdgeFunctionAvailable(functionName: string): Promise<boo
 }
 
 /**
- * Call an edge function
- * @param functionName The name of the edge function to call
- * @param payload The payload to send to the function
- * @param options Additional options for the function call
- * @returns Promise resolving to the function response
+ * Call an edge function with retry logic
  */
 export async function callEdgeFunction<T = any>(
-  functionName: string,
-  payload?: any,
-  options?: {
-    method?: "GET" | "POST" | "PUT" | "DELETE"
+  functionName: keyof typeof EDGE_FUNCTION_ENDPOINTS,
+  options: {
+    method?: string
     headers?: Record<string, string>
+    body?: any
     timeout?: number
-  },
-): Promise<{ data: T | null; error: Error | null }> {
-  const method = options?.method || "POST"
-  const timeout = options?.timeout || EDGE_FUNCTION_CONFIG.DEFAULT_TIMEOUT
+    retryCount?: number
+    retryDelay?: number
+  } = {},
+): Promise<T> {
+  const {
+    method = "POST",
+    headers = {},
+    body,
+    timeout = EDGE_FUNCTION_CONFIG.DEFAULT_TIMEOUT,
+    retryCount = EDGE_FUNCTION_CONFIG.RETRY_COUNT,
+    retryDelay = EDGE_FUNCTION_CONFIG.RETRY_DELAY,
+  } = options
+
+  const url = getEdgeFunctionUrl(functionName)
+
+  // Add default headers
+  const requestHeaders = {
+    "Content-Type": "application/json",
+    ...headers,
+  }
+
+  // Create request options
+  const requestOptions: RequestInit = {
+    method,
+    headers: requestHeaders,
+    body: body ? JSON.stringify(body) : undefined,
+  }
+
+  // Create AbortController for timeout
+  const controller = new AbortController()
+  const timeoutId = setTimeout(() => controller.abort(), timeout)
 
   try {
-    const controller = new AbortController()
-    const timeoutId = setTimeout(() => controller.abort(), timeout)
+    // Add signal to request options
+    requestOptions.signal = controller.signal
 
-    const headers: Record<string, string> = {
-      "Content-Type": "application/json",
-      ...options?.headers,
+    // Try to fetch with retries
+    let lastError: Error | null = null
+
+    for (let attempt = 0; attempt <= retryCount; attempt++) {
+      try {
+        if (attempt > 0) {
+          logger.debug(`Retrying edge function call (${attempt}/${retryCount}): ${functionName}`)
+          await new Promise((resolve) => setTimeout(resolve, retryDelay * attempt))
+        }
+
+        const response = await fetch(url, requestOptions)
+
+        if (!response.ok) {
+          const errorText = await response.text()
+          throw new Error(`Edge function error (${response.status}): ${errorText}`)
+        }
+
+        return await response.json()
+      } catch (error: any) {
+        lastError = error
+
+        // Don't retry if aborted or if we've reached the retry limit
+        if (error.name === "AbortError" || attempt === retryCount) {
+          throw error
+        }
+
+        logger.warn(`Edge function call failed (${attempt}/${retryCount}): ${error.message}`)
+      }
     }
 
-    // Add authorization if available on client
-    if (typeof window !== "undefined" && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-      headers["Authorization"] = `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`
-    }
-
-    const response = await fetch(getEdgeFunctionUrl(functionName), {
-      method,
-      headers,
-      body: payload ? JSON.stringify(payload) : undefined,
-      signal: controller.signal,
-    })
-
+    throw lastError || new Error(`Failed to call edge function: ${functionName}`)
+  } finally {
     clearTimeout(timeoutId)
-
-    if (!response.ok) {
-      throw new Error(`Edge function error: ${response.status} ${response.statusText}`)
-    }
-
-    const data = await response.json()
-    return { data, error: null }
-  } catch (error) {
-    return {
-      data: null,
-      error: error instanceof Error ? error : new Error(String(error)),
-    }
   }
 }
