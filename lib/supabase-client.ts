@@ -4,10 +4,21 @@
  */
 import { createBrowserClient } from "@supabase/ssr"
 import type { Database } from "@/types/database"
-import { CLIENT_ENV, validateClientEnv } from "@/lib/env-config"
+import { isDebugMode } from "@/utils/environment"
 import { createLogger } from "@/utils/logger"
 
 const logger = createLogger("SupabaseClient")
+
+// Debug mode flag
+let debugMode = false
+
+/**
+ * Set debug mode for Supabase client
+ */
+export function setDebugMode(enabled: boolean): void {
+  debugMode = enabled
+  logger.info(`Supabase client debug mode ${enabled ? "enabled" : "disabled"}`)
+}
 
 // Track all client instances for debugging
 const clientInstances = new Map<string, any>()
@@ -16,51 +27,53 @@ const clientInstances = new Map<string, any>()
 let supabaseClient: ReturnType<typeof createBrowserClient<Database>> | null = null
 let clientId = `supabase-client-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`
 
-// Create and return a Supabase client for browser usage
+// Connection health status
+let connectionHealth = {
+  lastChecked: 0,
+  isHealthy: true,
+  errorCount: 0,
+  lastError: null as Error | null,
+}
+
+/**
+ * Create and return a Supabase client for browser usage
+ */
 export function getSupabaseClient(): ReturnType<typeof createBrowserClient<Database>> {
   if (!supabaseClient) {
     try {
-      // Validate environment variables
-      const { valid, missing } = validateClientEnv()
-      if (!valid) {
-        logger.error(`Missing Supabase environment variables: ${missing.join(", ")}`)
+      // Check if required environment variables are available
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        logger.error("Missing Supabase environment variables")
         throw new Error("Supabase configuration is missing. Please check your environment variables.")
       }
 
       // Create a new client if one doesn't exist - ONLY use anon key on client side
-      const url = CLIENT_ENV.SUPABASE_URL
-      const key = CLIENT_ENV.SUPABASE_ANON_KEY
-
-      if (!url || !key) {
-        throw new Error("Supabase URL or Anon Key is missing")
-      }
-
-      // Generate a consistent storage key based on the URL
-      const storageKey = `sb-${url.replace(/^https?:\/\//, "").replace(/\..*$/, "")}-auth`
-
-      supabaseClient = createBrowserClient<Database>(url, key, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: true,
-          flowType: "pkce",
-          storageKey,
-        },
-        global: {
-          headers: {
-            "x-application-name": "wellness-dashboard-client",
-            "x-client-id": clientId,
+      supabaseClient = createBrowserClient<Database>(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        {
+          auth: {
+            persistSession: true,
+            autoRefreshToken: true,
+            detectSessionInUrl: true,
+            flowType: "pkce",
+          },
+          global: {
+            headers: {
+              "x-application-name": "wellness-dashboard-client",
+              "x-client-id": clientId,
+            },
           },
         },
-      })
+      )
 
       // Track this instance for debugging
       clientInstances.set(clientId, {
         createdAt: new Date().toISOString(),
-        url,
+        url: process.env.NEXT_PUBLIC_SUPABASE_URL,
       })
 
-      if (CLIENT_ENV.DEBUG_MODE) {
+      if (isDebugMode() || debugMode) {
         logger.info(`Supabase client created successfully (${clientId})`)
         logger.debug(`Active client instances: ${clientInstances.size}`)
       }
@@ -73,7 +86,9 @@ export function getSupabaseClient(): ReturnType<typeof createBrowserClient<Datab
   return supabaseClient
 }
 
-// Reset the client (useful for testing or when auth state changes)
+/**
+ * Reset the client (useful for testing or when auth state changes)
+ */
 export function resetSupabaseClient() {
   if (supabaseClient) {
     logger.info(`Resetting Supabase client (${clientId})`)
@@ -87,7 +102,9 @@ export function resetSupabaseClient() {
   }
 }
 
-// Get the current auth state
+/**
+ * Get the current auth state
+ */
 export async function getCurrentSession() {
   const supabase = getSupabaseClient()
   const { data, error } = await supabase.auth.getSession()
@@ -100,7 +117,9 @@ export async function getCurrentSession() {
   return { session: data.session, error: null }
 }
 
-// Get the current user
+/**
+ * Get the current user
+ */
 export async function getCurrentUser() {
   try {
     const supabase = getSupabaseClient()
@@ -127,7 +146,7 @@ export async function getCurrentUser() {
  * This helps track authentication client instances to prevent memory leaks
  */
 export function monitorGoTrueClientInstances() {
-  if (!CLIENT_ENV.DEBUG_MODE) return { start: () => {}, stop: () => {} }
+  if (!isDebugMode() && !debugMode) return { start: () => {}, stop: () => {} }
 
   let intervalId: NodeJS.Timeout | null = null
 
@@ -162,21 +181,81 @@ export function monitorGoTrueClientInstances() {
   return { start, stop }
 }
 
-// Get all active client instances (for debugging)
-export function getClientInstances() {
-  return Array.from(clientInstances.entries()).map(([id, instance]) => ({
-    id,
-    ...instance,
-  }))
+/**
+ * Get the current Supabase client instance
+ */
+export function getCurrentClient() {
+  return supabaseClient
 }
 
-// Clear all client instances except the current one
-export function clearOtherClientInstances() {
-  clientInstances.forEach((_, id) => {
-    if (id !== clientId) {
+/**
+ * Clean up orphaned client instances
+ */
+export function cleanupOrphanedClients() {
+  const now = Date.now()
+  let count = 0
+
+  clientInstances.forEach((instance, id) => {
+    const createdAt = new Date(instance.createdAt).getTime()
+    // If instance is older than 1 hour and not the current one
+    if (now - createdAt > 3600000 && id !== clientId) {
       clientInstances.delete(id)
+      count++
     }
   })
 
-  logger.info(`Cleared other client instances. Active count: ${clientInstances.size}`)
+  logger.info(`Cleaned up ${count} orphaned client instances`)
+  return count
+}
+
+/**
+ * Check Supabase connection health
+ */
+export async function checkSupabaseConnection(): Promise<boolean> {
+  try {
+    const supabase = getSupabaseClient()
+    const start = Date.now()
+
+    // Simple health check query
+    const { error } = await supabase.from("profiles").select("id").limit(1)
+
+    const duration = Date.now() - start
+
+    if (error) {
+      connectionHealth = {
+        lastChecked: Date.now(),
+        isHealthy: false,
+        errorCount: connectionHealth.errorCount + 1,
+        lastError: error,
+      }
+      logger.error(`Supabase connection check failed (${duration}ms):`, error)
+      return false
+    }
+
+    connectionHealth = {
+      lastChecked: Date.now(),
+      isHealthy: true,
+      errorCount: 0,
+      lastError: null,
+    }
+
+    logger.debug(`Supabase connection check successful (${duration}ms)`)
+    return true
+  } catch (error) {
+    connectionHealth = {
+      lastChecked: Date.now(),
+      isHealthy: false,
+      errorCount: connectionHealth.errorCount + 1,
+      lastError: error instanceof Error ? error : new Error(String(error)),
+    }
+    logger.error("Supabase connection check error:", error)
+    return false
+  }
+}
+
+/**
+ * Get connection health status
+ */
+export function getConnectionHealth() {
+  return connectionHealth
 }

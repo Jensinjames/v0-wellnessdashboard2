@@ -29,6 +29,17 @@ import {
 // Create a dedicated logger for auth operations
 const authLogger = createLogger("Auth")
 
+// Debug mode flag
+let authDebugMode = false
+
+/**
+ * Set debug mode for authentication
+ */
+export function setAuthDebugMode(enabled: boolean): void {
+  authDebugMode = enabled
+  authLogger.info(`Auth debug mode ${enabled ? "enabled" : "disabled"}`)
+}
+
 interface AuthContextType {
   user: User | null
   profile: UserProfile | null

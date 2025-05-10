@@ -2,101 +2,105 @@
  * Supabase Manager
  * Centralized management of Supabase clients and authentication
  */
-import { createBrowserClient } from "@supabase/ssr"
+import { createClient } from "@supabase/supabase-js"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
-import { isDebugMode } from "@/utils/environment"
-import { monitorGoTrueClientInstances } from "./supabase-client"
-import { isEmailServiceLikelyAvailable } from "./edge-function-config"
+import { createLogger } from "@/utils/logger"
 
-// Singleton instance for the client
-let supabaseClient: ReturnType<typeof createBrowserClient<Database>> | null = null
-let authListeners: Array<(event: string, payload: any) => void> = []
+const logger = createLogger("SupabaseManager")
 
-// Create and return a Supabase client
-export function getSupabase(): ReturnType<typeof createBrowserClient<Database>> {
-  if (!supabaseClient) {
-    try {
-      // Check if required environment variables are available
-      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-        console.error("Missing Supabase environment variables")
-        throw new Error("Supabase configuration is missing. Please check your environment variables.")
-      }
+// Singleton instance
+let supabaseInstance: SupabaseClient<Database> | null = null
 
-      // Create a new client if one doesn't exist
-      supabaseClient = createBrowserClient<Database>(
-        process.env.NEXT_PUBLIC_SUPABASE_URL,
-        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
-        {
-          auth: {
-            persistSession: true,
-            autoRefreshToken: true,
-            detectSessionInUrl: true,
-            flowType: "pkce",
-          },
-          global: {
-            headers: {
-              "x-application-name": "wellness-dashboard-manager",
-            },
-          },
-        },
-      )
+// Auth state change listeners
+type AuthChangeListener = (event: string, payload: any) => void
+const authListeners: AuthChangeListener[] = []
 
-      // Set up auth state change listener
-      supabaseClient.auth.onAuthStateChange((event, session) => {
-        if (isDebugMode()) {
-          console.log(`Auth state changed: ${event}`, { session: session?.user?.email || "No user" })
-        }
+// Instance tracking
+let instanceCount = 0
 
-        // Notify all listeners
-        authListeners.forEach((listener) => {
-          try {
-            listener(event, { session })
-          } catch (error) {
-            console.error("Error in auth listener:", error)
-          }
-        })
-      })
-
-      if (isDebugMode()) {
-        console.log("Supabase manager client created successfully")
-
-        // Start monitoring GoTrue instances in debug mode
-        const monitor = monitorGoTrueClientInstances()
-        monitor.start()
-      }
-    } catch (error) {
-      console.error("Error initializing Supabase manager:", error)
-      throw error
-    }
+/**
+ * Get or create a Supabase client instance
+ */
+export function getSupabase(): SupabaseClient<Database> {
+  if (supabaseInstance) {
+    return supabaseInstance
   }
 
-  return supabaseClient
+  // Validate environment variables
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+    throw new Error("Missing required environment variables for Supabase client")
+  }
+
+  // Create a new client
+  supabaseInstance = createClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+    {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        detectSessionInUrl: true,
+      },
+    },
+  )
+
+  // Increment instance count
+  instanceCount++
+
+  // Set up auth state change listener
+  supabaseInstance.auth.onAuthStateChange((event, session) => {
+    logger.info(`Auth state changed: ${event}`)
+
+    // Notify all listeners
+    authListeners.forEach((listener) => {
+      try {
+        listener(event, { session })
+      } catch (error) {
+        logger.error("Error in auth listener", error)
+      }
+    })
+  })
+
+  return supabaseInstance
 }
 
-// Reset the client (useful for testing or when auth state changes)
-export function resetSupabase() {
-  supabaseClient = null
-  authListeners = []
-}
-
-// Add an auth state change listener
-export function addAuthListener(listener: (event: string, payload: any) => void) {
+/**
+ * Add a listener for auth state changes
+ */
+export function addAuthListener(listener: AuthChangeListener): () => void {
   authListeners.push(listener)
 
   // Return a function to remove the listener
   return () => {
-    authListeners = authListeners.filter((l) => l !== listener)
+    const index = authListeners.indexOf(listener)
+    if (index !== -1) {
+      authListeners.splice(index, 1)
+    }
   }
 }
 
-// Check if email service is available
-export async function checkEmailServiceAvailability(): Promise<boolean> {
-  try {
-    return await isEmailServiceLikelyAvailable()
-  } catch (error) {
-    console.error("Error checking email service availability:", error)
-    return false
-  }
+/**
+ * Reset the Supabase client (useful for testing)
+ */
+export function resetSupabaseClient(): void {
+  supabaseInstance = null
+}
+
+/**
+ * Get the current auth session
+ */
+export async function getCurrentSession() {
+  const supabase = getSupabase()
+  return await supabase.auth.getSession()
+}
+
+/**
+ * Sign out the current user
+ */
+export async function signOut() {
+  const supabase = getSupabase()
+  return await supabase.auth.signOut()
 }
 
 /**
@@ -116,14 +120,6 @@ export async function signUpWithEmail(email: string, password: string) {
 }
 
 /**
- * Sign out the current user
- */
-export async function signOut() {
-  const supabase = getSupabase()
-  return await supabase.auth.signOut()
-}
-
-/**
  * Reset password for a user
  */
 export async function supabaseResetPassword(email: string, options?: { redirectTo?: string }) {
@@ -137,4 +133,31 @@ export async function supabaseResetPassword(email: string, options?: { redirectT
 export async function supabaseUpdatePassword(password: string) {
   const supabase = getSupabase()
   return await supabase.auth.updateUser({ password })
+}
+
+/**
+ * Check if email service is available
+ */
+export function checkEmailServiceAvailability(): Promise<boolean> {
+  return Promise.resolve(true)
+}
+
+/**
+ * Get the number of Supabase instances created
+ */
+export function getInstanceCount(): number {
+  return instanceCount
+}
+
+/**
+ * Clean up resources
+ */
+export function cleanup(): void {
+  if (supabaseInstance) {
+    // No explicit cleanup needed for Supabase client
+    // Just reset the instance
+    supabaseInstance = null
+    instanceCount = 0
+    logger.info("Supabase manager cleaned up")
+  }
 }

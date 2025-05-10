@@ -40,18 +40,18 @@ export function checkEmailServiceAvailability(): Promise<boolean> {
   return Promise.resolve(isEmailServiceLikelyAvailable())
 }
 
-// Base URL for edge functions - CLIENT SAFE
+// Base URL for edge functions
 const getEdgeFunctionBaseUrl = (): string => {
-  // Use environment variable if available - but only the URL, not the key
-  if (typeof window !== "undefined" && process.env.NEXT_PUBLIC_SUPABASE_URL) {
-    return `${process.env.NEXT_PUBLIC_SUPABASE_URL}/functions/v1`
+  // Use environment variable if available
+  if (process.env.SUPABASE_EDGE_FUNCTION_URL) {
+    return process.env.SUPABASE_EDGE_FUNCTION_URL.replace(/\/$/, "")
   }
 
   // Fallback to default URL pattern based on project reference
   return "https://jziyyspmahgrvfkpuisa.supabase.co/functions/v1"
 }
 
-// Edge function endpoints - CLIENT SAFE
+// Edge function endpoints
 export const EDGE_FUNCTIONS = {
   // Wellness score calculation endpoint
   WELLNESS_SCORE: `${getEdgeFunctionBaseUrl()}/wellness-score`,
@@ -63,7 +63,7 @@ export const EDGE_FUNCTIONS = {
   EMAIL_SERVICE_STATUS: `${getEdgeFunctionBaseUrl()}/email-service-status`,
 }
 
-// Edge function configuration - CLIENT SAFE
+// Edge function configuration
 export const EDGE_FUNCTION_CONFIG = {
   // Default timeout for edge function calls (in milliseconds)
   DEFAULT_TIMEOUT: 5000,
@@ -75,30 +75,30 @@ export const EDGE_FUNCTION_CONFIG = {
   RETRY_DELAY: 1000,
 
   // Debug level (0: none, 1: errors, 2: warnings, 3: info, 4: debug, 5: verbose)
-  DEBUG_LEVEL: process.env.NEXT_PUBLIC_DEBUG_LEVEL ? Number.parseInt(process.env.NEXT_PUBLIC_DEBUG_LEVEL) : 1,
+  DEBUG_LEVEL: process.env.EDGE_FUNCTION_DEBUG_LEVEL ? Number.parseInt(process.env.EDGE_FUNCTION_DEBUG_LEVEL) : 1,
 }
 
-// Check if edge functions are configured - CLIENT SAFE
+// Check if edge functions are configured
 export const isEdgeFunctionConfigured = (): boolean => {
-  return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL)
+  return Boolean(process.env.SUPABASE_EDGE_FUNCTION_URL)
 }
 
-// Check if we're in development mode - CLIENT SAFE
+// Check if we're in development mode
 export const isDevMode = (): boolean => {
   return process.env.NEXT_PUBLIC_APP_ENVIRONMENT === "development" || process.env.NODE_ENV === "development"
 }
 
-// Check if debug mode is enabled - CLIENT SAFE
+// Check if debug mode is enabled
 export const isDebugMode = (): boolean => {
   return process.env.NEXT_PUBLIC_DEBUG_MODE === "true" || process.env.DEBUG_MODE === "true"
 }
 
-// Get the site URL for redirects - CLIENT SAFE
+// Get the site URL for redirects
 export const getSiteUrl = (): string => {
   return process.env.NEXT_PUBLIC_SITE_URL || (typeof window !== "undefined" ? window.location.origin : "")
 }
 
-// Email service configuration - CLIENT SAFE
+// Email service configuration
 export const EMAIL_SERVICE_CONFIG = {
   // Check interval for email service status (in milliseconds)
   STATUS_CHECK_INTERVAL: 60000 * 30, // 30 minutes
@@ -112,4 +112,90 @@ export const EMAIL_SERVICE_CONFIG = {
 
   // Maximum number of consecutive errors before considering the service down
   MAX_ERROR_COUNT: 3,
+}
+
+/**
+ * Get the URL for an edge function
+ * @param functionName The name of the edge function
+ * @returns The full URL to the edge function
+ */
+export function getEdgeFunctionUrl(functionName: string): string {
+  return `${getEdgeFunctionBaseUrl()}/${functionName}`
+}
+
+/**
+ * Check if an edge function is available
+ * @param functionName The name of the edge function to check
+ * @returns Promise resolving to true if the function is available
+ */
+export async function isEdgeFunctionAvailable(functionName: string): Promise<boolean> {
+  try {
+    const response = await fetch(`${getEdgeFunctionUrl(functionName)}/health`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+      },
+    })
+
+    return response.ok
+  } catch (error) {
+    console.error(`Error checking edge function availability (${functionName}):`, error)
+    return false
+  }
+}
+
+/**
+ * Call an edge function
+ * @param functionName The name of the edge function to call
+ * @param payload The payload to send to the function
+ * @param options Additional options for the function call
+ * @returns Promise resolving to the function response
+ */
+export async function callEdgeFunction<T = any>(
+  functionName: string,
+  payload?: any,
+  options?: {
+    method?: "GET" | "POST" | "PUT" | "DELETE"
+    headers?: Record<string, string>
+    timeout?: number
+  },
+): Promise<{ data: T | null; error: Error | null }> {
+  const method = options?.method || "POST"
+  const timeout = options?.timeout || EDGE_FUNCTION_CONFIG.DEFAULT_TIMEOUT
+
+  try {
+    const controller = new AbortController()
+    const timeoutId = setTimeout(() => controller.abort(), timeout)
+
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+      ...options?.headers,
+    }
+
+    // Add authorization if available on client
+    if (typeof window !== "undefined" && process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+      headers["Authorization"] = `Bearer ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY}`
+    }
+
+    const response = await fetch(getEdgeFunctionUrl(functionName), {
+      method,
+      headers,
+      body: payload ? JSON.stringify(payload) : undefined,
+      signal: controller.signal,
+    })
+
+    clearTimeout(timeoutId)
+
+    if (!response.ok) {
+      throw new Error(`Edge function error: ${response.status} ${response.statusText}`)
+    }
+
+    const data = await response.json()
+    return { data, error: null }
+  } catch (error) {
+    return {
+      data: null,
+      error: error instanceof Error ? error : new Error(String(error)),
+    }
+  }
 }
