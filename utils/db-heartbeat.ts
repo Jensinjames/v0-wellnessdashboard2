@@ -1,61 +1,47 @@
-import { getClient } from "@/lib/supabase"
-import { createLogger } from "@/utils/logger"
+import type { SupabaseClient } from "@supabase/supabase-js"
 
-const logger = createLogger("DBHeartbeat")
-
+// Track if heartbeat is active
+let isHeartbeatActive = false
 let heartbeatInterval: NodeJS.Timeout | null = null
-const HEARTBEAT_INTERVAL = 5 * 60 * 1000 // 5 minutes
 
 /**
- * Sends a simple query to keep the database connection alive
+ * Start a database heartbeat to keep the connection alive
+ * @param supabase The Supabase client
+ * @returns A cleanup function to stop the heartbeat
  */
-async function sendHeartbeat() {
-  try {
-    const supabase = getClient()
-    const start = Date.now()
+export function startDatabaseHeartbeat(supabase: SupabaseClient): () => void {
+  if (isHeartbeatActive) {
+    return () => {}
+  }
 
-    // Simple query to keep the connection alive
-    const { error } = await supabase.from("profiles").select("count", { count: "exact", head: true })
+  isHeartbeatActive = true
 
-    const duration = Date.now() - start
+  // Perform a simple query every 5 minutes to keep the connection alive
+  heartbeatInterval = setInterval(
+    async () => {
+      try {
+        // Simple query to keep the connection alive
+        await supabase.from("profiles").select("id").limit(1)
+      } catch (error) {
+        // Silently handle errors - we don't want to spam the console
+      }
+    },
+    5 * 60 * 1000,
+  ) // 5 minutes
 
-    if (error) {
-      logger.error(`Database heartbeat failed (${duration}ms):`, error)
-      return false
+  // Return a cleanup function
+  return () => {
+    if (heartbeatInterval) {
+      clearInterval(heartbeatInterval)
+      heartbeatInterval = null
     }
-
-    logger.debug(`Database heartbeat successful (${duration}ms)`)
-    return true
-  } catch (error) {
-    logger.error("Database heartbeat error:", error)
-    return false
+    isHeartbeatActive = false
   }
 }
 
 /**
- * Start the database heartbeat to keep the connection pool warm
+ * Check if the heartbeat is active
  */
-export function startDatabaseHeartbeat() {
-  if (heartbeatInterval) {
-    return
-  }
-
-  // Send an initial heartbeat
-  sendHeartbeat()
-
-  // Set up the interval
-  heartbeatInterval = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL)
-
-  logger.info(`Database heartbeat started (interval: ${HEARTBEAT_INTERVAL / 1000}s)`)
-}
-
-/**
- * Stop the database heartbeat
- */
-export function stopDatabaseHeartbeat() {
-  if (heartbeatInterval) {
-    clearInterval(heartbeatInterval)
-    heartbeatInterval = null
-    logger.info("Database heartbeat stopped")
-  }
+export function isHeartbeatRunning(): boolean {
+  return isHeartbeatActive
 }

@@ -33,6 +33,11 @@ export function getClient() {
 }
 
 /**
+ * Alias for getClient for backward compatibility
+ */
+export const getSupabaseClient = getClient
+
+/**
  * Create a Supabase client for server components
  */
 export function createServerSupabase() {

@@ -24,22 +24,40 @@ export const EDGE_FUNCTION_CONFIG = {
 }
 
 /**
- * Check if the email service is likely available based on previous errors
- * @returns boolean True if the email service is likely available
+ * Edge Function Configuration
+ *
+ * This module provides configuration and utilities for working with Supabase Edge Functions.
  */
-export function isEmailServiceLikelyAvailable(): boolean {
-  try {
-    // In development, check if we're mocking email success
-    if (process.env.NEXT_PUBLIC_APP_ENVIRONMENT === "development") {
-      return process.env.NEXT_PUBLIC_MOCK_EMAIL_SUCCESS === "true"
-    }
 
-    // In production, assume the email service is available
+// Get the Edge Function URL from environment variables
+export async function getEdgeFunctionUrlFromEnv(): Promise<string> {
+  return process.env.SUPABASE_EDGE_FUNCTION_URL || ""
+}
+
+// Get the Edge Function key from environment variables
+export async function getEdgeFunctionKey(): Promise<string> {
+  return process.env.SUPABASE_EDGE_FUNCTION_KEY || ""
+}
+
+// Check if email service is likely available
+export function isEmailServiceLikelyAvailable(): boolean {
+  // In production, we assume the email service is available
+  if (process.env.NODE_ENV === "production") {
     return true
-  } catch (error) {
-    logger.error("Error checking email service availability:", error)
-    return false
   }
+
+  // In development, check if we're mocking email success
+  if (process.env.NEXT_PUBLIC_MOCK_EMAIL_SUCCESS === "true") {
+    return true
+  }
+
+  // Default to true to avoid blocking functionality
+  return true
+}
+
+// Check if email service is available
+export async function checkEmailServiceAvailability(): Promise<boolean> {
+  return isEmailServiceLikelyAvailable()
 }
 
 /**
@@ -57,9 +75,9 @@ export function updateEmailServiceStatus(available: boolean): void {
 /**
  * Check if email service is available
  */
-export function checkEmailServiceAvailability(): Promise<boolean> {
-  return Promise.resolve(isEmailServiceLikelyAvailable())
-}
+// export function checkEmailServiceAvailability(): Promise<boolean> {
+//   return Promise.resolve(isEmailServiceLikelyAvailable())
+// }
 
 // Base URL for edge functions
 const getEdgeFunctionBaseUrl = (): string => {

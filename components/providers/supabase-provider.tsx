@@ -1,10 +1,9 @@
 "use client"
 
 import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from "react"
-import { getSupabaseClient, monitorGoTrueClientInstances, resetSupabaseClient } from "@/lib/supabase-client"
+import { getSupabaseClient, resetSupabaseClient } from "@/lib/supabase-client"
 import { startDatabaseHeartbeat } from "@/utils/db-heartbeat"
 import { createLogger } from "@/utils/logger"
-import { CLIENT_ENV } from "@/lib/env-config"
 
 const logger = createLogger("SupabaseProvider")
 
@@ -24,7 +23,6 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
   const [initialized, setInitialized] = useState(false)
   const [error, setError] = useState<Error | null>(null)
   const heartbeatCleanup = useRef<(() => void) | null>(null)
-  const monitorCleanup = useRef<{ start: () => void; stop: () => void } | null>(null)
 
   useEffect(() => {
     // Initialize Supabase client
@@ -34,12 +32,6 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
 
       // Start the database heartbeat
       heartbeatCleanup.current = startDatabaseHeartbeat(supabase)
-
-      // Start monitoring GoTrue instances if in debug mode
-      if (CLIENT_ENV.DEBUG_MODE) {
-        monitorCleanup.current = monitorGoTrueClientInstances()
-        monitorCleanup.current.start()
-      }
 
       // Mark as initialized
       setInitialized(true)
@@ -56,12 +48,6 @@ export function SupabaseProvider({ children }: { children: ReactNode }) {
       if (heartbeatCleanup.current) {
         heartbeatCleanup.current()
         heartbeatCleanup.current = null
-      }
-
-      // Stop monitoring GoTrue instances
-      if (monitorCleanup.current) {
-        monitorCleanup.current.stop()
-        monitorCleanup.current = null
       }
 
       // Reset the client on unmount to prevent memory leaks

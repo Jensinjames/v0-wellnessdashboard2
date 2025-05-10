@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { z } from "zod"
@@ -14,13 +14,7 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAuth } from "@/context/auth-context"
 import { createLogger } from "@/utils/logger"
-import {
-  handleAuthError,
-  isSchemaError,
-  isDatabaseGrantError,
-  getTechnicalErrorDetails,
-  AuthErrorCategory,
-} from "@/utils/auth-error-handler"
+import { resetSupabaseClient } from "@/lib/supabase-client"
 
 // Create a dedicated logger for the sign-in form
 const logger = createLogger("SignInForm")
@@ -40,14 +34,17 @@ export function SignInForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [isSchemaIssue, setIsSchemaIssue] = useState(false)
-  const [isDatabaseIssue, setIsDatabaseIssue] = useState(false)
-  const [technicalDetails, setTechnicalDetails] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
+  const [isDatabaseError, setIsDatabaseError] = useState(false)
   const MAX_RETRIES = 2
 
   // Get the redirect URL from the query string
   const redirectTo = searchParams?.get("redirectTo") || "/dashboard"
+
+  // Reset Supabase client on component mount to ensure clean state
+  useEffect(() => {
+    resetSupabaseClient()
+  }, [])
 
   // Initialize the form
   const {
@@ -68,125 +65,62 @@ export function SignInForm() {
     try {
       setIsLoading(true)
       setError(null)
-      setIsSchemaIssue(false)
-      setIsDatabaseIssue(false)
-      setTechnicalDetails(null)
+      setIsDatabaseError(false)
 
       // Log the attempt (without sensitive data)
       logger.info("Attempting sign-in", {
         emailProvided: !!data.email,
         passwordProvided: !!data.password,
+        retryCount,
       })
 
       // Call the signIn function from the auth context
-      const { error: signInError, fieldErrors } = await signIn(
-        {
-          email: data.email,
-          password: data.password,
-        },
-        redirectTo,
-      )
+      const { error: signInError } = await signIn(data.email, data.password)
 
-      // Handle field-specific errors
-      if (fieldErrors) {
-        Object.entries(fieldErrors).forEach(([field, message]) => {
-          if (message && (field === "email" || field === "password")) {
-            setFieldError(field as "email" | "password", {
-              type: "manual",
-              message,
-            })
-          }
-        })
-      }
-
-      // Handle general errors
+      // Handle errors
       if (signInError) {
-        // Process the error
-        const authError = handleAuthError(signInError, { email: data.email })
+        const errorMessage = signInError.message || "An error occurred during sign in"
 
-        // Check if it's a database grant error
+        // Check for database grant errors
         if (
-          isDatabaseGrantError(signInError) ||
-          (signInError.__isAuthError &&
-            signInError.message &&
-            signInError.message.includes("Database error granting user"))
+          errorMessage.includes("Database error granting") ||
+          errorMessage.includes("database error") ||
+          errorMessage.includes("granting user undefined") ||
+          errorMessage.includes("permission denied")
         ) {
-          setIsDatabaseIssue(true)
-          setTechnicalDetails(getTechnicalErrorDetails(signInError))
-          setError(
-            "Database configuration issue detected. This is a server-side setup problem with user permissions. Please contact support.",
-          )
-
-          // Log detailed error for debugging
-          logger.error("Database grant error details:", {
-            error: signInError,
-            isAuthError: signInError.__isAuthError,
-            status: signInError.status,
-            code: signInError.code,
-          })
-
-          // No retry for database grant errors
-          return
-        }
-
-        // Check if it's a schema error
-        if (
-          isSchemaError(signInError) ||
-          (signInError.__isAuthError && signInError.status === 500 && signInError.code === "unexpected_failure")
-        ) {
-          setIsSchemaIssue(true)
-          setTechnicalDetails(getTechnicalErrorDetails(signInError))
-          setError(
-            "Database configuration issue detected. This is likely a server-side setup problem, not an issue with your credentials.",
-          )
-
-          // Log detailed error for debugging
-          logger.error("Schema error details:", {
-            error: signInError,
-            isAuthError: signInError.__isAuthError,
-            status: signInError.status,
-            code: signInError.code,
-          })
+          setIsDatabaseError(true)
 
           // If we haven't exceeded max retries, try again after a delay
           if (retryCount < MAX_RETRIES) {
             setRetryCount((prev) => prev + 1)
-            setError("Database connection issue. Retrying automatically...")
+            setError(`Database connection issue. Retrying automatically... (${retryCount + 1}/${MAX_RETRIES})`)
 
             // Wait and retry
             setTimeout(
               () => {
-                handleSubmit(data)
+                setIsLoading(false)
+                hookFormSubmit(handleSubmit)()
               },
               2000 * (retryCount + 1),
             ) // Exponential backoff
 
             return
           }
+
+          setError("Database permission error. Please try again later or contact support.")
+        } else {
+          setError(errorMessage)
         }
 
-        // Check if it's a database category error
-        if (authError.category === AuthErrorCategory.DATABASE) {
-          setIsDatabaseIssue(true)
-          setTechnicalDetails(getTechnicalErrorDetails(signInError))
-          setError(authError.message)
-
-          // Log detailed error for debugging
-          logger.error("Database error details:", {
-            error: signInError,
-            category: authError.category,
-            type: authError.type,
-          })
-
-          return
-        }
-
-        setError(authError.message)
+        setIsLoading(false)
+        return
       }
+
+      // If successful, redirect
+      router.push(redirectTo)
     } catch (err) {
       logger.error("Unexpected error during sign-in:", err)
       setError("An unexpected error occurred. Please try again.")
-    } finally {
       setIsLoading(false)
     }
   }
@@ -239,25 +173,12 @@ export function SignInForm() {
         </div>
 
         {error && (
-          <Alert variant="destructive">
+          <Alert variant={isDatabaseError ? "destructive" : "default"}>
             <AlertDescription>{error}</AlertDescription>
-            {(isSchemaIssue || isDatabaseIssue) && (
-              <div className="mt-2">
-                <p className="text-sm font-medium">
-                  {isDatabaseIssue
-                    ? "This appears to be a database permission issue."
-                    : "This appears to be a database configuration issue."}
-                </p>
-                <p className="text-xs mt-1">
-                  Please contact support with the following error code:{" "}
-                  {isDatabaseIssue ? "DB-GRANT-001" : "SCHEMA-001"}
-                </p>
-                {technicalDetails && (
-                  <details className="mt-2">
-                    <summary className="text-xs cursor-pointer">Technical Details</summary>
-                    <pre className="text-xs mt-1 p-2 bg-gray-100 rounded overflow-x-auto">{technicalDetails}</pre>
-                  </details>
-                )}
+            {isDatabaseError && retryCount >= MAX_RETRIES && (
+              <div className="mt-2 text-xs">
+                <p>This appears to be a database permission issue. Please try again later.</p>
+                <p className="mt-1">If the problem persists, please contact support with error code: DB-GRANT-001</p>
               </div>
             )}
           </Alert>

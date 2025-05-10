@@ -1,24 +1,35 @@
 "use client"
 
-import type React from "react"
+import { useEffect, useRef, type ReactNode } from "react"
+import { getSupabaseClient } from "@/lib/supabase-client"
+import { startDatabaseHeartbeat } from "@/utils/db-heartbeat"
 
-import { useEffect } from "react"
-import { startDatabaseHeartbeat, stopDatabaseHeartbeat } from "@/utils/db-heartbeat"
-import { useAuth } from "@/context/auth-context"
+interface HeartbeatProviderProps {
+  children: ReactNode
+}
 
-export function HeartbeatProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth()
+export function HeartbeatProvider({ children }: HeartbeatProviderProps) {
+  const heartbeatCleanup = useRef<(() => void) | null>(null)
 
   useEffect(() => {
-    // Only start the heartbeat if the user is authenticated
-    if (user) {
-      startDatabaseHeartbeat()
+    try {
+      // Get the Supabase client
+      const supabase = getSupabaseClient()
 
-      return () => {
-        stopDatabaseHeartbeat()
+      // Start the database heartbeat
+      heartbeatCleanup.current = startDatabaseHeartbeat(supabase)
+    } catch (error) {
+      console.error("Failed to initialize heartbeat:", error)
+    }
+
+    // Cleanup function
+    return () => {
+      if (heartbeatCleanup.current) {
+        heartbeatCleanup.current()
+        heartbeatCleanup.current = null
       }
     }
-  }, [user])
+  }, [])
 
   return <>{children}</>
 }
