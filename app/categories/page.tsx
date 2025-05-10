@@ -1,45 +1,33 @@
-import { Navigation } from "@/components/navigation"
-import { CategoryList } from "@/components/categories/category-list"
-import { getCategories } from "@/app/actions/categories"
-import { createServerSupabaseClient } from "@/lib/supabase-server"
-import { CACHE_KEYS } from "@/lib/cache-utils"
+"use client"
 
-export default async function CategoriesPage() {
-  // Get the current user
-  const supabase = createServerSupabaseClient()
+import { CategoryManagement } from "@/components/category-management"
+import { WellnessProvider } from "@/context/wellness-context"
+import { Button } from "@/components/ui/button"
+import { ArrowLeft } from "lucide-react"
+import Link from "next/link"
 
-  const {
-    data: { session },
-  } = await supabase.auth.getSession()
-  const userId = session?.user?.id
-
-  // Fetch categories if we have a user
-  let categories = []
-  if (userId) {
-    try {
-      // Server-side fetch (will be cached on the client)
-      categories = await getCategories(userId)
-    } catch (error) {
-      console.error("Error fetching categories:", error)
-    }
-  }
-
-  // If no categories were returned, use defaults
-  if (categories.length === 0) {
-    categories = [
-      { id: "faith", name: "Faith", color: "#8b5cf6" },
-      { id: "life", name: "Life", color: "#ec4899" },
-      { id: "work", name: "Work", color: "#f59e0b" },
-      { id: "health", name: "Health", color: "#10b981" },
-    ]
-  }
-
+export default function CategoriesPage() {
   return (
-    <>
-      <Navigation />
-      <div className="container mx-auto py-8">
-        <CategoryList categories={categories} cacheKey={userId ? CACHE_KEYS.CATEGORIES(userId) : undefined} />
+    <WellnessProvider>
+      <div className="min-h-screen bg-gray-50">
+        <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
+          <div className="mb-6">
+            <Button variant="outline" asChild>
+              <Link href="/">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Back to Dashboard
+              </Link>
+            </Button>
+          </div>
+
+          <div className="mb-8">
+            <h1 className="text-3xl font-bold tracking-tight">Category Management</h1>
+            <p className="mt-1 text-muted-foreground">Customize your wellness tracking categories and metrics</p>
+          </div>
+
+          <CategoryManagement />
+        </div>
       </div>
-    </>
+    </WellnessProvider>
   )
 }
