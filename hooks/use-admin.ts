@@ -1,12 +1,9 @@
 "use client"
 
 import { useState } from "react"
-import { useSupabaseSingleton } from "./use-supabase-singleton"
-import { isDebugMode } from "@/utils/environment"
+import { useAuth } from "@/context/auth-context"
 
 // Types for admin operations
-type AdminOperation = "get_users" | "delete_user" | "update_user_role"
-
 interface AdminHookReturn {
   isLoading: boolean
   error: string | null
@@ -23,38 +20,25 @@ interface AdminHookReturn {
 export function useAdmin(): AdminHookReturn {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const supabase = useSupabaseSingleton()
-
-  // Debug logging
-  const debugLog = (...args: any[]) => {
-    if (isDebugMode()) {
-      console.log("[Admin]", ...args)
-    }
-  }
+  const { session } = useAuth()
 
   // Generic function to call admin API
-  const callAdminApi = async (operation: AdminOperation, params: any = {}) => {
+  const callAdminApi = async (endpoint: string, method = "GET", body?: any) => {
     setIsLoading(true)
     setError(null)
 
     try {
-      // Get the current session to include auth headers
-      const { data: sessionData } = await supabase.auth.getSession()
-
-      if (!sessionData.session) {
+      if (!session) {
         throw new Error("You must be authenticated to perform admin operations")
       }
 
       // Call the secure server-side API
-      const response = await fetch("/api/admin", {
-        method: "POST",
+      const response = await fetch(`/api/admin/${endpoint}`, {
+        method,
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          operation,
-          params,
-        }),
+        body: body ? JSON.stringify(body) : undefined,
       })
 
       if (!response.ok) {
@@ -66,7 +50,7 @@ export function useAdmin(): AdminHookReturn {
     } catch (err: any) {
       const errorMessage = err.message || "An unknown error occurred"
       setError(errorMessage)
-      debugLog("Admin operation error:", errorMessage)
+      console.error("Admin operation error:", errorMessage)
       throw err
     } finally {
       setIsLoading(false)
@@ -76,8 +60,8 @@ export function useAdmin(): AdminHookReturn {
   // Get all users (admin only)
   const getUsers = async (): Promise<any[]> => {
     try {
-      const result = await callAdminApi("get_users")
-      return result.data || []
+      const result = await callAdminApi("users")
+      return result.users || []
     } catch (err) {
       return []
     }
@@ -86,7 +70,7 @@ export function useAdmin(): AdminHookReturn {
   // Delete a user (admin only)
   const deleteUser = async (userId: string): Promise<boolean> => {
     try {
-      await callAdminApi("delete_user", { userId })
+      await callAdminApi(`users/${userId}`, "DELETE")
       return true
     } catch (err) {
       return false
@@ -96,7 +80,7 @@ export function useAdmin(): AdminHookReturn {
   // Update a user's role (admin only)
   const updateUserRole = async (userId: string, role: string): Promise<boolean> => {
     try {
-      await callAdminApi("update_user_role", { userId, role })
+      await callAdminApi(`users/${userId}/role`, "PUT", { role })
       return true
     } catch (err) {
       return false

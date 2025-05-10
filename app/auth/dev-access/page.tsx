@@ -2,81 +2,49 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { AlertTriangle, ArrowLeft } from "lucide-react"
-import Link from "next/link"
+import { Info, AlertTriangle, ArrowLeft } from "lucide-react"
 
 export default function DevAccessPage() {
   const [email, setEmail] = useState<string | null>(null)
-  const [isValid, setIsValid] = useState(false)
-  const [isDevMode, setIsDevMode] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const router = useRouter()
 
   useEffect(() => {
-    // Check if we're in development mode
-    const isDev = process.env.NEXT_PUBLIC_APP_ENVIRONMENT === "development"
-    setIsDevMode(isDev)
-
-    if (!isDev) {
+    // Only available in development mode
+    if (process.env.NEXT_PUBLIC_APP_ENVIRONMENT !== "development") {
+      router.push("/auth/sign-in")
       return
     }
 
     // Get the email from localStorage
     const storedEmail = localStorage.getItem("dev_temp_access")
-    if (storedEmail) {
+    if (!storedEmail) {
+      setError("No temporary access email found. Please set one using the console.")
+    } else {
       setEmail(storedEmail)
-      setIsValid(true)
     }
-  }, [])
+  }, [router])
 
   const handleContinue = () => {
-    if (isValid && email) {
-      // In a real implementation, you would create a temporary access token
-      // For now, we'll just redirect to a mock reset page
-      router.push(`/auth/reset-password?dev_mode=true&email=${encodeURIComponent(email)}`)
-    }
+    // In a real implementation, this would create a temporary access token
+    // For now, we'll just redirect to the dashboard
+    router.push("/dashboard")
   }
 
-  if (!isDevMode) {
+  if (error) {
     return (
-      <div className="space-y-4">
-        <Alert className="rounded-md bg-red-50 p-4 text-sm text-red-700" role="alert">
-          <AlertTriangle className="h-4 w-4 mr-2" aria-hidden="true" />
-          <AlertTitle>Development Mode Only</AlertTitle>
-          <AlertDescription>
-            This page is only available in development mode. Please use the normal password reset flow.
-          </AlertDescription>
+      <div className="max-w-md mx-auto p-6 space-y-6">
+        <Alert variant="destructive" className="bg-red-50 text-red-700 border-red-200">
+          <AlertTriangle className="h-4 w-4 mr-2" />
+          <AlertTitle>Access Error</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
         </Alert>
-        <div className="flex justify-center">
-          <Link href="/auth/forgot-password" className="flex items-center text-sm text-blue-600 hover:text-blue-500">
-            <ArrowLeft className="h-4 w-4 mr-1" />
-            Back to Password Reset
-          </Link>
-        </div>
-      </div>
-    )
-  }
-
-  if (!isValid) {
-    return (
-      <div className="space-y-4">
-        <Alert className="rounded-md bg-amber-50 p-4 text-sm text-amber-700" role="alert">
-          <AlertTriangle className="h-4 w-4 mr-2" aria-hidden="true" />
-          <AlertTitle>Development Access</AlertTitle>
-          <AlertDescription>
-            No email found in localStorage. Please set a temporary access email by running the following in your browser
-            console:
-            <pre className="mt-2 bg-amber-100 p-2 rounded text-xs overflow-x-auto">
-              localStorage.setItem('dev_temp_access', 'your.email@example.com');
-            </pre>
-            Then refresh this page.
-          </AlertDescription>
-        </Alert>
-        <div className="flex justify-center">
-          <Link href="/auth/forgot-password" className="flex items-center text-sm text-blue-600 hover:text-blue-500">
-            <ArrowLeft className="h-4 w-4 mr-1" />
-            Back to Password Reset
+        <div className="text-center">
+          <Link href="/auth/sign-in" className="inline-flex items-center text-blue-600 hover:text-blue-500">
+            <ArrowLeft className="h-4 w-4 mr-1" /> Return to sign in
           </Link>
         </div>
       </div>
@@ -84,29 +52,36 @@ export default function DevAccessPage() {
   }
 
   return (
-    <div className="space-y-4">
-      <Alert className="rounded-md bg-amber-50 p-4 text-sm text-amber-700" role="alert">
-        <AlertTriangle className="h-4 w-4 mr-2" aria-hidden="true" />
-        <AlertTitle>Development Mode Access</AlertTitle>
+    <div className="max-w-md mx-auto p-6 space-y-6">
+      <Alert className="bg-amber-50 text-amber-700 border-amber-200">
+        <Info className="h-4 w-4 mr-2" />
+        <AlertTitle>Development Mode Only</AlertTitle>
         <AlertDescription>
-          <p>
-            This is a development-only feature to help test the password reset flow when email sending is unavailable.
-          </p>
-          <p className="mt-2">
-            <strong>Email:</strong> {email}
-          </p>
-          <div className="mt-4">
-            <Button onClick={handleContinue} className="w-full">
-              Continue to Password Reset
-            </Button>
-          </div>
-          <p className="mt-2 text-xs">Note: In production, users would receive an email with a secure token link.</p>
+          This page is only available in development mode and provides temporary access for testing purposes.
         </AlertDescription>
       </Alert>
-      <div className="flex justify-center">
-        <Link href="/auth/forgot-password" className="flex items-center text-sm text-blue-600 hover:text-blue-500">
-          <ArrowLeft className="h-4 w-4 mr-1" />
-          Back to Password Reset
+
+      {email && (
+        <div className="bg-white p-6 rounded-lg shadow-md space-y-4">
+          <h1 className="text-xl font-bold text-center">Development Access</h1>
+          <p className="text-gray-600">
+            Temporary access is being granted for <strong>{email}</strong> for testing purposes.
+          </p>
+          <div className="pt-2">
+            <Button onClick={handleContinue} className="w-full">
+              Continue to Dashboard
+            </Button>
+          </div>
+          <div className="text-center text-sm text-gray-500">
+            <p>This is a development-only feature.</p>
+            <p>In production, users would need to verify their email.</p>
+          </div>
+        </div>
+      )}
+
+      <div className="text-center">
+        <Link href="/auth/sign-in" className="inline-flex items-center text-blue-600 hover:text-blue-500">
+          <ArrowLeft className="h-4 w-4 mr-1" /> Return to sign in
         </Link>
       </div>
     </div>

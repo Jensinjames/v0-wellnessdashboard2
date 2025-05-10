@@ -65,7 +65,7 @@ export function useOptimizedSupabase() {
   const executeQuery = useCallback(
     async <T>(\
       queryFn: (supabase: ReturnType<typeof getSupabaseClient>) => Promise<{ data: T | null; error: any }>,
-      options: QueryOptions = {},
+      options: QueryOptions = {}
     ): Promise<{ data: T | null;
   error: any
 }
@@ -122,7 +122,7 @@ export function useOptimizedSupabase() {
               throw error
             }
           },
-          { priority, category, retryOnNetworkError: retry, maxRetries },
+          { priority, category, retryOnNetworkError: retry, maxRetries }
         )
   }
 
@@ -195,7 +195,7 @@ export function useOptimizedSupabase() {
   }
 }
 ,
-    [executeBatched],
+    [executeBatched]
   )
 
 // Hook for executing a query with state management
@@ -206,7 +206,7 @@ const useQuery = <T>(
       refetchInterval?: number
       refetchOnWindowFocus?: boolean
       initialData?: T | null
-    } & QueryOptions = {},
+    } & QueryOptions = {}
   ) => {
     const {
       enabled = true,
@@ -295,7 +295,7 @@ const useQuery = <T>(
           })
         }
       }
-    }, [enabled, queryFn, executeQuery, state.retryCount])
+    }, [enabled, queryFn, executeQuery, state.retryCount, queryOptions])
 
     // Initial fetch and refetch on dependency changes
     useEffect(() => {
@@ -351,9 +351,9 @@ const useQuery = <T>(
   const useMutation = <T, V = any>(
     mutationFn: (
       supabase: ReturnType<typeof getSupabaseClient>,
-      variables: V,
+      variables: V
     ) => Promise<{ data: T | null; error: any }>,
-    options: QueryOptions = {},
+    options: QueryOptions = {}
   ) => {
     const [state, setState] = useState<QueryState<T> & { isIdle: boolean }>({
       data: null,
@@ -438,7 +438,7 @@ const useQuery = <T>(
           return { data: null, error }
         }
       },
-      [executeQuery, options, state.retryCount, mutationFn],
+      [executeQuery, options, state.retryCount, mutationFn]
     )
 
     const reset = useCallback(() => {

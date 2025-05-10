@@ -14,7 +14,13 @@ import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useAuth } from "@/context/auth-context"
 import { createLogger } from "@/utils/logger"
-import { handleAuthError, isSchemaError, getTechnicalErrorDetails } from "@/utils/auth-error-handler"
+import {
+  handleAuthError,
+  isSchemaError,
+  isDatabaseGrantError,
+  getTechnicalErrorDetails,
+  AuthErrorCategory,
+} from "@/utils/auth-error-handler"
 
 // Create a dedicated logger for the sign-in form
 const logger = createLogger("SignInForm")
@@ -35,6 +41,7 @@ export function SignInForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [isSchemaIssue, setIsSchemaIssue] = useState(false)
+  const [isDatabaseIssue, setIsDatabaseIssue] = useState(false)
   const [technicalDetails, setTechnicalDetails] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
   const MAX_RETRIES = 2
@@ -62,6 +69,7 @@ export function SignInForm() {
       setIsLoading(true)
       setError(null)
       setIsSchemaIssue(false)
+      setIsDatabaseIssue(false)
       setTechnicalDetails(null)
 
       // Log the attempt (without sensitive data)
@@ -95,6 +103,31 @@ export function SignInForm() {
       if (signInError) {
         // Process the error
         const authError = handleAuthError(signInError, { email: data.email })
+
+        // Check if it's a database grant error
+        if (
+          isDatabaseGrantError(signInError) ||
+          (signInError.__isAuthError &&
+            signInError.message &&
+            signInError.message.includes("Database error granting user"))
+        ) {
+          setIsDatabaseIssue(true)
+          setTechnicalDetails(getTechnicalErrorDetails(signInError))
+          setError(
+            "Database configuration issue detected. This is a server-side setup problem with user permissions. Please contact support.",
+          )
+
+          // Log detailed error for debugging
+          logger.error("Database grant error details:", {
+            error: signInError,
+            isAuthError: signInError.__isAuthError,
+            status: signInError.status,
+            code: signInError.code,
+          })
+
+          // No retry for database grant errors
+          return
+        }
 
         // Check if it's a schema error
         if (
@@ -130,6 +163,22 @@ export function SignInForm() {
 
             return
           }
+        }
+
+        // Check if it's a database category error
+        if (authError.category === AuthErrorCategory.DATABASE) {
+          setIsDatabaseIssue(true)
+          setTechnicalDetails(getTechnicalErrorDetails(signInError))
+          setError(authError.message)
+
+          // Log detailed error for debugging
+          logger.error("Database error details:", {
+            error: signInError,
+            category: authError.category,
+            type: authError.type,
+          })
+
+          return
         }
 
         setError(authError.message)
@@ -192,10 +241,17 @@ export function SignInForm() {
         {error && (
           <Alert variant="destructive">
             <AlertDescription>{error}</AlertDescription>
-            {isSchemaIssue && (
+            {(isSchemaIssue || isDatabaseIssue) && (
               <div className="mt-2">
-                <p className="text-sm font-medium">This appears to be a database configuration issue.</p>
-                <p className="text-xs mt-1">Please contact support with the following error code: SCHEMA-001</p>
+                <p className="text-sm font-medium">
+                  {isDatabaseIssue
+                    ? "This appears to be a database permission issue."
+                    : "This appears to be a database configuration issue."}
+                </p>
+                <p className="text-xs mt-1">
+                  Please contact support with the following error code:{" "}
+                  {isDatabaseIssue ? "DB-GRANT-001" : "SCHEMA-001"}
+                </p>
                 {technicalDetails && (
                   <details className="mt-2">
                     <summary className="text-xs cursor-pointer">Technical Details</summary>

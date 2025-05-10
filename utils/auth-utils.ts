@@ -1,4 +1,4 @@
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createServerSupabaseClient } from "@/lib/supabase-server"
 import type { User, Session } from "@supabase/supabase-js"
 
 /**
@@ -46,52 +46,57 @@ export function shouldRefreshSession(session: Session | null): boolean {
 }
 
 /**
- * Refresh a session if needed
+ * Get user role from user metadata or roles table
+ * This function should be called server-side
  */
-export async function refreshSessionIfNeeded(session: Session | null): Promise<Session | null> {
-  if (!session || !shouldRefreshSession(session)) {
-    return session
-  }
-
+export async function getUserRole(userId: string): Promise<string> {
   try {
-    const supabase = createClientComponentClient()
-    const { data, error } = await supabase.auth.refreshSession()
+    // Use server client to get role from database
+    const supabase = createServerSupabaseClient()
 
-    if (error) {
-      console.error("Error refreshing session:", error)
-      return session
+    // First check the user_roles table
+    const { data: roleData, error: roleError } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .single()
+
+    if (roleData?.role) {
+      return roleData.role
     }
 
-    return data.session
+    // If no role found in table, check user metadata
+    const { data, error } = await supabase.auth.getUser()
+
+    if (data?.user?.user_metadata?.role) {
+      return data.user.user_metadata.role
+    }
+
+    // Default role
+    return "user"
   } catch (error) {
-    console.error("Unexpected error refreshing session:", error)
-    return session
+    console.error("Error getting user role:", error)
+    return "user"
   }
 }
 
 /**
- * Get user role from session
+ * Check if user has admin role
+ * This function should be called server-side
  */
-export function getUserRole(session: Session | null): string | null {
-  if (!session?.user) return null
-
-  // Check for role in user metadata
-  if (session.user.user_metadata?.role) {
-    return session.user.user_metadata.role
-  }
-
-  // Default role
-  return "user"
+export async function isUserAdmin(userId: string): Promise<boolean> {
+  const role = await getUserRole(userId)
+  return role === "admin"
 }
 
 /**
  * Check if user has required role
+ * This function should be called server-side
  */
-export function hasRole(session: Session | null, requiredRole: string): boolean {
-  const userRole = getUserRole(session)
-  if (!userRole) return false
+export async function hasRole(userId: string, requiredRole: string): Promise<boolean> {
+  const userRole = await getUserRole(userId)
 
-  // Simple role check - can be expanded for more complex role hierarchies
+  // Simple role hierarchy
   if (requiredRole === "admin") {
     return userRole === "admin"
   }

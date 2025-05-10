@@ -1,36 +1,39 @@
-/**
- * Heartbeat Provider Component
- *
- * This component provides a heartbeat mechanism to keep database connections alive
- * and prevent connection pool timeouts.
- */
 "use client"
 
 import type React from "react"
 
-import { useEffect, useState } from "react"
+import { useEffect } from "react"
+import { useSupabase } from "@/hooks/use-supabase"
 import { startDatabaseHeartbeat, stopDatabaseHeartbeat } from "@/utils/db-heartbeat"
+import { createLogger } from "@/utils/logger"
+
+const logger = createLogger("HeartbeatProvider")
 
 interface HeartbeatProviderProps {
   children: React.ReactNode
-  interval?: number // Heartbeat interval in milliseconds
 }
 
-export function HeartbeatProvider({ children, interval }: HeartbeatProviderProps) {
-  const [isInitialized, setIsInitialized] = useState(false)
+export function HeartbeatProvider({ children }: HeartbeatProviderProps) {
+  const { supabase } = useSupabase()
 
   useEffect(() => {
-    if (isInitialized) return
+    // Only start the heartbeat if we have a supabase client
+    if (!supabase) {
+      logger.warn("No Supabase client available, not starting heartbeat")
+      return
+    }
 
-    // Start the heartbeat
-    startDatabaseHeartbeat(interval)
-    setIsInitialized(true)
+    // Start the database heartbeat when the component mounts
+    logger.info("Starting database heartbeat")
+    const cleanup = startDatabaseHeartbeat(supabase)
 
-    // Clean up on unmount
+    // Stop the heartbeat when the component unmounts
     return () => {
+      logger.info("Stopping database heartbeat")
+      cleanup()
       stopDatabaseHeartbeat()
     }
-  }, [interval, isInitialized])
+  }, [supabase])
 
   return <>{children}</>
 }

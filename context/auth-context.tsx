@@ -13,18 +13,18 @@ import { fetchProfileSafely, createProfileSafely } from "@/utils/profile-utils"
 import { getCacheItem, setCacheItem, CACHE_KEYS } from "@/lib/cache-utils"
 import { validateAuthCredentials, sanitizeEmail, validateEmail, validatePassword } from "@/utils/auth-validation"
 import { useToast } from "@/hooks/use-toast"
+import { createLogger } from "@/utils/logger"
+import { startDatabaseHeartbeat } from "@/utils/db-heartbeat"
 import {
   getSupabase,
   addAuthListener,
   signInWithEmail,
   signUpWithEmail,
   signOut as supabaseSignOut,
-  resetPassword as supabaseResetPassword,
-  updatePassword as supabaseUpdatePassword,
+  supabaseResetPassword,
+  supabaseUpdatePassword,
+  checkEmailServiceAvailability,
 } from "@/lib/supabase-manager"
-import { createLogger } from "@/utils/logger"
-import { startDatabaseHeartbeat } from "@/utils/db-heartbeat"
-import { isSupabaseAuthFailure } from "@/utils/auth-error-handler"
 
 // Create a dedicated logger for auth operations
 const authLogger = createLogger("Auth")
@@ -49,9 +49,10 @@ interface AuthContextType {
   signOut: (redirectPath?: string) => Promise<void>
   refreshProfile: () => Promise<UserProfile | null>
   updateProfile: (data: ProfileFormData) => Promise<{ success: boolean; error: Error | null }>
-  resetPassword: (email: string) => Promise<{ success: boolean; error: string | null }>
+  resetPassword: (email: string) => Promise<{ success: boolean; error: string | null; isEmailError?: boolean }>
   updatePassword: (password: string) => Promise<{ success: boolean; error: string | null }>
   isProfileComplete: boolean
+  checkEmailService: () => Promise<boolean>
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
@@ -443,7 +444,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
-  const resetPassword = async (email: string): Promise<{ success: boolean; error: string | null }> => {
+  const resetPassword = async (
+    email: string,
+  ): Promise<{ success: boolean; error: string | null; isEmailError?: boolean }> => {
     try {
       // Validate email format
       if (!validateEmail(email)) {
@@ -462,161 +465,39 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const origin = typeof window !== "undefined" ? window.location.origin : process.env.NEXT_PUBLIC_SITE_URL || ""
       const redirectTo = `${origin}/auth/reset-password`
 
-      // Try up to 3 times with exponential backoff for 500 errors
-      let attempt = 0
-      const maxAttempts = 3
+      // Check if we're in development mode with mock email success enabled
+      if (
+        process.env.NEXT_PUBLIC_APP_ENVIRONMENT === "development" &&
+        process.env.NEXT_PUBLIC_MOCK_EMAIL_SUCCESS === "true"
+      ) {
+        authLogger.info("Development mode: Mocking successful password reset email")
+        console.log(`[DEV MODE] Password reset link would be sent to ${sanitizedEmail}`)
+        console.log(`[DEV MODE] Redirect URL would be: ${redirectTo}`)
+        return { success: true, error: null }
+      }
 
-      while (attempt < maxAttempts) {
-        attempt++
+      // Attempt to send the password reset email
+      const { error } = await supabaseResetPassword(sanitizedEmail, {
+        redirectTo,
+      })
 
-        try {
-          // Use a timeout to prevent hanging requests
-          const timeoutPromise = new Promise<{ error: { message: string } }>((_, reject) => {
-            setTimeout(() => {
-              reject({ error: { message: "Password reset request timed out" } })
-            }, 10000) // 10 second timeout
-          })
-
-          // Actual reset password request
-          const resetPromise = supabaseResetPassword(sanitizedEmail, {
-            redirectTo,
-          })
-
-          // Race the reset request against the timeout
-          const { error } = await Promise.race([resetPromise, timeoutPromise])
-
-          if (!error) {
-            // Success!
-            return { success: true, error: null }
-          }
-
-          // Check for Supabase Auth API 500 unexpected_failure
-          if (isSupabaseAuthFailure(error)) {
-            authLogger.error("Email sending error (Supabase Auth API 500):", { error, email: sanitizedEmail })
-            return {
-              success: false,
-              error: error, // Return the full error object for better handling
-            }
-          }
-
-          // Check for email sending errors specifically
-          if (
-            error.message?.includes("Error sending recovery email") ||
-            error.message?.includes("Error sending email") ||
-            error.message?.includes("failed to send email")
-          ) {
-            authLogger.error("Email sending error:", { error, email: sanitizedEmail })
-            return {
-              success: false,
-              error: "Error sending recovery email",
-            }
-          }
-
-          // If it's not a 500 error, don't retry
-          if (
-            !error.message?.includes("500") &&
-            !error.message?.includes("unexpected_failure") &&
-            !error.message?.includes("timed out")
-          ) {
-            authLogger.error("Reset password error:", { error, email: sanitizedEmail })
-            return { success: false, error: error.message }
-          }
-
-          // It's a 500 error or timeout, so we'll retry if we haven't hit the max attempts
-          if (attempt >= maxAttempts) {
-            authLogger.error("Reset password max retries reached:", { error, email: sanitizedEmail, attempts: attempt })
-            return {
-              success: false,
-              error: "The password reset service is temporarily unavailable. Please try again in a moment.",
-            }
-          }
-
-          // Wait before retrying (exponential backoff: 1s, 2s, 4s)
-          const delay = Math.pow(2, attempt - 1) * 1000
-          authLogger.warn(`Reset password 500 error, retrying in ${delay}ms:`, {
-            error,
-            email: sanitizedEmail,
-            attempt,
-            maxAttempts,
-          })
-
-          await new Promise((resolve) => setTimeout(resolve, delay))
-        } catch (innerError: any) {
-          // Handle unexpected errors during the retry
-          authLogger.error("Reset password unexpected error:", { error: innerError, email: sanitizedEmail })
-
-          // Check for Supabase Auth API 500 unexpected_failure
-          if (isSupabaseAuthFailure(innerError)) {
-            authLogger.error("Email sending error (Supabase Auth API 500):", {
-              error: innerError,
-              email: sanitizedEmail,
-            })
-            return {
-              success: false,
-              error: innerError, // Return the full error object for better handling
-            }
-          }
-
-          // Check for email sending errors in the caught exception
-          if (
-            innerError.message?.includes("Error sending recovery email") ||
-            innerError.message?.includes("Error sending email") ||
-            innerError.message?.includes("failed to send email") ||
-            (innerError.error &&
-              typeof innerError.error === "object" &&
-              innerError.error.message?.includes("Error sending"))
-          ) {
-            return {
-              success: false,
-              error: "Error sending recovery email",
-            }
-          }
-
-          // If we've hit the max attempts, return a user-friendly error
-          if (attempt >= maxAttempts) {
-            return {
-              success: false,
-              error: "The password reset service is temporarily unavailable. Please try again in a moment.",
-            }
-          }
-
-          // Otherwise, continue retrying
-          const delay = Math.pow(2, attempt - 1) * 1000
-          await new Promise((resolve) => setTimeout(resolve, delay))
+      if (error) {
+        authLogger.error("Reset password error:", error)
+        return {
+          success: false,
+          error: error.message || "Failed to reset password",
+          isEmailError: error.message?.includes("sending email") || error.message?.includes("500"),
         }
       }
 
-      // This should never be reached due to the return in the loop, but just in case
-      return {
-        success: false,
-        error: "The password reset service is temporarily unavailable. Please try again in a moment.",
-      }
+      return { success: true, error: null }
     } catch (error: any) {
       authLogger.error("Reset password error:", error)
-
-      // Check for Supabase Auth API 500 unexpected_failure
-      if (isSupabaseAuthFailure(error)) {
-        authLogger.error("Email sending error (Supabase Auth API 500):", { error, email })
-        return {
-          success: false,
-          error, // Return the full error object for better handling
-        }
+      return {
+        success: false,
+        error: error.message || "Failed to reset password",
+        isEmailError: error.message?.includes("sending email") || error.message?.includes("500"),
       }
-
-      // Check for email sending errors in the outer catch
-      if (
-        error.message?.includes("Error sending recovery email") ||
-        error.message?.includes("Error sending email") ||
-        error.message?.includes("failed to send email") ||
-        (error.error && typeof error.error === "object" && error.error.message?.includes("Error sending"))
-      ) {
-        return {
-          success: false,
-          error: "Error sending recovery email",
-        }
-      }
-
-      return { success: false, error: error.message || "Failed to reset password" }
     }
   }
 
@@ -674,6 +555,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }
 
+  // Check if email service is available
+  const checkEmailService = async (): Promise<boolean> => {
+    return await checkEmailServiceAvailability()
+  }
+
   const value = {
     user,
     profile,
@@ -687,6 +573,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     resetPassword,
     updatePassword,
     isProfileComplete,
+    checkEmailService,
   }
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
@@ -699,12 +586,4 @@ export function useAuth() {
     throw new Error("useAuth must be used within an AuthProvider")
   }
   return context
-}
-
-// Debug mode control function
-export function setAuthDebugMode(enabled: boolean): void {
-  if (typeof window !== "undefined") {
-    localStorage.setItem("auth_debug", enabled ? "true" : "false")
-    console.log(`Auth context debug mode ${enabled ? "enabled" : "disabled"}`)
-  }
 }

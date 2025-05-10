@@ -1,92 +1,73 @@
-import { createRouteHandlerClient } from "@supabase/auth-helpers-nextjs"
-import { cookies } from "next/headers"
+/**
+ * Update Profile API
+ * Secure server-side API for updating user profiles
+ */
 import { NextResponse } from "next/server"
+import { createServerSupabaseClient } from "@/lib/supabase-server"
 import type { ProfileFormData } from "@/types/auth"
 
 export async function POST(request: Request) {
   try {
-    const { userId, profile } = await request.json()
+    // Get the request body
+    const body = await request.json()
+    const { userId, profile } = body as { userId: string; profile: ProfileFormData }
 
-    if (!userId) {
-      return NextResponse.json({ error: "User ID is required" }, { status: 400 })
+    if (!userId || !profile) {
+      return NextResponse.json({ error: "User ID and profile data are required" }, { status: 400 })
     }
 
-    if (!profile) {
-      return NextResponse.json({ error: "Profile data is required" }, { status: 400 })
-    }
-
-    // Create a Supabase client
-    const supabase = createRouteHandlerClient({ cookies })
-
-    // Get the current user session to verify authentication
+    // Verify the user is authenticated and is updating their own profile
+    const supabase = createServerSupabaseClient()
     const {
       data: { session },
     } = await supabase.auth.getSession()
 
     if (!session) {
-      return NextResponse.json({ error: "Not authenticated" }, { status: 401 })
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Ensure the user is updating their own profile
-    if (session.user.id !== userId) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 403 })
-    }
+    // Only allow users to update their own profile (unless they're an admin)
+    if (userId !== session.user.id) {
+      // Check if the user is an admin
+      const { data: roleData } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", session.user.id)
+        .single()
 
-    // Get the columns of the profiles table to ensure we only update valid columns
-    const { data: columns, error: columnsError } = await supabase
-      .from("profiles")
-      .select("*")
-      .limit(1)
-      .then((result) => {
-        if (result.data && result.data.length > 0) {
-          // Extract column names from the first row
-          return {
-            data: Object.keys(result.data[0]),
-            error: null,
-          }
-        }
-        return {
-          data: null,
-          error: new Error("Could not determine table columns"),
-        }
-      })
+      const isAdmin = roleData?.role === "admin"
 
-    if (columnsError || !columns) {
-      console.error("Error fetching table columns:", columnsError)
-      return NextResponse.json({ error: "Could not determine table structure" }, { status: 500 })
-    }
-
-    // Filter the profile data to only include valid columns
-    const validProfileData: Record<string, any> = {}
-    Object.entries(profile as ProfileFormData).forEach(([key, value]) => {
-      if (columns.includes(key)) {
-        validProfileData[key] = value
-      } else {
-        console.warn(`Column '${key}' does not exist in the profiles table and will be ignored`)
+      if (!isAdmin) {
+        return NextResponse.json({ error: "Forbidden: You can only update your own profile" }, { status: 403 })
       }
-    })
+    }
+
+    // Sanitize and validate the profile data
+    const sanitizedProfile: Record<string, any> = {}
+
+    // Only allow specific fields to be updated
+    const allowedFields = ["first_name", "last_name", "email", "phone", "bio", "avatar_url", "preferences"]
+
+    for (const field of allowedFields) {
+      if (field in profile) {
+        sanitizedProfile[field] = profile[field as keyof ProfileFormData]
+      }
+    }
 
     // Add updated_at timestamp
-    if (columns.includes("updated_at")) {
-      validProfileData.updated_at = new Date().toISOString()
-    }
-
-    console.log("Updating profile with data:", validProfileData)
+    sanitizedProfile.updated_at = new Date().toISOString()
 
     // Update the profile
-    const { data, error } = await supabase.from("profiles").update(validProfileData).eq("id", userId).select().single()
+    const { error: updateError } = await supabase.from("profiles").update(sanitizedProfile).eq("id", userId)
 
-    if (error) {
-      console.error("Error updating profile:", error)
-      return NextResponse.json({ error: error.message }, { status: 500 })
+    if (updateError) {
+      console.error("Error updating profile:", updateError)
+      return NextResponse.json({ error: "Failed to update profile" }, { status: 500 })
     }
 
-    return NextResponse.json({
-      success: true,
-      profile: data,
-    })
+    return NextResponse.json({ success: true })
   } catch (error) {
-    console.error("Unexpected error in update-profile route:", error)
-    return NextResponse.json({ error: "An unexpected error occurred" }, { status: 500 })
+    console.error("Update profile API error:", error)
+    return NextResponse.json({ error: "Internal server error" }, { status: 500 })
   }
 }

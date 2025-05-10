@@ -9,7 +9,6 @@ import { useToast } from "@/hooks/use-toast"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 import { getSupabase, addAuthListener } from "@/lib/supabase-manager"
-import { clientEnv } from "@/lib/env"
 import { createLogger } from "@/utils/logger"
 
 // Create a dedicated logger
@@ -24,8 +23,15 @@ interface UseSupabaseOptions {
   monitorNetwork?: boolean
 }
 
+interface QueryOptions<T> {
+  retries?: number
+  retryDelay?: number
+  requiresAuth?: boolean
+  offlineAction?: () => Promise<T>
+}
+
 export function useSupabase(options: UseSupabaseOptions = {}) {
-  const { debugMode = clientEnv.DEBUG_MODE === "true", monitorNetwork = true } = options
+  const { debugMode = false, monitorNetwork = true } = options
 
   const { toast } = useToast()
   const [isInitialized, setIsInitialized] = useState(false)
@@ -240,115 +246,105 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
 
   // Wrap Supabase queries with error handling
   const query = useCallback(
-    async <T>(.\
-      queryFn: (client: SupabaseClient<Database>) => Promise<T>,)
-      options: {
-        retries?: number
-        retryDelay?: number
-        requiresAuth?: boolean
-        offlineAction?: () => Promise<T>
-}
-=
-{
-}
-): Promise<T> =>
-{
-  const { retries = 3, retryDelay = 1000, requiresAuth = false, offlineAction } = options
+    async function executeQuery<T>(
+      queryFn: (client: SupabaseClient<Database>) => Promise<T>,
+      options: QueryOptions<T> = {},
+    ): Promise<T> {
+      const { retries = 3, retryDelay = 1000, requiresAuth = false, offlineAction } = options
 
-  if (!clientRef.current) {
-    const error = new Error("Supabase client not initialized")
-    logger.error("Query failed: Supabase client not initialized", { options }, error, {
-      hookInstanceId: hookInstanceId.current,
-    })
-    throw error
-  }
+      if (!clientRef.current) {
+        const error = new Error("Supabase client not initialized")
+        logger.error("Query failed: Supabase client not initialized", { options }, error, {
+          hookInstanceId: hookInstanceId.current,
+        })
+        throw error
+      }
 
-  // Check if we're offline and have an offline action
-  if (!isOnline && offlineAction) {
-    logger.info("Executing offline action", { options }, { hookInstanceId: hookInstanceId.current })
-    return offlineAction()
-  }
+      // Check if we're offline and have an offline action
+      if (!isOnline && offlineAction) {
+        logger.info("Executing offline action", { options }, { hookInstanceId: hookInstanceId.current })
+        return offlineAction()
+      }
 
-  let attempt = 0
-  let lastError: any
+      let attempt = 0
+      let lastError: any
 
-  while (attempt < retries) {
-    try {
-      // Track activity on each query
-      setLastActivity(Date.now())
+      while (attempt < retries) {
+        try {
+          // Track activity on each query
+          setLastActivity(Date.now())
 
-      // Log the query attempt
-      logger.debug(
-        `Executing query${attempt > 0 ? ` (attempt ${attempt + 1}/${retries})` : ""}`,
-        { options },
-        { hookInstanceId: hookInstanceId.current, attempt: attempt + 1, maxRetries: retries },
-      )
-
-      // Execute the query
-      const result = await queryFn(clientRef.current)
-
-      // Log success
-      logger.debug(
-        "Query completed successfully",
-        { options },
-        { hookInstanceId: hookInstanceId.current, attempts: attempt + 1 },
-      )
-
-      return result
-    } catch (error: any) {
-      lastError = error
-      attempt++
-
-      // Check for network errors and update online status
-      if (
-        error.message?.includes("network") ||
-        error.message?.includes("fetch") ||
-        error.message?.includes("Failed to fetch")
-      ) {
-        logger.warn(
-          "Network error detected during query",
-          { error: error.message },
-          { hookInstanceId: hookInstanceId.current, attempt, retries },
-        )
-
-        setIsOnline(false)
-
-        // If we have an offline action, use it
-        if (offlineAction) {
-          logger.info(
-            "Executing offline fallback action after network error",
+          // Log the query attempt
+          logger.debug(
+            `Executing query${attempt > 0 ? ` (attempt ${attempt + 1}/${retries})` : ""}`,
             { options },
-            { hookInstanceId: hookInstanceId.current },
+            { hookInstanceId: hookInstanceId.current, attempt: attempt + 1, maxRetries: retries },
           )
-          return offlineAction()
+
+          // Execute the query
+          const result = await queryFn(clientRef.current)
+
+          // Log success
+          logger.debug(
+            "Query completed successfully",
+            { options },
+            { hookInstanceId: hookInstanceId.current, attempts: attempt + 1 },
+          )
+
+          return result
+        } catch (error: any) {
+          lastError = error
+          attempt++
+
+          // Check for network errors and update online status
+          if (
+            error.message?.includes("network") ||
+            error.message?.includes("fetch") ||
+            error.message?.includes("Failed to fetch")
+          ) {
+            logger.warn(
+              "Network error detected during query",
+              { error: error.message },
+              { hookInstanceId: hookInstanceId.current, attempt, retries },
+            )
+
+            setIsOnline(false)
+
+            // If we have an offline action, use it
+            if (offlineAction) {
+              logger.info(
+                "Executing offline fallback action after network error",
+                { options },
+                { hookInstanceId: hookInstanceId.current },
+              )
+              return offlineAction()
+            }
+          }
+
+          if (attempt < retries) {
+            const delay = retryDelay * Math.pow(2, attempt - 1)
+            logger.info(
+              `Query failed, retrying in ${delay}ms`,
+              { error: error.message, attempt, retries, delay },
+              { hookInstanceId: hookInstanceId.current },
+            )
+
+            await new Promise((resolve) => setTimeout(resolve, delay))
+          } else {
+            logger.error("Query failed after all retry attempts", { options, attempts: attempt }, error, {
+              hookInstanceId: hookInstanceId.current,
+            })
+          }
         }
       }
 
-      if (attempt < retries) {
-        const delay = retryDelay * Math.pow(2, attempt - 1)
-        logger.info(
-          `Query failed, retrying in ${delay}ms`,
-          { error: error.message, attempt, retries, delay },
-          { hookInstanceId: hookInstanceId.current },
-        )
-
-        await new Promise((resolve) => setTimeout(resolve, delay))
-      } else {
-        logger.error("Query failed after all retry attempts", { options, attempts: attempt }, error, {
-          hookInstanceId: hookInstanceId.current,
-        })
-      }
-    }
-  }
-
-  // If we've exhausted all retries, throw the last error
-  throw lastError
-}
-,
-    [isOnline, debug, setIsOnline, setLastActivity, hookInstanceId, isOnline]
+      // If we've exhausted all retries, throw the last error
+      throw lastError
+    },
+    [isOnline, debug, setIsOnline, setLastActivity, hookInstanceId],
   )
 
-return {
+  return {
     supabase: clientRef.current,
     isInitialized,
     isOnline,

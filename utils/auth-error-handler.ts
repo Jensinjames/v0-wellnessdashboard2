@@ -15,6 +15,7 @@ export enum AuthErrorCategory {
   RATE_LIMIT = "rate_limit",
   SERVER = "server",
   EMAIL = "email",
+  DATABASE = "database", // Added database category
   UNKNOWN = "unknown",
 }
 
@@ -49,6 +50,11 @@ export enum AuthErrorType {
   SERVICE_UNAVAILABLE = "service_unavailable",
   DATABASE_ERROR = "database_error",
   SCHEMA_ERROR = "schema_error", // Added for schema-related errors
+
+  // Database errors
+  DATABASE_CONFIGURATION_ERROR = "database_configuration_error", // Added for database configuration errors
+  DATABASE_PERMISSION_ERROR = "database_permission_error", // Added for database permission errors
+  DATABASE_GRANT_ERROR = "database_grant_error", // Added for "granting user undefined" errors
 
   // Email errors
   EMAIL_SENDING_FAILED = "email_sending_failed",
@@ -97,8 +103,33 @@ export function parseAuthError(error: any, context?: Record<string, any>): AuthE
   // Extract error message
   const errorMessage = error.message || error.error_description || error.error || String(error)
 
+  // Check for "Database error granting user undefined" specifically
+  if (errorMessage.includes("Database error granting user undefined")) {
+    return {
+      category: AuthErrorCategory.DATABASE,
+      type: AuthErrorType.DATABASE_GRANT_ERROR,
+      message:
+        "There is a database configuration issue with user permissions. Please contact support with error code: DB-GRANT-001.",
+      originalError: error,
+      timestamp: Date.now(),
+      context,
+    }
+  }
+
   // Check for Supabase AuthApiError with unexpected_failure
   if (error.__isAuthError === true && error.status === 500 && error.code === "unexpected_failure") {
+    // Check if it's a database error
+    if (errorMessage.includes("database") || errorMessage.includes("Database")) {
+      return {
+        category: AuthErrorCategory.DATABASE,
+        type: AuthErrorType.DATABASE_CONFIGURATION_ERROR,
+        message: "There is a database configuration issue. Please contact support with error code: DB-CONFIG-001.",
+        originalError: error,
+        timestamp: Date.now(),
+        context,
+      }
+    }
+
     return {
       category: AuthErrorCategory.EMAIL,
       type: AuthErrorType.EMAIL_SERVICE_UNAVAILABLE,
@@ -291,13 +322,13 @@ export function parseAuthError(error: any, context?: Record<string, any>): AuthE
   if (
     errorMessage.includes('relation "user_changes_log" does not exist') ||
     errorMessage.includes("Database error granting user") ||
-    errorMessage.includes("granting user undefined") ||
-    (error.__isAuthError && error.status === 500 && error.code === "unexpected_failure")
+    errorMessage.includes("granting user undefined")
   ) {
     return {
-      category: AuthErrorCategory.SERVER,
-      type: AuthErrorType.SCHEMA_ERROR,
-      message: "There is a database configuration issue. Please contact support with error code: SCHEMA-001.",
+      category: AuthErrorCategory.DATABASE,
+      type: AuthErrorType.DATABASE_GRANT_ERROR,
+      message:
+        "There is a database configuration issue with user permissions. Please contact support with error code: DB-GRANT-001.",
       originalError: error,
       timestamp: Date.now(),
       context,
@@ -305,15 +336,11 @@ export function parseAuthError(error: any, context?: Record<string, any>): AuthE
   }
 
   // Database errors
-  if (
-    errorMessage.includes("database error") ||
-    errorMessage.includes("Database error") ||
-    errorMessage.includes("granting user undefined")
-  ) {
+  if (errorMessage.includes("database error") || errorMessage.includes("Database error")) {
     return {
-      category: AuthErrorCategory.SERVER,
+      category: AuthErrorCategory.DATABASE,
       type: AuthErrorType.DATABASE_ERROR,
-      message: "There was a problem with the authentication service. Please try again later.",
+      message: "There was a problem with the database. Please try again later or contact support.",
       originalError: error,
       timestamp: Date.now(),
       context,
@@ -423,6 +450,14 @@ export function handleAuthError(error: any, context?: Record<string, any>): Auth
 export function isSchemaError(error: any): boolean {
   const parsedError = parseAuthError(error)
   return parsedError.type === AuthErrorType.SCHEMA_ERROR
+}
+
+/**
+ * Check if an error is a database grant error
+ */
+export function isDatabaseGrantError(error: any): boolean {
+  const parsedError = parseAuthError(error)
+  return parsedError.type === AuthErrorType.DATABASE_GRANT_ERROR
 }
 
 /**

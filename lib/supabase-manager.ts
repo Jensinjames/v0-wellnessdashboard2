@@ -1,253 +1,140 @@
 /**
  * Supabase Manager
- *
- * This module provides utilities for creating and managing Supabase clients
+ * Centralized management of Supabase clients and authentication
  */
-"use client"
-
-import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
-import type { SupabaseClient } from "@supabase/supabase-js"
-import type { Session } from "@supabase/supabase-js"
+import { createBrowserClient } from "@supabase/ssr"
 import type { Database } from "@/types/database"
-import { createLogger } from "@/utils/logger"
+import { isDebugMode } from "@/utils/environment"
+import { monitorGoTrueClientInstances } from "./supabase-client"
+import { isEmailServiceLikelyAvailable } from "./edge-function-config"
 
-// Create a dedicated logger for Supabase operations
-const supabaseLogger = createLogger("Supabase")
+// Singleton instance for the client
+let supabaseClient: ReturnType<typeof createBrowserClient<Database>> | null = null
+let authListeners: Array<(event: string, payload: any) => void> = []
 
-// Global singleton instance
-let supabaseClient: SupabaseClient<Database> | null = null
-
-// Track instance count to prevent duplicates
-let instanceCount = 0
-
-/**
- * Initialize Supabase client
- */
-export function initializeSupabase(): void {
+// Create and return a Supabase client
+export function getSupabase(): ReturnType<typeof createBrowserClient<Database>> {
   if (!supabaseClient) {
     try {
-      // Explicitly use environment variables to ensure they're properly loaded
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-      const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-
-      if (!supabaseUrl || !supabaseKey) {
-        throw new Error("Supabase environment variables are not properly configured")
+      // Check if required environment variables are available
+      if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
+        console.error("Missing Supabase environment variables")
+        throw new Error("Supabase configuration is missing. Please check your environment variables.")
       }
 
-      supabaseClient = createClientComponentClient<Database>({
-        supabaseUrl,
-        supabaseKey,
-        options: {
+      // Create a new client if one doesn't exist
+      supabaseClient = createBrowserClient<Database>(
+        process.env.NEXT_PUBLIC_SUPABASE_URL,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY,
+        {
           auth: {
             persistSession: true,
             autoRefreshToken: true,
             detectSessionInUrl: true,
+            flowType: "pkce",
+          },
+          global: {
+            headers: {
+              "x-application-name": "wellness-dashboard-manager",
+            },
           },
         },
+      )
+
+      // Set up auth state change listener
+      supabaseClient.auth.onAuthStateChange((event, session) => {
+        if (isDebugMode()) {
+          console.log(`Auth state changed: ${event}`, { session: session?.user?.email || "No user" })
+        }
+
+        // Notify all listeners
+        authListeners.forEach((listener) => {
+          try {
+            listener(event, { session })
+          } catch (error) {
+            console.error("Error in auth listener:", error)
+          }
+        })
       })
 
-      instanceCount++
-      supabaseLogger.info("Supabase client initialized successfully")
-    } catch (error) {
-      supabaseLogger.error("Failed to initialize Supabase client with explicit config:", error)
+      if (isDebugMode()) {
+        console.log("Supabase manager client created successfully")
 
-      // Fallback to default initialization if explicit config fails
-      try {
-        supabaseClient = createClientComponentClient<Database>()
-        instanceCount++
-        supabaseLogger.info("Supabase client initialized with default config")
-      } catch (fallbackError) {
-        supabaseLogger.error("Failed to initialize Supabase client with default config:", fallbackError)
-        throw fallbackError // Re-throw to make the error visible
+        // Start monitoring GoTrue instances in debug mode
+        const monitor = monitorGoTrueClientInstances()
+        monitor.start()
       }
+    } catch (error) {
+      console.error("Error initializing Supabase manager:", error)
+      throw error
     }
   }
+
+  return supabaseClient
 }
 
-/**
- * Get the Supabase client
- */
-export function getSupabase(): SupabaseClient<Database> {
-  if (!supabaseClient) {
-    initializeSupabase()
-  }
-  return supabaseClient as SupabaseClient<Database>
+// Reset the client (useful for testing or when auth state changes)
+export function resetSupabase() {
+  supabaseClient = null
+  authListeners = []
 }
 
-/**
- * Add a listener for authentication state changes
- */
-export function addAuthListener(callback: (event: string, session: Session | null) => void): () => void {
-  const supabase = getSupabase()
+// Add an auth state change listener
+export function addAuthListener(listener: (event: string, payload: any) => void) {
+  authListeners.push(listener)
 
-  const {
-    data: { subscription },
-  } = supabase.auth.onAuthStateChange((event, session) => {
-    callback(event, session)
-  })
-
+  // Return a function to remove the listener
   return () => {
-    subscription.unsubscribe()
+    authListeners = authListeners.filter((l) => l !== listener)
   }
 }
 
-/**
- * Safely execute a database ping to warm up connections
- */
-async function safeDatabasePing(): Promise<void> {
+// Check if email service is available
+export async function checkEmailServiceAvailability(): Promise<boolean> {
   try {
-    const supabase = getSupabase()
-    // Use a simple query instead of RPC to warm up the connection
-    await supabase.from("profiles").select("count").limit(1)
-    supabaseLogger.info("Database ping successful")
+    return await isEmailServiceLikelyAvailable()
   } catch (error) {
-    supabaseLogger.info("Database ping failed, but continuing with operation")
+    console.error("Error checking email service availability:", error)
+    return false
   }
 }
 
 /**
  * Sign in with email and password
  */
-export async function signInWithEmail(email: string, password: string): Promise<{ data: any; error: any }> {
+export async function signInWithEmail(email: string, password: string) {
   const supabase = getSupabase()
-
-  try {
-    // Warm up the connection before the actual auth request
-    await safeDatabasePing()
-
-    return await supabase.auth.signInWithPassword({ email, password })
-  } catch (error) {
-    supabaseLogger.error("Error in signInWithEmail:", error)
-    return { data: null, error }
-  }
+  return await supabase.auth.signInWithPassword({ email, password })
 }
 
 /**
  * Sign up with email and password
  */
-export async function signUpWithEmail(email: string, password: string): Promise<{ data: any; error: any }> {
+export async function signUpWithEmail(email: string, password: string) {
   const supabase = getSupabase()
-
-  try {
-    // Warm up the connection before the actual auth request
-    await safeDatabasePing()
-
-    return await supabase.auth.signUp({
-      email,
-      password,
-    })
-  } catch (error) {
-    supabaseLogger.error("Error in signUpWithEmail:", error)
-    return { data: null, error }
-  }
+  return await supabase.auth.signUp({ email, password })
 }
 
 /**
- * Sign out
+ * Sign out the current user
  */
-export async function signOut(): Promise<{ error: any }> {
+export async function signOut() {
   const supabase = getSupabase()
   return await supabase.auth.signOut()
 }
 
 /**
- * Reset password
- *
- * @param email The email address to send the password reset link to
- * @param options Optional configuration for the password reset
- * @returns An object containing any error that occurred
+ * Reset password for a user
  */
-export async function resetPassword(email: string, options?: { redirectTo?: string }): Promise<{ error: any }> {
+export async function supabaseResetPassword(email: string, options?: { redirectTo?: string }) {
   const supabase = getSupabase()
-
-  try {
-    // Warm up the connection before the actual auth request
-    await safeDatabasePing()
-
-    // Default redirectTo if not provided
-    const redirectOptions = options || {}
-    if (!redirectOptions.redirectTo && typeof window !== "undefined") {
-      redirectOptions.redirectTo = `${window.location.origin}/auth/reset-password`
-    }
-
-    supabaseLogger.info(
-      `Sending password reset to ${email} with redirectTo: ${redirectOptions.redirectTo || "default"}`,
-    )
-
-    // Attempt to send the password reset email
-    const result = await supabase.auth.resetPasswordForEmail(email, redirectOptions)
-
-    // Check for specific error messages related to email sending
-    if (result.error) {
-      if (
-        result.error.__isAuthError === true &&
-        result.error.status === 500 &&
-        result.error.code === "unexpected_failure"
-      ) {
-        supabaseLogger.error("Supabase Auth API 500 unexpected_failure:", result.error)
-        return {
-          error: result.error, // Return the full error object for better handling
-        }
-      }
-
-      if (result.error.message?.includes("sending")) {
-        supabaseLogger.error("Email sending error:", result.error)
-        return {
-          error: {
-            message: "Error sending recovery email",
-            originalError: result.error,
-          },
-        }
-      }
-    }
-
-    return result
-  } catch (error: any) {
-    supabaseLogger.error("Error in resetPassword:", error)
-
-    // Check if the error is a Supabase Auth API 500 unexpected_failure
-    if (error.__isAuthError === true && error.status === 500 && error.code === "unexpected_failure") {
-      supabaseLogger.error("Supabase Auth API 500 unexpected_failure:", error)
-      return {
-        error, // Return the full error object for better handling
-      }
-    }
-
-    // Check if the error is related to email sending
-    if (
-      error.message?.includes("sending") ||
-      (error.error && typeof error.error === "object" && error.error.message?.includes("sending"))
-    ) {
-      return {
-        error: {
-          message: "Error sending recovery email",
-          originalError: error,
-        },
-      }
-    }
-
-    return { error }
-  }
+  return await supabase.auth.resetPasswordForEmail(email, options)
 }
 
 /**
- * Update password
+ * Update user password
  */
-export async function updatePassword(password: string): Promise<{ error: any }> {
+export async function supabaseUpdatePassword(password: string) {
   const supabase = getSupabase()
   return await supabase.auth.updateUser({ password })
-}
-
-/**
- * Get the number of GoTrueClient instances
- */
-export function getInstanceCount(): number {
-  return instanceCount
-}
-
-/**
- * Cleanup function
- */
-export function cleanup(): void {
-  // No-op for now
 }

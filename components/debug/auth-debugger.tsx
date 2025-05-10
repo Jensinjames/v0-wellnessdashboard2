@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { useAuth } from "@/context/auth-context"
 import { getSupabaseClient } from "@/lib/supabase-client"
+import { isDebugMode } from "@/utils/environment"
 
 export function AuthDebugger() {
   const { user, session, refreshProfile } = useAuth()
@@ -16,7 +17,7 @@ export function AuthDebugger() {
   useEffect(() => {
     async function getClientInfo() {
       try {
-        const client = await getSupabaseClient()
+        const client = getSupabaseClient()
         setClientInfo({
           url: process.env.NEXT_PUBLIC_SUPABASE_URL,
           hasClient: !!client,
@@ -34,7 +35,7 @@ export function AuthDebugger() {
     setIsLoading(true)
     setError(null)
     try {
-      const client = await getSupabaseClient()
+      const client = getSupabaseClient()
       const { data, error } = await client.auth.getSession()
 
       if (error) {
@@ -42,6 +43,7 @@ export function AuthDebugger() {
         return
       }
 
+      // Only show sanitized session info
       setSessionInfo({
         hasSession: !!data.session,
         expiresAt: data.session?.expires_at ? new Date(data.session.expires_at * 1000).toISOString() : null,
@@ -59,6 +61,11 @@ export function AuthDebugger() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // Only show this component in debug mode
+  if (!isDebugMode()) {
+    return null
   }
 
   return (
