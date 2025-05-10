@@ -1,20 +1,26 @@
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs"
+import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
-import { cache } from "react"
+import type { CookieOptions } from "@supabase/ssr"
 import type { Database } from "@/types/database"
 
-/**
- * Creates a Supabase client for server components
- * Cached to prevent multiple instances in a single request
- */
-export const createClient = cache(() => {
+export const createClient = () => {
   const cookieStore = cookies()
 
-  return createServerComponentClient<Database>(
-    { cookies: () => cookieStore },
+  return createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
-      supabaseUrl: process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      supabaseKey: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+        set(name: string, value: string, options: CookieOptions) {
+          cookieStore.set({ name, value, ...options })
+        },
+        remove(name: string, options: CookieOptions) {
+          cookieStore.delete({ name, ...options })
+        },
+      },
     },
   )
-})
+}

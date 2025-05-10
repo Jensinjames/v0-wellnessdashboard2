@@ -1,66 +1,78 @@
 "use client"
 
-/**
- * Unified Supabase Hook
- *
- * This hook provides access to the Supabase client in client components
- * with additional features like error handling, retries, and offline support.
- */
-
 import { useState, useEffect, useRef, useCallback } from "react"
 import { useAuth } from "@/context/auth-context"
 import { useToast } from "@/hooks/use-toast"
-import type { SupabaseClient } from "@supabase/supabase-ssr"
+import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
-import { getSupabaseClient, resetSupabaseClient, getClientStats } from "@/lib/supabase-singleton"
+import { getTokenManager, TOKEN_EVENTS, resetTokenManager } from "@/lib/token-manager"
+import { isomorphicCache, CACHE_EXPIRY } from "./isomorphic-cache"
+import { subscriptionManager } from "@/lib/subscription-manager"
+import { getSupabaseClient } from "@/utils/supabase-client"
 
 // Network status detection
 const NETWORK_DETECTION_INTERVAL = 10000 // 10 seconds
 const PING_TIMEOUT = 5000 // 5 seconds
+const OFFLINE_MODE_STORAGE_KEY = "supabase_offline_mode"
+const AUTH_DEBUG_STORAGE_KEY = "auth_debug_mode"
 
-// Debug mode flag - safely check localStorage
-const getDebugMode = (): boolean => {
-  if (typeof window !== "undefined") {
-    return localStorage.getItem("supabase_debug") === "true" || process.env.NEXT_PUBLIC_DEBUG_MODE === "true"
-  }
-  return false
-}
+// Default to false in production, true in development
+const DEFAULT_DEBUG_MODE = process.env.NODE_ENV === "development"
 
 interface UseSupabaseOptions {
   persistSession?: boolean
   autoRefreshToken?: boolean
   debugMode?: boolean
   monitorNetwork?: boolean
+  offlineMode?: boolean
 }
 
-interface QueryOptions<T = any> {
+// Enhanced query options
+export interface EnhancedQueryOptions {
   retries?: number
   retryDelay?: number
   requiresAuth?: boolean
-  offlineAction?: () => Promise<T>
-  offlineData?: T
+  offlineAction?: (...args: any[]) => Promise<any>
+  offlineArgs?: any
+  columns?: string[]
+  cacheKey?: string
+  cacheTTL?: number
+  bypassCache?: boolean
+  debug?: boolean
 }
 
 export function useSupabase(options: UseSupabaseOptions = {}) {
-  const { persistSession = true, autoRefreshToken = true, debugMode = getDebugMode() } = options
+  const {
+    persistSession = true,
+    autoRefreshToken = true,
+    debugMode = DEFAULT_DEBUG_MODE,
+    monitorNetwork = true,
+    offlineMode = false,
+  } = options
 
-  const { user } = useAuth()
+  const { user, signOut } = useAuth()
   const { toast } = useToast()
   const [isInitialized, setIsInitialized] = useState(false)
   const [isOnline, setIsOnline] = useState(true)
+  const [isRefreshing, setIsRefreshing] = useState(false)
   const [lastActivity, setLastActivity] = useState(Date.now())
   const [consecutiveErrors, setConsecutiveErrors] = useState(0)
-  const { monitorNetwork = true } = options
+  const [tokenStatus, setTokenStatus] = useState<{ valid: boolean; expiresAt: number | null }>({
+    valid: false,
+    expiresAt: null,
+  })
 
-  const supabaseRef = useRef<SupabaseClient<Database> | null>(null)
+  const clientRef = useRef<SupabaseClient<Database> | null>(null)
+  const tokenManagerRef = useRef<ReturnType<typeof getTokenManager> | null>(null)
   const networkCheckTimerRef = useRef<NodeJS.Timeout | null>(null)
+  const activityTimerRef = useRef<NodeJS.Timeout | null>(null)
   const pingInProgressRef = useRef(false)
 
   // Debug logging
   const debug = useCallback(
     (...args: any[]) => {
       if (debugMode) {
-        console.log("[useSupabase]", ...args, getClientStats())
+        console.log("[useSupabase]", ...args)
       }
     },
     [debugMode],
@@ -71,41 +83,41 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
     if (isInitialized) return
 
     try {
-      debug("Initializing Supabase hook")
+      debug("Initializing Supabase client")
 
-      // Get the Supabase client from our singleton
-      const supabasePromise = getSupabaseClient({
+      // Try to read debug mode preference from storage
+      try {
+        const storedDebugMode = localStorage.getItem(AUTH_DEBUG_STORAGE_KEY)
+        if (storedDebugMode === "true") {
+          debug("Debug mode enabled from local storage")
+        }
+      } catch (e) {
+        // Ignore storage errors
+      }
+
+      // Create client with enhanced options
+      clientRef.current = getSupabaseClient({
         persistSession,
         autoRefreshToken,
         debugMode,
       })
 
-      // Handle both synchronous and asynchronous returns
-      if (supabasePromise instanceof Promise) {
-        supabasePromise
-          .then((client) => {
-            supabaseRef.current = client
-            setIsInitialized(true)
-            debug("Supabase hook initialized (async)")
-          })
-          .catch((error) => {
-            console.error("Error initializing Supabase client:", error)
-            toast({
-              title: "Error",
-              description: "Failed to initialize database connection. Please refresh the page.",
-              variant: "destructive",
-            })
-          })
-      } else {
-        supabaseRef.current = supabasePromise
-        setIsInitialized(true)
-        debug("Supabase hook initialized (sync)")
+      // Initialize token manager
+      if (clientRef.current) {
+        tokenManagerRef.current = getTokenManager(clientRef.current, debugMode)
+
+        // Get initial token status
+        const status = tokenManagerRef.current.getStatus()
+        setTokenStatus({
+          valid: status.valid,
+          expiresAt: status.expiresAt,
+        })
       }
 
-      // Log client stats
-      debug("Client stats:", getClientStats())
+      setIsInitialized(true)
+      debug("Supabase client initialized")
     } catch (error) {
-      console.error("Error initializing Supabase hook:", error)
+      console.error("Error initializing Supabase client:", error)
       toast({
         title: "Error",
         description: "Failed to initialize database connection. Please refresh the page.",
@@ -113,6 +125,62 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
       })
     }
   }, [persistSession, autoRefreshToken, debug, toast, isInitialized, debugMode])
+
+  // Set up token event listeners
+  useEffect(() => {
+    if (!isInitialized) return
+
+    // Handle token refresh events
+    const handleRefreshSuccess = (e: CustomEvent) => {
+      debug("Token refreshed successfully", e.detail)
+      setConsecutiveErrors(0)
+
+      if (tokenManagerRef.current) {
+        const status = tokenManagerRef.current.getStatus()
+        setTokenStatus({
+          valid: status.valid,
+          expiresAt: status.expiresAt,
+        })
+      }
+    }
+
+    const handleRefreshFailure = (e: CustomEvent) => {
+      debug("Token refresh failed", e.detail)
+      setConsecutiveErrors((prev) => prev + 1)
+
+      // If we've failed too many times, show a warning
+      if (consecutiveErrors >= 2) {
+        toast({
+          title: "Authentication Warning",
+          description: "Having trouble refreshing your session. You may need to sign in again soon.",
+          variant: "warning",
+          duration: 10000,
+        })
+      }
+    }
+
+    const handleSessionExpired = () => {
+      debug("Session expired, signing out")
+      toast({
+        title: "Session expired",
+        description: "Your session has expired. Please sign in again.",
+        variant: "destructive",
+      })
+      signOut()
+    }
+
+    // Add event listeners
+    window.addEventListener(TOKEN_EVENTS.REFRESH_SUCCESS, handleRefreshSuccess as EventListener)
+    window.addEventListener(TOKEN_EVENTS.REFRESH_FAILURE, handleRefreshFailure as EventListener)
+    window.addEventListener(TOKEN_EVENTS.SESSION_EXPIRED, handleSessionExpired)
+
+    // Clean up listeners on unmount
+    return () => {
+      window.removeEventListener(TOKEN_EVENTS.REFRESH_SUCCESS, handleRefreshSuccess as EventListener)
+      window.removeEventListener(TOKEN_EVENTS.REFRESH_FAILURE, handleRefreshFailure as EventListener)
+      window.removeEventListener(TOKEN_EVENTS.SESSION_EXPIRED, handleSessionExpired)
+    }
+  }, [isInitialized, debug, toast, signOut, consecutiveErrors])
 
   // Set up network status detection
   useEffect(() => {
@@ -127,14 +195,23 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         setIsOnline(nowOnline)
 
         if (nowOnline) {
-          // We're back online
+          // We're back online, refresh token if necessary
           toast({
             title: "Back online",
             description: "Your connection has been restored.",
             duration: 3000,
           })
+
+          if (tokenManagerRef.current && user) {
+            tokenManagerRef.current.forceRefresh()
+          }
+
+          // Reconnect all subscriptions
+          if (clientRef.current) {
+            subscriptionManager.reconnectAll(clientRef.current)
+          }
         } else {
-          // We're offline
+          // We're offline, show notification
           toast({
             title: "You are offline",
             description: "Some features may be unavailable until your connection is restored.",
@@ -181,6 +258,15 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
               description: "You're back online.",
               duration: 3000,
             })
+
+            if (tokenManagerRef.current && user) {
+              tokenManagerRef.current.forceRefresh()
+            }
+
+            // Reconnect all subscriptions
+            if (clientRef.current) {
+              subscriptionManager.reconnectAll(clientRef.current)
+            }
           }
         }
       } catch (error) {
@@ -221,7 +307,7 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
         networkCheckTimerRef.current = null
       }
     }
-  }, [isInitialized, monitorNetwork, debug, isOnline, toast])
+  }, [isInitialized, monitorNetwork, debug, isOnline, toast, user])
 
   // Set up activity tracking
   useEffect(() => {
@@ -238,143 +324,358 @@ export function useSupabase(options: UseSupabaseOptions = {}) {
     window.addEventListener("scroll", trackActivity)
     window.addEventListener("mousemove", trackActivity)
 
+    // Check for inactivity every minute
+    activityTimerRef.current = setInterval(() => {
+      const inactiveTime = Date.now() - lastActivity
+      debug(`User inactive for ${Math.round(inactiveTime / 1000)} seconds`)
+
+      // If inactive for more than 30 minutes, refresh the token
+      if (inactiveTime > 30 * 60 * 1000 && user && tokenManagerRef.current) {
+        debug("User inactive for 30 minutes, refreshing token")
+        tokenManagerRef.current.forceRefresh()
+      }
+    }, 60 * 1000)
+
     return () => {
       window.removeEventListener("click", trackActivity)
       window.removeEventListener("keypress", trackActivity)
       window.removeEventListener("scroll", trackActivity)
       window.removeEventListener("mousemove", trackActivity)
+
+      if (activityTimerRef.current) {
+        clearInterval(activityTimerRef.current)
+      }
     }
-  }, [isInitialized, setLastActivity, setConsecutiveErrors])
+  }, [isInitialized, lastActivity, user, debug])
 
-  // Wrap Supabase queries with error handling and offline support
-  const query = useCallback(
-    async <T>(\
-      queryFn: (supabase: SupabaseClient<Database>) => Promise<T>,
-      options: QueryOptions<T> = {}
-    ): Promise<T> => {
-  const { retries = 3, retryDelay = 1000, requiresAuth = false, offlineAction, offlineData } = options
+  // Function to refresh the auth token directly
+  const refreshToken = useCallback(async () => {
+    if (!tokenManagerRef.current || !user) return false
 
-  if (!supabaseRef.current) {
-    // Try to get the client if it's not in our ref
-    const client = getSupabaseClient({
-      debugMode,
-    })
-
-    if (client instanceof Promise) {
-      client.then((newClient) => {
-        supabaseRef.current = newClient
-      })
-    } else {
-      supabaseRef.current = client
-    }
-  }
-
-  if (!supabaseRef.current) {
-    throw new Error("Supabase client not initialized")
-  }
-
-  // Check if we're offline and have offline options
-  if (!isOnline) {
-    if (offlineAction) {
-      debug("Executing offline action")
-      return offlineAction()
-    }
-
-    if (offlineData !== undefined) {
-      debug("Using offline data")
-      return offlineData
-    }
-
-    throw new Error("You are offline and no offline fallback was provided")
-  }
-
-  // If we require auth, check if user is authenticated
-  if (requiresAuth && !user) {
-    throw new Error("Authentication required for this operation")
-  }
-
-  let attempt = 0
-  let lastError: any
-
-  while (attempt < retries) {
     try {
-      // Track activity on each query
-      setLastActivity(Date.now())
+      setIsRefreshing(true)
+      debug("Manually refreshing auth token")
 
-      // Execute the query
-      const result = await queryFn(supabaseRef.current)
+      const result = await tokenManagerRef.current.forceRefresh()
+
+      if (result) {
+        debug("Manual token refresh successful")
+        setConsecutiveErrors(0)
+      } else {
+        debug("Manual token refresh failed")
+        setConsecutiveErrors((prev) => prev + 1)
+      }
+
       return result
-    } catch (error: any) {
-      lastError = error
-      attempt++
-
-      // Check for network errors and update online status
-      if (
-        error.message?.includes("network") ||
-        error.message?.includes("fetch") ||
-        error.message?.includes("Failed to fetch")
-      ) {
-        debug("Network error detected, updating online status")
-        setIsOnline(false)
-
-        // If we have offline options, use them
-        if (offlineAction) {
-          debug("Executing offline fallback action")
-          return offlineAction()
-        }
-
-        if (offlineData !== undefined) {
-          debug("Using offline fallback data")
-          return offlineData
-        }
-      }
-
-      if (attempt < retries) {
-        const delay = retryDelay * Math.pow(2, attempt - 1)
-        debug(`Query failed, retrying in ${delay}ms (attempt ${attempt}/${retries})`)
-        await new Promise((resolve) => setTimeout(resolve, delay))
-      }
+    } catch (error) {
+      console.error("Unexpected error refreshing token:", error)
+      setConsecutiveErrors((prev) => prev + 1)
+      return false
+    } finally {
+      setIsRefreshing(false)
     }
-  }
+  }, [user, debug, tokenManagerRef])
 
-  // If we've exhausted all retries, throw the last error
-  throw lastError
-}
-,
-    [isOnline, debug, debugMode, user, setLastActivity, setIsOnline]
+  // Function to check if token is valid
+  const isTokenValid = useCallback(() => {
+    if (!tokenManagerRef.current) return false
+    return tokenManagerRef.current.isTokenValid()
+  }, [tokenManagerRef])
+
+  // Enhanced query function with caching and selective columns
+  const query = useCallback(
+    async <T,>(
+      queryFn: (client: SupabaseClient<Database>) => Promise<T>,
+      options: EnhancedQueryOptions = {},
+    ): Promise<T> => {
+      const {
+        retries = 3,
+        retryDelay = 1000,
+        requiresAuth = false,
+        offlineAction,
+        offlineArgs,
+        cacheKey,
+        cacheTTL = CACHE_EXPIRY.MEDIUM,
+        bypassCache = false,
+        debug: queryDebug = false,
+      } = options
+
+      if (!clientRef.current) {
+        throw new Error("Supabase client not initialized")
+      }
+
+      // Check if we're offline and have an offline action
+      if (!isOnline && offlineAction) {
+        debug("Executing offline action")
+        if (offlineArgs) {
+          return offlineAction(offlineArgs)
+        }
+        return offlineAction()
+      }
+
+      // If we require auth, check token validity first
+      if (requiresAuth && tokenManagerRef.current) {
+        if (!tokenManagerRef.current.isTokenValid()) {
+          debug("Token invalid or expired, attempting refresh before query")
+          const refreshed = await tokenManagerRef.current.forceRefresh()
+          if (!refreshed) {
+            throw new Error("Authentication required for this operation. Please sign in again.")
+          }
+        }
+      }
+
+      // Check cache if we have a cache key and aren't bypassing cache
+      if (cacheKey && !bypassCache) {
+        const cachedResult = isomorphicCache.get<T>(cacheKey)
+        if (cachedResult) {
+          debug("Cache hit for", cacheKey)
+          return cachedResult
+        }
+      }
+
+      let attempt = 0
+      let lastError: any
+
+      while (attempt < retries) {
+        try {
+          // Track activity on each query
+          setLastActivity(Date.now())
+
+          // Execute the query
+          const asyncResult = await queryFn(clientRef.current)
+
+          // Cache the result if we have a cache key
+          if (cacheKey && !bypassCache) {
+            isomorphicCache.set(cacheKey, asyncResult, cacheTTL)
+          }
+
+          return asyncResult
+        } catch (error: any) {
+          lastError = error
+          attempt++
+
+          // Check for auth errors
+          if (error.message?.includes("JWT") || error.message?.includes("token") || error.status === 401) {
+            debug(`Auth error on attempt ${attempt}, refreshing token`)
+
+            if (tokenManagerRef.current) {
+              await tokenManagerRef.current.forceRefresh()
+            }
+          }
+
+          // Check for network errors and update online status
+          if (
+            error.message?.includes("network") ||
+            error.message?.includes("fetch") ||
+            error.message?.includes("Failed to fetch")
+          ) {
+            debug("Network error detected, updating online status")
+            setIsOnline(false)
+
+            // If we have an offline action, use it
+            if (offlineAction) {
+              debug("Executing offline fallback action")
+              if (offlineArgs) {
+                return offlineAction(offlineArgs)
+              }
+              return offlineAction()
+            }
+          }
+
+          if (attempt < retries) {
+            const delay = retryDelay * Math.pow(2, attempt - 1)
+            debug(`Query failed, retrying in ${delay}ms (attempt ${attempt}/${retries})`)
+            await new Promise((resolve) => setTimeout(resolve, delay))
+          }
+        }
+      }
+
+      // If we've exhausted all retries, throw the last error
+      throw lastError
+    },
+    [isOnline, debug, tokenManagerRef],
   )
 
-// Reset the client and state
-const resetClient = useCallback(() => {
-  debug("Resetting Supabase client")
-  resetSupabaseClient()
-  supabaseRef.current = null
-  setConsecutiveErrors(0)
-  setIsInitialized(false)
+  // Specialized function for read operations with caching
+  const read = useCallback(
+    async <T,>(table: string, queryBuilder: (query: any) => any, options: EnhancedQueryOptions = {}): Promise<T> => {
+      const { columns = [], cacheKey = `${table}:read` } = options
 
-  // Re-initialize
-  const client = getSupabaseClient({
-    persistSession,
-    autoRefreshToken,
-    debugMode,
-  })
+      return query<T,>(
+        async (client) => {
+          let baseQuery = client.from(table)
+          
+          // Use specific columns if provided
+          if (columns.length > 0) {
+            baseQuery = baseQuery.select(columns.join(','))
+          } else {
+            baseQuery = baseQuery.select('*')
+          }
+          
+          // Apply the query builder function
+          const finalQuery = queryBuilder(baseQuery)
+          const { data, error } = await finalQuery
+          
+          if (error) throw error
+          return data as T
+        },
+        {
+          ...options,
+          cacheKey
+        }
+      )
+    },
+    [query],
+  )
 
-  if (client instanceof Promise) {
-    client.then((newClient) => {
-      supabaseRef.current = newClient
-      setIsInitialized(true)
-    })
-  } else {
-    supabaseRef.current = client
-    setIsInitialized(true)
-  }
-}, [debug, debugMode, persistSession, autoRefreshToken, setIsInitialized, setConsecutiveErrors])
+  // Specialized function for write operations that invalidate cache
+  const write = useCallback(
+    async <T,>(
+      table: string,
+      operation: "insert" | "update" | "delete" | "upsert",
+      data: any,
+      queryBuilder: (query: any) => any,
+      options: EnhancedQueryOptions = {},
+    ): Promise<T> => {
+      const { requiresAuth = true } = options
 
-return {
-    supabase: supabaseRef.current,
+      return query<T,>(
+        async (client) => {
+          let baseQuery = client.from(table)
+          
+          // Apply the operation
+          switch (operation) {
+            case 'insert':
+              baseQuery = baseQuery.insert(data)
+              break
+            case 'update':
+              baseQuery = baseQuery.update(data)
+              break
+            case 'delete':
+              baseQuery = baseQuery.delete()
+              break
+            case 'upsert':
+              baseQuery = baseQuery.upsert(data)
+              break
+          }
+          
+          // Apply the query builder function
+          const finalQuery = queryBuilder(baseQuery)
+          const { data: result, error } = await finalQuery
+          
+          if (error) throw error
+          
+          // Invalidate cache for this table
+          if (options.cacheKey) {
+            // Clear specific cache key
+            isomorphicCache.remove(options.cacheKey)
+          } else {
+            // Clear all cache for this table
+            isomorphicCache.clearPattern(`^${table}:`)
+          }
+          
+          return result as T
+        },
+        {
+          ...options,
+          requiresAuth,
+          bypassCache: true // Always bypass cache for write operations
+        }
+      )
+    },
+    [query],
+  )
+
+  // Subscribe to real-time changes
+  const subscribe = useCallback(
+    <T = any>(
+      table: string,
+      callback: (payload: T) => void,
+      options: {
+        event?: "INSERT" | "UPDATE" | "DELETE" | "*"
+        filter?: string
+        schema?: string
+        config?: any
+      } = {},
+    ) => {
+      if (!clientRef.current) {
+        throw new Error("Supabase client not initialized")
+      }
+
+      return subscriptionManager.subscribe<T>(clientRef.current, table, callback, options)
+    },
+    [clientRef],
+  )
+
+  // Get detailed token status
+  const getTokenStatus = useCallback(() => {
+    if (!tokenManagerRef.current) {
+      return {
+        valid: false,
+        expiresSoon: false,
+        expiresAt: null,
+        refreshAttempts: 0,
+        lastRefresh: null,
+      }
+    }
+
+    const status = tokenManagerRef.current.getStatus()
+    return {
+      valid: status.valid,
+      expiresSoon: status.expiresSoon,
+      expiresAt: status.expiresAt,
+      refreshAttempts: status.telemetry.refreshAttempts,
+      lastRefresh: status.telemetry.lastRefreshSuccess,
+      successRate: status.telemetry.successCount / (status.telemetry.successCount + status.telemetry.failureCount || 1),
+    }
+  }, [tokenManagerRef])
+
+  // Get subscription stats
+  const getSubscriptionStats = useCallback(() => {
+    return {
+      subscriptions: subscriptionManager.getSubscriptions(),
+      count: subscriptionManager.getSubscriptions().length,
+    }
+  }, [])
+
+  // Reset all auth and token state (useful for debugging or troubleshooting)
+  const resetAuthState = useCallback(() => {
+    debug("Resetting auth state")
+    resetTokenManager()
+    tokenManagerRef.current = null
+
+    if (clientRef.current) {
+      tokenManagerRef.current = getTokenManager(clientRef.current, debugMode)
+    }
+
+    // After resetting, refresh connection status
+    setConsecutiveErrors(0)
+
+    if (isOnline && tokenManagerRef.current) {
+      tokenManagerRef.current.forceRefresh()
+    }
+  }, [debug, debugMode, isOnline, tokenManagerRef, clientRef])
+
+  // Clean up all subscriptions
+  const cleanupSubscriptions = useCallback(() => {
+    debug("Cleaning up all subscriptions")
+    subscriptionManager.clearAll()
+  }, [debug])
+
+  return {
+    supabase: clientRef.current,
     isInitialized,
     isOnline,
+    refreshToken,
+    isTokenValid,
     query,
-    resetClient,
+    read,
+    write,
+    subscribe,
+    getTokenStatus,
+    getSubscriptionStats,
+    resetAuthState,
+    cleanupSubscriptions,
+    tokenStatus,
   }
 }

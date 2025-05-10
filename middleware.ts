@@ -1,62 +1,145 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
+import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs"
 
-export function middleware(req: NextRequest) {
-  const url = new URL(req.url)
-  const token = url.searchParams.get("__v0_token")
+export async function middleware(req: NextRequest) {
+  const res = NextResponse.next()
 
-  if (token) {
-    // Strip the token param so it doesn't stick around
-    url.searchParams.delete("__v0_token")
+  // Create a new supabase middleware client for each request
+  const supabase = createMiddlewareClient({ req, res })
 
-    // Set the Supabase auth cookie
-    const res = NextResponse.redirect(url)
+  try {
+    // Check if the user is authenticated
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
 
-    // httpOnly so client JS can't accidentally overwrite it
-    res.cookies.set("sb:token", token, {
-      httpOnly: true,
-      path: "/",
-      sameSite: "lax",
-    })
+    // Get the pathname from the URL
+    const { pathname } = req.nextUrl
+
+    // Public routes that don't require authentication
+    const publicRoutes = [
+      "/auth/sign-in",
+      "/auth/sign-up",
+      "/auth/forgot-password",
+      "/auth/reset-password",
+      "/auth/verify-email",
+      "/auth/callback",
+    ]
+
+    // Routes that should bypass all checks
+    const bypassAllChecks = [
+      "/api/", // All API routes
+      "/api/create-profile", // Explicitly allow profile creation API
+      "/api/migrate-user-data", // Allow data migration API
+      "/api/auth/", // All auth-related APIs
+      "/api/health-check", // Health check endpoint
+      "/_next/", // Next.js assets
+      "/favicon.ico",
+      "/manifest.json",
+      "/robots.txt",
+      ...publicRoutes,
+    ]
+
+    // Skip middleware completely for bypass routes
+    if (bypassAllChecks.some((route) => pathname.startsWith(route))) {
+      return res
+    }
+
+    // Check if this is an anonymous user
+    const isAnonymous =
+      session?.user?.app_metadata?.provider === "anonymous" ||
+      session?.user?.id.startsWith("mock-") ||
+      session?.user?.email === "demo@example.com"
+
+    // For anonymous users, we'll skip the onboarding check
+    if (session && isAnonymous) {
+      // Set a cookie to indicate this is an anonymous session
+      res.cookies.set("anonymous-session", "true", {
+        maxAge: 60 * 60 * 24, // 1 day
+        path: "/",
+      })
+
+      // Store the anonymous ID in a cookie for potential migration later
+      if (session.user.id) {
+        res.cookies.set("anonymous-user-id", session.user.id, {
+          maxAge: 60 * 60 * 24 * 30, // 30 days
+          path: "/",
+        })
+      }
+
+      // Allow anonymous users to access protected routes
+      return res
+    }
+
+    // If the user is not authenticated and trying to access a protected route
+    if (!session && !publicRoutes.some((route) => pathname.startsWith(route))) {
+      const redirectUrl = new URL("/auth/sign-in", req.url)
+      redirectUrl.searchParams.set("redirectTo", pathname)
+      return NextResponse.redirect(redirectUrl)
+    }
+
+    // Routes that should bypass onboarding check
+    const bypassOnboardingCheck = ["/onboarding", ...bypassAllChecks]
+
+    // If the user is authenticated, check if they've completed onboarding
+    if (session && !bypassOnboardingCheck.some((route) => pathname.startsWith(route))) {
+      // Check if the user has completed onboarding
+      // We'll use cookies for this check
+      const onboardingCompleted = req.cookies.get("onboarding-completed")?.value === "true"
+
+      // If onboarding is not completed, redirect to onboarding
+      if (!onboardingCompleted) {
+        try {
+          // Get the user's profile to check if they've completed their profile
+          const { data: profile, error } = await supabase
+            .from("profiles")
+            .select("first_name, last_name")
+            .eq("id", session.user.id)
+            .single()
+
+          // If there was an error or no profile, redirect to onboarding
+          if (error || !profile) {
+            return NextResponse.redirect(new URL("/onboarding", req.url))
+          }
+
+          // If the user has a complete profile, mark onboarding as completed
+          if (profile?.first_name && profile?.last_name) {
+            const response = NextResponse.next()
+            response.cookies.set("onboarding-completed", "true", {
+              maxAge: 60 * 60 * 24 * 30, // 30 days
+              path: "/",
+            })
+            return response
+          }
+
+          // Otherwise redirect to onboarding
+          return NextResponse.redirect(new URL("/onboarding", req.url))
+        } catch (error) {
+          console.error("Error checking profile in middleware:", error)
+          // If there's an error, let the user proceed and rely on client-side checks
+          return res
+        }
+      }
+    }
 
     return res
+  } catch (error) {
+    console.error("Middleware error:", error)
+    // In case of an error, allow the request to proceed
+    // The client-side auth checks will handle authentication
+    return res
   }
-
-  // Check for protected routes
-  const { pathname } = url
-
-  // Public routes that don't require authentication
-  const publicRoutes = [
-    "/auth/sign-in",
-    "/auth/sign-up",
-    "/auth/forgot-password",
-    "/auth/reset-password",
-    "/auth/verify-email",
-    "/auth/callback",
-    "/login",
-  ]
-
-  // Skip auth check for public routes
-  if (publicRoutes.some((route) => pathname.startsWith(route))) {
-    return NextResponse.next()
-  }
-
-  // For dashboard routes, we'll let the layout handle the auth check
-  if (pathname.startsWith("/dashboard")) {
-    return NextResponse.next()
-  }
-
-  // For the root path, redirect to dashboard if authenticated
-  // This will be handled by the dashboard layout's auth check
-  if (pathname === "/") {
-    const dashboardUrl = new URL("/dashboard", req.url)
-    return NextResponse.redirect(dashboardUrl)
-  }
-
-  return NextResponse.next()
 }
 
+// Only run middleware on specific paths, excluding API routes
 export const config = {
-  // Run this on every non-API route
-  matcher: ["/((?!api|_next/static|_next/image|favicon.ico).*)"],
+  matcher: [
+    // Match all request paths except for the ones starting with:
+    // - _next/static (static files)
+    // - _next/image (image optimization files)
+    // - favicon.ico (favicon file)
+    // - api/ (API routes)
+    "/((?!_next/static|_next/image|favicon.ico|api/).*)",
+  ],
 }

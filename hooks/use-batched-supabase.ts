@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useState, useRef } from "react"
 import { useAuth } from "@/context/auth-context"
-import { getSupabaseClient } from "@/lib/supabase-client"
+import { getSupabaseClient } from "@/utils/supabase-client"
 
 // Define types for our batching system
 type BatcherStatus = "idle" | "pending" | "success" | "error" | "rate-limited" | "network-error"

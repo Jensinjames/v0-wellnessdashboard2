@@ -1,68 +1,56 @@
-/**
- * Validates that a value is a non-empty string
- */
-export function isValidString(value: unknown): value is string {
-  return typeof value === "string" && value.trim().length > 0
-}
-
-/**
- * Validates email format
- */
-export function isValidEmail(email: unknown): boolean {
-  if (!isValidString(email)) return false
-
-  // RFC 5322 compliant email regex
-  const emailRegex =
-    /^(([^<>()[\]\\.,;:\s@"]+(\.[^<>()[\]\\.,;:\s@"]+)*)|(".+"))@((\[[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}])|(([a-zA-Z\-0-9]+\.)+[a-zA-Z]{2,}))$/
-  return emailRegex.test(email.trim())
-}
-
-/**
- * Validates password strength
- */
-export function isValidPassword(password: unknown): boolean {
-  if (!isValidString(password)) return false
-
-  // Minimum 8 characters
-  return password.length >= 8
-}
-
-/**
- * Validates authentication credentials
- */
-export function validateAuthCredentials(
-  email: unknown,
-  password: unknown,
-): {
-  valid: boolean
-  errors: { email?: string; password?: string }
-} {
-  const errors: { email?: string; password?: string } = {}
-
-  // Validate email
-  if (!isValidString(email)) {
-    errors.email = "Email must be a non-empty string"
-  } else if (!isValidEmail(email)) {
-    errors.email = "Invalid email format"
+export function validateEmail(email: string): string | undefined {
+  if (!email) {
+    return "Email is required"
   }
 
-  // Validate password
-  if (!isValidString(password)) {
-    errors.password = "Password must be a non-empty string"
-  } else if (!isValidPassword(password)) {
-    errors.password = "Password must be at least 8 characters"
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+  if (!emailRegex.test(email)) {
+    return "Please enter a valid email address"
+  }
+
+  return undefined
+}
+
+export function validatePassword(password: string): string | undefined {
+  if (!password) {
+    return "Password is required"
+  }
+
+  if (password.length < 6) {
+    return "Password must be at least 6 characters"
+  }
+
+  return undefined
+}
+
+// Add the missing sanitizeEmail function
+export function sanitizeEmail(email: string): string {
+  // Trim whitespace and convert to lowercase
+  return email.trim().toLowerCase()
+}
+
+// Add the missing validateAuthCredentials function
+export function validateAuthCredentials(
+  email: string,
+  password: string,
+): {
+  isValid: boolean
+  fieldErrors: { email?: string; password?: string }
+} {
+  const fieldErrors: { email?: string; password?: string } = {}
+
+  const emailError = validateEmail(email)
+  if (emailError) {
+    fieldErrors.email = emailError
+  }
+
+  const passwordError = validatePassword(password)
+  if (passwordError) {
+    fieldErrors.password = passwordError
   }
 
   return {
-    valid: Object.keys(errors).length === 0,
-    errors,
+    isValid: Object.keys(fieldErrors).length === 0,
+    fieldErrors,
   }
-}
-
-/**
- * Sanitizes email input
- */
-export function sanitizeEmail(email: unknown): string {
-  if (!isValidString(email)) return ""
-  return email.trim().toLowerCase()
 }

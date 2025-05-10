@@ -1,14 +1,10 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import {
-  getSupabaseClient,
-  checkSupabaseConnection,
-  getConnectionHealth,
-  resetSupabaseClient,
-} from "@/lib/supabase-client"
+import { checkSupabaseConnection, getConnectionHealth, resetSupabaseClient } from "@/lib/supabase-client"
 import { useAuth } from "@/context/auth-context"
 import { useBatchedSupabase } from "@/hooks/use-batched-supabase"
+import { getSupabaseClient } from "@/utils/supabase-client"
 
 type QueryOptions = {
   retry?: boolean
@@ -85,7 +81,7 @@ export function useOptimizedSupabase() {
         return executeBatched(
           async () => {
             try {
-              const supabase = getSupabaseClient({ timeout })
+              const supabase = getSupabaseClient()
               const result = await queryFn(supabase)
 
               if (result.error) {
@@ -128,7 +124,7 @@ export function useOptimizedSupabase() {
       while (true) {
         try {
           // Get a client with the specified timeout
-          const supabase = getSupabaseClient({ timeout })
+          const supabase = getSupabaseClient()
           const result = await queryFn(supabase)
 
           if (result.error) {
@@ -163,13 +159,13 @@ export function useOptimizedSupabase() {
           }
 
           return result
-        } catch (err: any) {
+        } catch (error: any) {
           // Handle network errors with retry
           if (
             retry &&
             retryCount < maxRetries &&
-            ((err instanceof TypeError && err.message.includes("Failed to fetch")) ||
-              (err instanceof DOMException && err.name === "AbortError"))
+            ((error instanceof TypeError && error.message.includes("Failed to fetch")) ||
+              (error instanceof DOMException && error.name === "AbortError"))
           ) {
             // Calculate backoff time - exponential with jitter
             const backoffTime = Math.min(1000 * Math.pow(2, retryCount), 10000) * (0.8 + Math.random() * 0.4)
@@ -183,10 +179,10 @@ export function useOptimizedSupabase() {
           }
 
           // Handle other errors
-          console.error("Error in optimized query:", err)
-          onError?.(err)
+          console.error("Error in optimized query:", error)
+          onError?.(error)
 
-          return { data: null, error: err }
+          return { data: null, error }
         }
       }
     },
@@ -224,11 +220,6 @@ export function useOptimizedSupabase() {
 
     const refetchIntervalRef = useRef<NodeJS.Timeout | null>(null)
     const isMountedRef = useRef(true)
-    const queryOptionsRef = useRef(options)
-
-    useEffect(() => {
-      queryOptionsRef.current = options
-    }, [options])
 
     const execute = useCallback(async () => {
       if (!enabled) return
@@ -237,18 +228,18 @@ export function useOptimizedSupabase() {
 
       try {
         const result = await executeQuery<T>(queryFn, {
-          ...queryOptionsRef.current,
+          ...queryOptions,
           onNetworkError: () => {
             if (isMountedRef.current) {
               setState((prev) => ({ ...prev, isNetworkError: true }))
             }
-            queryOptionsRef.current.onNetworkError?.()
+            queryOptions.onNetworkError?.()
           },
           onRateLimit: () => {
             if (isMountedRef.current) {
               setState((prev) => ({ ...prev, isRateLimited: true }))
             }
-            queryOptionsRef.current.onRateLimit?.()
+            queryOptions.onRateLimit?.()
           },
         })
 

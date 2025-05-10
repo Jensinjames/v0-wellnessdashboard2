@@ -1,36 +1,24 @@
-"use client"
-
-import { useEffect, useState } from "react"
-import { SignInForm } from "@/components/auth/sign-in-form"
-import { AuthLayout } from "@/components/auth/auth-layout"
-import { useAuth } from "@/context/auth-context"
-import { useRouter } from "next/navigation"
 import { Suspense } from "react"
+import { SignInForm } from "@/components/auth/sign-in-form"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
 export default function SignInPage() {
-  const { user, isLoading } = useAuth()
-  const router = useRouter()
-  const [isClient, setIsClient] = useState(false)
-
-  useEffect(() => {
-    setIsClient(true)
-  }, [])
-
-  useEffect(() => {
-    if (isClient && !isLoading && user) {
-      router.push("/dashboard")
-    }
-  }, [isClient, isLoading, user, router])
-
-  if (!isClient) {
-    return null
-  }
-
   return (
-    <AuthLayout title="Sign In" description="Enter your credentials to access your account">
-      <Suspense fallback={<div>Loading...</div>}>
-        <SignInForm />
-      </Suspense>
-    </AuthLayout>
+    <main
+      id="main-content"
+      className="flex min-h-screen items-center justify-center bg-gray-50 py-12 px-4 sm:px-6 lg:px-8"
+    >
+      <Card className="w-full max-w-md">
+        <CardHeader>
+          <CardTitle>Sign In</CardTitle>
+          <CardDescription>Enter your credentials to access your account</CardDescription>
+        </CardHeader>
+        <CardContent>
+          <Suspense fallback={<div className="p-4 text-center">Loading sign-in form...</div>}>
+            <SignInForm />
+          </Suspense>
+        </CardContent>
+      </Card>
+    </main>
   )
 }

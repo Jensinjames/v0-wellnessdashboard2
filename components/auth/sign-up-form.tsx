@@ -11,6 +11,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Info, AlertTriangle, Wifi, RefreshCw, Mail, CheckCircle } from "lucide-react"
+import { checkSupabaseConnection } from "@/utils/supabase-client"
 
 export function SignUpForm() {
   const [email, setEmail] = useState("")
@@ -25,8 +26,31 @@ export function SignUpForm() {
   const [databaseError, setDatabaseError] = useState(false)
   const [signUpSuccess, setSignUpSuccess] = useState(false)
   const [emailVerificationSent, setEmailVerificationSent] = useState(false)
-  const { signUp } = useAuth()
+  const [connectionStatus, setConnectionStatus] = useState<{ isConnected: boolean; latency: number } | null>(null)
+  const { signUp, getAnonymousId } = useAuth()
   const router = useRouter()
+
+  // Check connection status on mount
+  useEffect(() => {
+    const checkConnection = async () => {
+      setIsCheckingNetwork(true)
+      try {
+        const status = await checkSupabaseConnection()
+        setConnectionStatus(status)
+
+        if (!status.isConnected) {
+          setNetworkError(true)
+          setError("Unable to connect to the authentication service. You can try again or use demo mode.")
+        }
+      } catch (err) {
+        console.error("Error checking connection:", err)
+      } finally {
+        setIsCheckingNetwork(false)
+      }
+    }
+
+    checkConnection()
+  }, [])
 
   // Check browser's online status
   useEffect(() => {
@@ -61,46 +85,20 @@ export function SignUpForm() {
     setIsCheckingNetwork(true)
 
     try {
-      // Try to fetch a known endpoint
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), 5000)
+      const status = await checkSupabaseConnection()
+      setConnectionStatus(status)
 
-      const endpoints = [
-        process.env.NEXT_PUBLIC_SUPABASE_URL || "",
-        "https://www.google.com",
-        "https://www.cloudflare.com",
-      ]
-
-      let connected = false
-
-      for (const endpoint of endpoints) {
-        try {
-          await fetch(endpoint, {
-            method: "HEAD",
-            signal: controller.signal,
-            mode: "no-cors",
-            cache: "no-store",
-          })
-          connected = true
-          break
-        } catch (err) {
-          // Try next endpoint
-          console.warn(`Failed to connect to ${endpoint}`)
-        }
-      }
-
-      clearTimeout(timeoutId)
-
-      if (connected) {
+      if (status.isConnected) {
         setNetworkError(false)
         setError(null)
       } else {
         setNetworkError(true)
-        setError("Still unable to connect. Please check your internet connection.")
+        setError("Still unable to connect to the authentication service. You can try again or use demo mode.")
       }
     } catch (err) {
+      console.error("Error checking connection:", err)
       setNetworkError(true)
-      setError("Network check failed. Please try again later.")
+      setError("Connection check failed. Please try again later or use demo mode.")
     } finally {
       setIsCheckingNetwork(false)
     }
@@ -132,7 +130,25 @@ export function SignUpForm() {
       return
     }
 
+    // Get the anonymous ID for potential data migration
+    const anonymousId = getAnonymousId()
+    console.log(`Current anonymous ID: ${anonymousId}`)
+
     try {
+      // Check connection status before attempting sign-up
+      if (!connectionStatus?.isConnected) {
+        // Try to check connection again
+        const newStatus = await checkSupabaseConnection()
+        setConnectionStatus(newStatus)
+
+        if (!newStatus.isConnected) {
+          setNetworkError(true)
+          setError("Unable to connect to the authentication service. You can try again or use demo mode.")
+          setIsLoading(false)
+          return
+        }
+      }
+
       // Pass credentials as a single object with the correct structure
       const result = await signUp({ email, password })
 
@@ -243,6 +259,17 @@ export function SignUpForm() {
     }
   }
 
+  const handleDemoSignUp = () => {
+    setEmail("demo@example.com")
+    setPassword("demo123")
+    setConfirmPassword("demo123")
+    // Submit the form with demo credentials
+    setTimeout(() => {
+      const form = document.querySelector("form") as HTMLFormElement
+      if (form) form.dispatchEvent(new Event("submit", { cancelable: true, bubbles: true }))
+    }, 100)
+  }
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4" aria-labelledby="sign-up-heading">
       <h2 id="sign-up-heading" className="sr-only">
@@ -288,12 +315,12 @@ export function SignUpForm() {
                 type="button"
                 variant="outline"
                 size="sm"
-                onClick={() => window.location.reload()}
+                onClick={handleDemoSignUp}
                 className="bg-amber-100/50"
-                aria-label="Reload page"
+                aria-label="Use demo mode"
               >
-                <RefreshCw className="h-4 w-4 mr-2" aria-hidden="true" />
-                <span>Reload Page</span>
+                <Info className="h-4 w-4 mr-2" aria-hidden="true" />
+                <span>Use Demo Mode</span>
               </Button>
             </div>
           </AlertDescription>
@@ -450,6 +477,20 @@ export function SignUpForm() {
         >
           Sign in
         </Link>
+      </div>
+
+      {/* Demo mode button */}
+      <div className="text-center">
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="mt-2"
+          onClick={handleDemoSignUp}
+          disabled={isLoading || mockSignUp || signUpSuccess}
+        >
+          Use Demo Mode
+        </Button>
       </div>
     </form>
   )

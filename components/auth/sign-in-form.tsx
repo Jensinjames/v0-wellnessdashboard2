@@ -1,296 +1,242 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
-import { useRouter, useSearchParams } from "next/navigation"
+
+import { useState } from "react"
+import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useAuth } from "@/context/auth-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
-import { Info, AlertTriangle, Mail, Loader2 } from "lucide-react"
-import { extractRedirectPath, extractAuthToken, storeRedirectPath, handleAuthToken } from "@/utils/auth-redirect"
+import { Checkbox } from "@/components/ui/checkbox"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Loader2 } from "lucide-react"
+import { handleAuthError } from "@/utils/auth-error-handler"
+import { sanitizeEmail, validateAuthCredentials } from "@/utils/auth-validation"
+import { useToast } from "@/hooks/use-toast"
 
 export function SignInForm() {
+  const { signIn } = useAuth()
+  const router = useRouter()
+  const { toast } = useToast()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [rememberMe, setRememberMe] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
-  const [mockSignIn, setMockSignIn] = useState(false)
-  const [isEmailVerificationError, setIsEmailVerificationError] = useState(false)
-  const [redirectPath, setRedirectPath] = useState("/dashboard")
-  const [isProcessingToken, setIsProcessingToken] = useState(false)
-  const { signIn } = useAuth()
-  const router = useRouter()
-  const searchParams = useSearchParams()
+  const [showRepairOption, setShowRepairOption] = useState(false)
+  const [userId, setUserId] = useState<string | null>(null)
 
-  // Process URL parameters on mount
-  useEffect(() => {
-    if (!searchParams) return
-
-    // Get the current URL for token extraction
-    const currentUrl = typeof window !== "undefined" ? window.location.href : ""
-
-    // Extract authentication token if present
-    const token = extractAuthToken(currentUrl)
-
-    // Get and process the redirectTo parameter
-    const redirectParam = searchParams.get("redirectTo")
-    let cleanRedirectPath = extractRedirectPath(redirectParam)
-
-    // Special case for root path
-    if (cleanRedirectPath === "/") {
-      cleanRedirectPath = "/dashboard"
-    }
-
-    setRedirectPath(cleanRedirectPath)
-
-    // If we have a token, process it
-    if (token) {
-      setIsProcessingToken(true)
-      setIsLoading(true)
-
-      handleAuthToken(token, cleanRedirectPath)
-        .then((success) => {
-          if (success) {
-            // Token processed successfully, redirect
-            window.location.href = cleanRedirectPath
-          } else {
-            // Token processing failed
-            setError("Authentication token processing failed")
-            setIsLoading(false)
-          }
-        })
-        .finally(() => {
-          setIsProcessingToken(false)
-        })
-    }
-  }, [searchParams])
-
-  useEffect(() => {
-    // Clear any errors when inputs change
-    if (error || Object.keys(fieldErrors).length > 0) {
-      setError(null)
-      setFieldErrors({})
-      setIsEmailVerificationError(false)
-    }
-  }, [email, password, error, fieldErrors])
+  const validateForm = () => {
+    const { isValid, fieldErrors: errors } = validateAuthCredentials(email, password)
+    setFieldErrors(errors)
+    return isValid
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setError(null)
+    setFieldErrors({})
+    setShowRepairOption(false)
 
-    // Don't process if we're already handling a token
-    if (isProcessingToken) return
+    if (!validateForm()) {
+      return
+    }
+
+    setIsLoading(true)
+
+    try {
+      // Sanitize the email before sending
+      const sanitizedEmail = sanitizeEmail(email)
+
+      const {
+        error: signInError,
+        mockSignIn,
+        userId: returnedUserId,
+      } = await signIn({
+        email: sanitizedEmail,
+        password,
+      })
+
+      if (signInError) {
+        const errorMessage = handleAuthError(signInError, "sign-in")
+        setError(errorMessage)
+
+        // If the error is related to database permissions, show repair option
+        if (
+          errorMessage.includes("Database error") ||
+          errorMessage.includes("database error") ||
+          errorMessage.includes("permission denied")
+        ) {
+          setShowRepairOption(true)
+          if (returnedUserId) {
+            setUserId(returnedUserId)
+          }
+        }
+
+        setIsLoading(false)
+        return
+      }
+
+      if (mockSignIn) {
+        toast({
+          title: "Demo Mode",
+          description: "You are signed in with demo credentials. Some features may be limited.",
+          variant: "default",
+        })
+      } else {
+        toast({
+          title: "Success",
+          description: "You have successfully signed in.",
+          variant: "default",
+        })
+      }
+
+      // Redirect to dashboard
+      router.push("/dashboard")
+    } catch (err: any) {
+      console.error("Sign in error:", err)
+      setError("An unexpected error occurred. Please try again.")
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleRepairAccount = async () => {
+    if (!userId) {
+      setError("Cannot repair account: User ID is missing")
+      return
+    }
 
     setIsLoading(true)
     setError(null)
-    setFieldErrors({})
-    setMockSignIn(false)
-    setIsEmailVerificationError(false)
 
     try {
-      console.log(`Attempting sign in with redirect to: ${redirectPath}`)
+      const response = await fetch("/api/fix-user-permissions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ userId }),
+      })
 
-      // Special case for root path
-      const finalRedirectPath = redirectPath === "/" ? "/dashboard" : redirectPath
+      const data = await response.json()
 
-      // Store the redirect path before authentication
-      storeRedirectPath(finalRedirectPath)
-
-      // Pass credentials as a single object with the correct structure
-      const result = await signIn({ email, password })
-
-      if (result.fieldErrors) {
-        setFieldErrors(result.fieldErrors)
-        setIsLoading(false)
-        return
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to repair account")
       }
 
-      if (result.error) {
-        // Check if it's an email verification error
-        if (
-          result.error.message?.includes("verify your email") ||
-          result.error.message?.includes("Email not confirmed")
-        ) {
-          setIsEmailVerificationError(true)
-          setError(result.error.message)
-        } else {
-          setError(result.error.message)
-        }
-        setIsLoading(false)
-        return
-      }
+      toast({
+        title: "Account Repaired",
+        description: "Your account permissions have been fixed. Please try signing in again.",
+        variant: "default",
+      })
 
-      if (result.mockSignIn) {
-        setMockSignIn(true)
-        // Wait a moment before redirecting to simulate the sign-in process
-        setTimeout(() => {
-          console.log(`Mock sign-in successful, redirecting to: ${redirectPath}`)
-          router.push(redirectPath)
-        }, 2000)
-        return
-      }
-
-      // If we get here, sign-in was successful
-      console.log(`Sign-in successful, redirecting to: ${redirectPath}`)
-
-      // Force a hard navigation to ensure proper session handling
-      window.location.href = redirectPath
+      // Clear the form and reset state
+      setShowRepairOption(false)
+      setUserId(null)
     } catch (err: any) {
-      console.error("Unexpected error during sign-in:", err)
-      setError(err.message || "An unexpected error occurred")
+      console.error("Repair account error:", err)
+      setError(`Failed to repair account: ${err.message}`)
     } finally {
       setIsLoading(false)
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4" aria-labelledby="sign-in-heading">
-      <h2 id="sign-in-heading" className="sr-only">
-        Sign in form
-      </h2>
-
-      {isProcessingToken && (
-        <Alert className="mb-4" role="status" aria-live="polite">
-          <Loader2 className="h-4 w-4 animate-spin mr-2" aria-hidden="true" />
-          <AlertTitle>Processing Authentication</AlertTitle>
-          <AlertDescription>Please wait while we process your authentication token...</AlertDescription>
-        </Alert>
-      )}
-
-      {error && !isEmailVerificationError && (
-        <Alert className="rounded-md bg-red-50 p-4 text-sm text-red-700" role="alert" aria-live="assertive">
-          <AlertTriangle className="h-4 w-4 mr-2" aria-hidden="true" />
-          {error}
-        </Alert>
-      )}
-
-      {isEmailVerificationError && (
-        <Alert className="rounded-md bg-amber-50 p-4 text-sm text-amber-700" role="alert" aria-live="assertive">
-          <Mail className="h-4 w-4" aria-hidden="true" />
-          <AlertTitle>Email Verification Required</AlertTitle>
-          <AlertDescription>
-            <p className="mb-2">
-              Please verify your email address before signing in. Check your inbox for a verification link.
-            </p>
-            <p>
-              If you didn't receive the email, you can{" "}
-              <Button
-                type="button"
-                variant="link"
-                className="p-0 h-auto text-amber-800 underline"
-                onClick={() => {
-                  // Here you would implement resending the verification email
-                  alert("Verification email resend functionality would go here")
-                }}
-              >
-                request a new verification email
-              </Button>
-              .
-            </p>
-          </AlertDescription>
-        </Alert>
-      )}
-
-      {mockSignIn && (
-        <Alert className="mb-4" role="status" aria-live="polite">
-          <Info className="h-4 w-4" aria-hidden="true" />
-          <AlertTitle>Demo Mode</AlertTitle>
-          <AlertDescription>
-            You're being signed in with demo credentials. You'll be redirected to the dashboard shortly.
-          </AlertDescription>
-        </Alert>
-      )}
-
-      <div className="space-y-2">
-        <Label htmlFor="email" id="email-label">
-          Email
-        </Label>
-        <Input
-          id="email"
-          type="email"
-          value={email}
-          onChange={(e) => setEmail(e.target.value)}
-          required
-          disabled={isLoading || mockSignIn || isProcessingToken}
-          aria-labelledby="email-label"
-          aria-required="true"
-          autoComplete="email"
-          aria-invalid={!!fieldErrors.email}
-          aria-errormessage={fieldErrors.email ? "email-error" : undefined}
-          className={fieldErrors.email ? "border-red-500" : ""}
-        />
-        {fieldErrors.email && (
-          <p id="email-error" className="mt-1 text-sm text-red-600">
-            {fieldErrors.email}
-          </p>
-        )}
+    <div className="mx-auto w-full max-w-md space-y-6 p-4 sm:px-6">
+      <div className="text-center">
+        <h1 className="text-3xl font-bold">Sign In</h1>
+        <p className="mt-2 text-sm text-gray-500">
+          Don&apos;t have an account?{" "}
+          <Link href="/auth/sign-up" className="font-medium text-primary hover:underline">
+            Sign up
+          </Link>
+        </p>
       </div>
 
-      <div className="space-y-2">
-        <div className="flex items-center justify-between">
-          <Label htmlFor="password" id="password-label">
-            Password
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {showRepairOption && (
+        <Alert variant="warning" className="bg-amber-50 border-amber-200">
+          <AlertDescription className="flex flex-col gap-2">
+            <p>Database permission issue detected. Would you like to repair your account?</p>
+            <Button
+              variant="outline"
+              className="mt-2 border-amber-500 text-amber-700 hover:bg-amber-100"
+              onClick={handleRepairAccount}
+              disabled={isLoading}
+            >
+              {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Repair Account
+            </Button>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-2">
+          <Label htmlFor="email">Email</Label>
+          <Input
+            id="email"
+            type="email"
+            placeholder="you@example.com"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            disabled={isLoading}
+            aria-invalid={fieldErrors.email ? "true" : "false"}
+          />
+          {fieldErrors.email && <p className="text-sm text-red-500">{fieldErrors.email}</p>}
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="password">Password</Label>
+            <Link href="/auth/forgot-password" className="text-xs text-primary hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+          <Input
+            id="password"
+            type="password"
+            placeholder="••••••••"
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            disabled={isLoading}
+            aria-invalid={fieldErrors.password ? "true" : "false"}
+          />
+          {fieldErrors.password && <p className="text-sm text-red-500">{fieldErrors.password}</p>}
+        </div>
+
+        <div className="flex items-center space-x-2">
+          <Checkbox
+            id="remember-me"
+            checked={rememberMe}
+            onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+            disabled={isLoading}
+          />
+          <Label htmlFor="remember-me" className="text-sm font-normal">
+            Remember me
           </Label>
-          <Link
-            href="/auth/forgot-password"
-            className="text-sm text-blue-600 hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
-            aria-label="Forgot password"
-          >
-            Forgot password?
+        </div>
+
+        <Button type="submit" className="w-full" disabled={isLoading}>
+          {isLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+          Sign In
+        </Button>
+
+        <div className="text-center text-sm">
+          <Link href="/auth/sign-in?demo=true" className="text-primary hover:underline">
+            Use Demo Mode
           </Link>
         </div>
-        <Input
-          id="password"
-          type="password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          required
-          disabled={isLoading || mockSignIn || isProcessingToken}
-          aria-labelledby="password-label"
-          aria-required="true"
-          autoComplete="current-password"
-          aria-invalid={!!fieldErrors.password}
-          aria-errormessage={fieldErrors.password ? "password-error" : undefined}
-          className={fieldErrors.password ? "border-red-500" : ""}
-        />
-        {fieldErrors.password && (
-          <p id="password-error" className="mt-1 text-sm text-red-600">
-            {fieldErrors.password}
-          </p>
-        )}
-      </div>
-
-      <Button
-        type="submit"
-        className="w-full"
-        disabled={isLoading || mockSignIn || isProcessingToken}
-        aria-busy={isLoading}
-        aria-live="polite"
-      >
-        {isLoading ? (
-          <>
-            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-            {isProcessingToken ? "Processing..." : "Signing in..."}
-          </>
-        ) : mockSignIn ? (
-          "Redirecting..."
-        ) : (
-          "Sign in"
-        )}
-      </Button>
-
-      <div className="text-center text-sm">
-        Don't have an account?{" "}
-        <Link
-          href="/auth/sign-up"
-          className="text-blue-600 hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
-        >
-          Sign up
-        </Link>
-      </div>
-    </form>
+      </form>
+    </div>
   )
 }

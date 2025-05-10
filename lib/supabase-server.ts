@@ -1,12 +1,5 @@
-/**
- * Server-side Supabase Client Utilities
- *
- * This module provides utilities for working with Supabase on the server side.
- */
-
-import { createServerComponentClient, createServerActionClient } from "@supabase/auth-helpers-nextjs"
+import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
-import { cache } from "react"
 import type { CookieOptions } from "@supabase/ssr"
 import type { Database } from "@/types/database"
 
@@ -15,23 +8,13 @@ let lastServerConnectionAttempt = 0
 let serverConnectionAttempts = 0
 const SERVER_CONNECTION_BACKOFF_BASE = 1000 // ms
 
-// Debug mode flag
-const isDebugMode = process.env.DEBUG_MODE === "true"
-
-// Internal debug logging function
-function debugLog(...args: any[]): void {
-  if (isDebugMode) {
-    console.log("[Supabase Server]", ...args)
-  }
-}
-
-/**
- * Create a Supabase client for server components
- * This is cached to prevent multiple instances in a single request
- */
-export const createServerSupabaseClient = cache((options: { retryOnError?: boolean; timeout?: number } = {}) => {
-  debugLog("Creating server component client")
-
+// This is a helper function to create a server client in route handlers and server actions
+export function createServerSupabaseClient(
+  options: {
+    retryOnError?: boolean
+    timeout?: number
+  } = {},
+) {
   const cookieStore = cookies()
 
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
@@ -59,173 +42,40 @@ export const createServerSupabaseClient = cache((options: { retryOnError?: boole
       ? Math.min(SERVER_CONNECTION_BACKOFF_BASE * Math.pow(2, serverConnectionAttempts - 1), 15000)
       : 10000)
 
-  return createServerComponentClient<Database>(
-    { cookies: () => cookieStore },
-    {
-      supabaseUrl: process.env.SUPABASE_URL,
-      supabaseKey: process.env.SUPABASE_ANON_KEY,
-      options: {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: false,
-          flowType: "pkce",
-        },
-        global: {
-          headers: {
-            "x-application-name": "wellness-dashboard-server",
-          },
-          fetch: (url, options = {}) => {
-            // Create a custom fetch with timeout
-            return fetchWithServerTimeout(url, options, timeout, options.retryOnError || false)
-          },
-        },
-        db: {
-          schema: "public",
-        },
+  return createServerClient<Database>(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+    cookies: {
+      get(name: string) {
+        return cookieStore.get(name)?.value
+      },
+      set(name: string, value: string, options: CookieOptions) {
+        cookieStore.set({ name, value, ...options })
+      },
+      remove(name: string, options: { path: string; domain?: string }) {
+        cookieStore.set({ name, value: "", ...options, maxAge: 0 })
       },
     },
-  )
-})
-
-/**
- * Create a Supabase client for server actions
- */
-export function createServerActionSupabaseClient(options: { retryOnError?: boolean; timeout?: number } = {}) {
-  debugLog("Creating server action client")
-
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
-    throw new Error("Supabase URL and anon key are required")
-  }
-
-  // Calculate timeout with exponential backoff
-  const timeout = options.timeout || 10000
-
-  return createServerActionClient<Database>(
-    { cookies },
-    {
-      supabaseUrl: process.env.SUPABASE_URL,
-      supabaseKey: process.env.SUPABASE_ANON_KEY,
-      options: {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: false,
-          flowType: "pkce",
-        },
-        global: {
-          headers: {
-            "x-application-name": "wellness-dashboard-server-action",
-          },
-          fetch: (url, options = {}) => {
-            // Create a custom fetch with timeout
-            return fetchWithServerTimeout(url, options, timeout, options.retryOnError || false)
-          },
-        },
-        db: {
-          schema: "public",
-        },
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
+      flowType: "pkce",
+    },
+    global: {
+      headers: {
+        "x-application-name": "wellness-dashboard-server",
+      },
+      fetch: (url, options = {}) => {
+        // Create a custom fetch with timeout
+        return fetchWithServerTimeout(url, options, timeout, options.retryOnError || false)
       },
     },
-  )
-}
-
-/**
- * Helper for custom cookie handlers (used in middleware and route handlers)
- */
-export function createCustomCookieClient(
-  cookieGetter: (name: string) => string | undefined,
-  cookieSetter: (name: string, value: string, options: CookieOptions) => void,
-  options: {
-    retryOnError?: boolean
-    timeout?: number
-  } = {},
-) {
-  debugLog("Creating custom cookie client")
-
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
-    throw new Error("Supabase URL and anon key are required")
-  }
-
-  // Calculate timeout with exponential backoff
-  const timeout = options.timeout || 10000
-
-  return createServerComponentClient<Database>(
-    {
-      cookies: {
-        get(name: string) {
-          return cookieGetter(name)
-        },
-        set(name: string, value: string, options: CookieOptions) {
-          cookieSetter(name, value, options)
-        },
-        remove(name: string, options: { path: string; domain?: string }) {
-          cookieSetter(name, "", { ...options, maxAge: 0 })
-        },
-      },
+    db: {
+      schema: "public",
     },
-    {
-      supabaseUrl: process.env.SUPABASE_URL,
-      supabaseKey: process.env.SUPABASE_ANON_KEY,
-      options: {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          detectSessionInUrl: false,
-          flowType: "pkce",
-        },
-        global: {
-          headers: {
-            "x-application-name": "wellness-dashboard-server",
-          },
-          fetch: (url, options = {}) => {
-            // Create a custom fetch with timeout
-            return fetchWithServerTimeout(url, options, timeout, options.retryOnError || false)
-          },
-        },
-        db: {
-          schema: "public",
-        },
-      },
-    },
-  )
+  })
 }
 
-/**
- * Execute a function with a pooled Supabase connection
- */
-export async function withPooledConnection<T>(
-  fn: (supabase: ReturnType<typeof createServerSupabaseClient>) => Promise<T>,
-): Promise<T> {
-  const supabase = createServerSupabaseClient()
-  try {
-    return await fn(supabase)
-  } catch (error) {
-    console.error("Error in withPooledConnection:", error)
-    throw error
-  }
-}
-
-/**
- * Get the current user from the server
- */
-export async function getServerUser() {
-  const supabase = createServerSupabaseClient()
-  const { data } = await supabase.auth.getUser()
-  return data.user
-}
-
-/**
- * Check if the user is authenticated on the server
- */
-export async function isAuthenticated() {
-  const user = await getServerUser()
-  return !!user
-}
-
-/**
- * Custom fetch implementation with timeout for server
- */
+// Custom fetch implementation with timeout for server
 async function fetchWithServerTimeout(
   url: RequestInfo | URL,
   options: RequestInit = {},
@@ -267,7 +117,7 @@ async function fetchWithServerTimeout(
       if (retry && retryCount < MAX_RETRIES) {
         // Calculate backoff time - exponential with jitter
         const backoffTime = Math.min(1000 * Math.pow(2, retryCount), 10000) * (0.8 + Math.random() * 0.4)
-        debugLog(`Rate limited. Retrying in ${backoffTime}ms (attempt ${retryCount + 1})`)
+        console.log(`[Server] Rate limited. Retrying in ${backoffTime}ms (attempt ${retryCount + 1})`)
 
         // Wait for the backoff period
         await new Promise((resolve) => setTimeout(resolve, backoffTime))
@@ -295,7 +145,7 @@ async function fetchWithServerTimeout(
     ) {
       // Calculate backoff time - exponential with jitter
       const backoffTime = Math.min(1000 * Math.pow(2, retryCount), 10000) * (0.8 + Math.random() * 0.4)
-      debugLog(`Network error. Retrying in ${backoffTime}ms (attempt ${retryCount + 1})`)
+      console.log(`[Server] Network error. Retrying in ${backoffTime}ms (attempt ${retryCount + 1})`)
 
       // Wait for the backoff period
       await new Promise((resolve) => setTimeout(resolve, backoffTime))
@@ -306,4 +156,53 @@ async function fetchWithServerTimeout(
 
     throw error
   }
+}
+
+// Helper for custom cookie handlers (used in middleware and route handlers)
+export function createClient(
+  cookieGetter: (name: string) => string | undefined,
+  cookieSetter: (name: string, value: string, options: CookieOptions) => void,
+  options: {
+    retryOnError?: boolean
+    timeout?: number
+  } = {},
+) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+    throw new Error("Supabase URL and anon key are required")
+  }
+
+  // Calculate timeout with exponential backoff
+  const timeout = options.timeout || 10000
+
+  return createServerClient<Database>(process.env.SUPABASE_URL, process.env.SUPABASE_ANON_KEY, {
+    cookies: {
+      get(name: string) {
+        return cookieGetter(name)
+      },
+      set(name: string, value: string, options: CookieOptions) {
+        cookieSetter(name, value, options)
+      },
+      remove(name: string, options: { path: string; domain?: string }) {
+        cookieSetter(name, "", { ...options, maxAge: 0 })
+      },
+    },
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: false,
+      flowType: "pkce",
+    },
+    global: {
+      headers: {
+        "x-application-name": "wellness-dashboard-server",
+      },
+      fetch: (url, options = {}) => {
+        // Create a custom fetch with timeout
+        return fetchWithServerTimeout(url, options, timeout, options.retryOnError || false)
+      },
+    },
+    db: {
+      schema: "public",
+    },
+  })
 }

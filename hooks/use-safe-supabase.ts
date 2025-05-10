@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, useEffect, useCallback, useRef } from "react"
-import { getSupabaseClient, cleanupOrphanedClients } from "@/lib/supabase-client"
+import { getSupabaseClient } from "@/utils/supabase-client"
 import type { SupabaseClient } from "@supabase/supabase-js"
 import type { Database } from "@/types/database"
 
@@ -22,7 +22,7 @@ export function useSafeSupabase() {
         setIsLoading(true)
         setError(null)
 
-        const supabase = await getSupabaseClient()
+        const supabase = getSupabaseClient()
 
         if (isMounted.current) {
           setClient(supabase)
@@ -42,8 +42,6 @@ export function useSafeSupabase() {
     // Clean up function
     return () => {
       isMounted.current = false
-      // Clean up orphaned clients when component unmounts
-      cleanupOrphanedClients()
     }
   }, [])
 
@@ -54,7 +52,7 @@ export function useSafeSupabase() {
       setError(null)
 
       // Force a new client
-      const supabase = await getSupabaseClient({ forceNew: true })
+      const supabase = getSupabaseClient({ forceNew: true })
 
       if (isMounted.current) {
         setClient(supabase)
