@@ -94,3 +94,32 @@ export function resetSupabaseClient() {
 export function getCurrentClient(): SupabaseClient<Database> | null {
   return supabaseInstance
 }
+
+/**
+ * Alias for getSupabaseClient for backward compatibility
+ */
+export function getSupabaseSingleton(): SupabaseClient<Database> | Promise<SupabaseClient<Database>> {
+  return getSupabaseClient()
+}
+
+/**
+ * Alias for resetSupabaseClient for backward compatibility
+ */
+export function resetSupabaseSingleton(): void {
+  resetSupabaseClient()
+}
+
+/**
+ * Get debug information about the Supabase singleton
+ */
+export function getSupabaseSingletonDebugInfo(): {
+  hasInstance: boolean
+  isInitializing: boolean
+  hasInitPromise: boolean
+} {
+  return {
+    hasInstance: supabaseInstance !== null,
+    isInitializing,
+    hasInitPromise: initializationPromise !== null,
+  }
+}

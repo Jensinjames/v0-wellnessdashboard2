@@ -16,6 +16,23 @@ import { safeLog, safeError, safeWarn } from "@/utils/safe-console"
 // Create a dedicated logger for auth operations
 const authLogger = createLogger("Auth")
 
+/**
+ * Enable or disable auth debug mode
+ * @param enabled Whether to enable debug mode
+ */
+export function setAuthDebugMode(enabled: boolean): void {
+  if (typeof localStorage !== "undefined") {
+    if (enabled) {
+      localStorage.setItem("auth_debug_mode", "true")
+    } else {
+      localStorage.removeItem("auth_debug_mode")
+    }
+  }
+
+  // Update logger configuration
+  authLogger.setLevel(enabled ? "debug" : "warn")
+}
+
 // Define the shape of our auth context
 interface AuthContextType {
   user: User | null

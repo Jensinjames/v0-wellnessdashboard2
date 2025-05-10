@@ -78,3 +78,53 @@ export function isServer(): boolean {
 export function isClient(): boolean {
   return !isServer()
 }
+
+/**
+ * Get an environment variable with type safety
+ * @param key The environment variable key
+ * @param defaultValue Optional default value if the environment variable is not set
+ * @returns The environment variable value or the default value
+ */
+export function getEnvVariable<T = string>(key: string, defaultValue?: T): string | T | undefined {
+  // Check client-side env vars first
+  if (key.startsWith("NEXT_PUBLIC_") && clientEnv[key.replace("NEXT_PUBLIC_", "") as keyof typeof clientEnv]) {
+    return clientEnv[key.replace("NEXT_PUBLIC_", "") as keyof typeof clientEnv] as string
+  }
+
+  // Then check process.env
+  if (typeof process !== "undefined" && process.env && process.env[key]) {
+    return process.env[key] as string
+  }
+
+  // Fall back to default value
+  return defaultValue
+}
+
+/**
+ * Validate that all required environment variables are present
+ * @param requiredVars Array of required environment variable keys
+ * @returns Object with validation results
+ */
+export function validateRequiredEnvVars(requiredVars: string[]): {
+  valid: boolean
+  missing: string[]
+  values: Record<string, string | undefined>
+} {
+  const missing: string[] = []
+  const values: Record<string, string | undefined> = {}
+
+  for (const key of requiredVars) {
+    const value = getEnvVariable(key)
+    values[key] = value as string | undefined
+
+    if (value === undefined || value === "") {
+      missing.push(key)
+    }
+  }
+
+  return {
+    valid: missing.length === 0,
+    missing,
+    values,
+  }
+}
