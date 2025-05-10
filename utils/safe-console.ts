@@ -1,30 +1,25 @@
 /**
- * Safe console utilities that only run when process exists
+ * Safe console utilities that don't reference process.env directly
  */
+import { ENV, logger } from "./env-checker"
 
 export function safeWarn(message: string, ...args: any[]): void {
-  if (typeof process !== "undefined" && process.env.NODE_ENV !== "production") {
-    console.warn(message, ...args)
-  }
+  logger.warn(message, ...args)
 }
 
 export function safeLog(message: string, ...args: any[]): void {
-  if (typeof process !== "undefined" && process.env.NODE_ENV !== "production") {
-    console.log(message, ...args)
-  }
+  logger.log(message, ...args)
 }
 
 export function safeError(message: string, ...args: any[]): void {
-  if (typeof process !== "undefined" && process.env.NODE_ENV !== "production") {
-    console.error(message, ...args)
-  }
+  logger.error(message, ...args)
 }
 
 /**
- * Safe development-only logging that only runs in development mode
+ * Safe development-only logging
  */
 export function safeDevLog(message: string, ...args: any[]): void {
-  if (typeof process !== "undefined" && process.env.NODE_ENV === "development") {
-    console.log(`[DEV] ${message}`, ...args)
+  if (ENV.isDevelopment) {
+    logger.log(`[DEV] ${message}`, ...args)
   }
 }
