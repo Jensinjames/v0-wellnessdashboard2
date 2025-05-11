@@ -1,196 +1,389 @@
+/**
+ * Sign Up Form Component
+ * Handles user registration with email verification
+ */
 "use client"
 
-import { useState } from "react"
+import type React from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { z } from "zod"
-import { useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
-import { Eye, EyeOff, Loader2, AlertCircle } from "lucide-react"
-
+import { useAuth } from "@/context/auth-context"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Alert, AlertDescription } from "@/components/ui/alert"
-import { useAuth } from "@/context/auth-context"
-import { createLogger } from "@/utils/logger"
-
-// Create a dedicated logger for the sign-up form
-const logger = createLogger("SignUpForm")
-
-// Define the form schema
-const formSchema = z
-  .object({
-    email: z.string().email("Please enter a valid email address"),
-    password: z.string().min(8, "Password must be at least 8 characters"),
-    confirmPassword: z.string().min(8, "Password must be at least 8 characters"),
-  })
-  .refine((data) => data.password === data.confirmPassword, {
-    message: "Passwords do not match",
-    path: ["confirmPassword"],
-  })
-
-type FormData = z.infer<typeof formSchema>
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
+import { AlertTriangle, RefreshCw, Mail, CheckCircle, ArrowRight, Info, Shield } from "lucide-react"
+import { handleAuthError, getFieldErrors } from "@/utils/auth-error-handler"
+import { validateEmail, validatePasswordStrength } from "@/utils/auth-validation"
 
 export function SignUpForm() {
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
+  const [confirmPassword, setConfirmPassword] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [fieldErrors, setFieldErrors] = useState<{ email?: string; password?: string }>({})
+  const [signUpSuccess, setSignUpSuccess] = useState(false)
+  const [emailVerificationSent, setEmailVerificationSent] = useState(false)
+  const [isResendingVerification, setIsResendingVerification] = useState(false)
+  const [passwordStrength, setPasswordStrength] = useState<"weak" | "medium" | "strong" | null>(null)
   const { signUp } = useAuth()
   const router = useRouter()
-  const [isLoading, setIsLoading] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
-  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState<string | null>(null)
 
-  // Initialize the form
-  const {
-    register,
-    handleSubmit,
-    formState: { errors },
-  } = useForm<FormData>({
-    resolver: zodResolver(formSchema),
-    defaultValues: {
-      email: "",
-      password: "",
-      confirmPassword: "",
-    },
-  })
-
-  // Handle form submission
-  const onSubmit = async (data: FormData) => {
-    try {
-      setIsLoading(true)
+  // Clear errors when inputs change
+  useEffect(() => {
+    if (error || Object.keys(fieldErrors).length > 0) {
       setError(null)
-      setSuccess(null)
+      setFieldErrors({})
+    }
+  }, [email, password, confirmPassword, error, fieldErrors])
 
-      // Log the attempt (without sensitive data)
-      logger.info("Attempting sign-up", {
-        emailProvided: !!data.email,
-        passwordProvided: !!data.password,
-      })
+  // Check password strength when password changes
+  useEffect(() => {
+    if (!password) {
+      setPasswordStrength(null)
+      return
+    }
 
-      // Call the signUp function from the auth context
-      const { error: signUpError } = await signUp(data.email, data.password)
+    const { score } = validatePasswordStrength(password)
 
-      if (signUpError) {
-        setError(signUpError.message || "An error occurred during sign up")
+    if (score < 3) setPasswordStrength("weak")
+    else if (score < 5) setPasswordStrength("medium")
+    else setPasswordStrength("strong")
+  }, [password])
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setIsLoading(true)
+    setError(null)
+    setFieldErrors({})
+    setSignUpSuccess(false)
+    setEmailVerificationSent(false)
+
+    // Validate inputs
+    const validationErrors: { email?: string; password?: string } = {}
+
+    if (!email) {
+      validationErrors.email = "Email is required"
+    } else if (!validateEmail(email)) {
+      validationErrors.email = "Please enter a valid email address"
+    }
+
+    if (!password) {
+      validationErrors.password = "Password is required"
+    } else if (password.length < 8) {
+      validationErrors.password = "Password must be at least 8 characters"
+    }
+
+    // Custom validation for password confirmation
+    if (password !== confirmPassword) {
+      validationErrors.password = "Passwords do not match"
+    }
+
+    // Check if password is too weak
+    if (passwordStrength === "weak") {
+      validationErrors.password =
+        "Please use a stronger password with at least 8 characters, including uppercase, lowercase, numbers, and special characters"
+    }
+
+    if (Object.keys(validationErrors).length > 0) {
+      setFieldErrors(validationErrors)
+      setIsLoading(false)
+      return
+    }
+
+    // Check if we're online before attempting sign-up
+    if (typeof navigator !== "undefined" && !navigator.onLine) {
+      const errorInfo = handleAuthError({ message: "You appear to be offline" }, { operation: "sign-up" })
+      setError(errorInfo.message)
+      setIsLoading(false)
+      return
+    }
+
+    try {
+      const result = await signUp({ email, password })
+
+      if (result.fieldErrors) {
+        setFieldErrors(result.fieldErrors)
         setIsLoading(false)
         return
       }
 
-      // Show success message
-      setSuccess("Your account has been created! Please check your email for verification instructions.")
+      if (result.error) {
+        // Use our enhanced error handler
+        const errorInfo = handleAuthError(result.error, { operation: "sign-up" })
 
-      // Redirect to sign-in page after a delay
+        // Set the user-friendly error message
+        setError(errorInfo.message)
+
+        // Check for field-specific errors
+        const validationErrors = getFieldErrors(result.error)
+        if (Object.keys(validationErrors).length > 0) {
+          setFieldErrors(validationErrors)
+        }
+
+        setIsLoading(false)
+        return
+      }
+
+      // If email verification was sent, show the verification sent state
+      if (result.emailVerificationSent) {
+        setEmailVerificationSent(true)
+        setSignUpSuccess(true)
+        setIsLoading(false)
+        return
+      }
+
+      // If we get here, the sign-up was successful but no verification email was sent
+      setSignUpSuccess(true)
+
+      // Show success message for a moment before redirecting
       setTimeout(() => {
-        router.push("/auth/sign-in")
-      }, 3000)
-    } catch (err) {
-      logger.error("Unexpected error during sign-up:", err)
-      setError("An unexpected error occurred. Please try again.")
+        router.push("/auth/verify-email")
+      }, 1500)
+    } catch (err: any) {
+      const errorInfo = handleAuthError(err, { operation: "sign-up" })
+      setError(errorInfo.message)
+      setIsLoading(false)
+    } finally {
       setIsLoading(false)
     }
   }
 
+  const handleResendVerification = async () => {
+    if (!email) {
+      setError("Please enter your email address to resend verification")
+      return
+    }
+
+    setIsResendingVerification(true)
+    setError(null)
+
+    try {
+      // Use the sign-up function to resend verification
+      const result = await signUp({ email, password: "temporary-password" })
+
+      if (result.error) {
+        // If the error indicates the user already exists, that's actually good in this context
+        if (result.error.message?.includes("already exists")) {
+          setEmailVerificationSent(true)
+          setError(null)
+        } else {
+          const errorInfo = handleAuthError(result.error, { operation: "resend-verification" })
+          setError(`Failed to resend verification: ${errorInfo.message}`)
+        }
+      } else {
+        setEmailVerificationSent(true)
+      }
+    } catch (err: any) {
+      const errorInfo = handleAuthError(err, { operation: "resend-verification" })
+      setError(`Failed to resend verification: ${errorInfo.message}`)
+    } finally {
+      setIsResendingVerification(false)
+    }
+  }
+
+  // Get password strength color
+  const getPasswordStrengthColor = () => {
+    switch (passwordStrength) {
+      case "weak":
+        return "text-red-500"
+      case "medium":
+        return "text-amber-500"
+      case "strong":
+        return "text-green-500"
+      default:
+        return "text-gray-500"
+    }
+  }
+
   return (
-    <div className="grid gap-6">
-      <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-        <div className="space-y-2">
-          <Label htmlFor="email">Email</Label>
-          <Input
-            id="email"
-            type="email"
-            placeholder="name@example.com"
-            autoCapitalize="none"
-            autoComplete="email"
-            autoCorrect="off"
-            disabled={isLoading}
-            {...register("email")}
-          />
-          {errors.email && <p className="text-sm text-red-500">{errors.email.message}</p>}
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="password">Password</Label>
-          <div className="relative">
+    <form onSubmit={handleSubmit} className="space-y-4" aria-labelledby="sign-up-heading">
+      <h2 id="sign-up-heading" className="sr-only">
+        Sign up form
+      </h2>
+
+      {error && (
+        <Alert className="rounded-md bg-red-50 p-4 text-sm text-red-700" role="alert" aria-live="assertive">
+          <AlertTriangle className="h-4 w-4 mr-2" aria-hidden="true" />
+          <AlertTitle>Sign up failed</AlertTitle>
+          <AlertDescription>{error}</AlertDescription>
+        </Alert>
+      )}
+
+      {emailVerificationSent && (
+        <Alert className="mb-4 bg-blue-50" role="status" aria-live="polite">
+          <Mail className="h-4 w-4" aria-hidden="true" />
+          <AlertTitle>Verification Email Sent</AlertTitle>
+          <AlertDescription>
+            <p className="mb-2">
+              We've sent a verification email to <strong>{email}</strong>. Please check your inbox and click the
+              verification link to complete your registration.
+            </p>
+            <p className="mb-2">
+              If you don't see the email, please check your spam folder or click the button below to resend.
+            </p>
+            <div className="mt-4 flex flex-col sm:flex-row gap-3">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={handleResendVerification}
+                disabled={isResendingVerification}
+              >
+                {isResendingVerification ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                    Sending...
+                  </>
+                ) : (
+                  <>
+                    <Mail className="h-4 w-4 mr-2" aria-hidden="true" />
+                    Resend Verification
+                  </>
+                )}
+              </Button>
+              <Button type="button" size="sm" onClick={() => router.push("/auth/sign-in")}>
+                <ArrowRight className="h-4 w-4 mr-2" aria-hidden="true" />
+                Go to Sign In
+              </Button>
+            </div>
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {signUpSuccess && !emailVerificationSent && (
+        <Alert className="mb-4 bg-green-50" role="status" aria-live="polite">
+          <CheckCircle className="h-4 w-4" aria-hidden="true" />
+          <AlertTitle>Sign-up Successful</AlertTitle>
+          <AlertDescription>
+            Your account has been created successfully. You'll be redirected to the verification page.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      {!emailVerificationSent && (
+        <>
+          <div className="space-y-2">
+            <Label htmlFor="email" id="email-label">
+              Email
+            </Label>
+            <Input
+              id="email"
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              required
+              disabled={isLoading || signUpSuccess}
+              aria-labelledby="email-label"
+              aria-required="true"
+              autoComplete="email"
+              aria-invalid={!!fieldErrors.email}
+              aria-errormessage={fieldErrors.email ? "email-error" : undefined}
+              className={fieldErrors.email ? "border-red-500" : ""}
+            />
+            {fieldErrors.email && (
+              <p id="email-error" className="mt-1 text-sm text-red-600">
+                {fieldErrors.email}
+              </p>
+            )}
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="password" id="password-label" className="flex items-center justify-between">
+              <span>Password</span>
+              {passwordStrength && (
+                <span className={`text-xs font-medium ${getPasswordStrengthColor()}`}>
+                  <Shield className="h-3 w-3 inline mr-1" />
+                  {passwordStrength.charAt(0).toUpperCase() + passwordStrength.slice(1)}
+                </span>
+              )}
+            </Label>
             <Input
               id="password"
-              type={showPassword ? "text" : "password"}
-              placeholder="••••••••"
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              required
+              disabled={isLoading || signUpSuccess}
+              aria-labelledby="password-label"
+              aria-required="true"
               autoComplete="new-password"
-              disabled={isLoading}
-              {...register("password")}
+              aria-describedby="password-requirements"
+              aria-invalid={!!fieldErrors.password}
+              aria-errormessage={fieldErrors.password ? "password-error" : undefined}
+              className={fieldErrors.password ? "border-red-500" : ""}
             />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="absolute right-2 top-1/2 -translate-y-1/2 px-2"
-              onClick={() => setShowPassword(!showPassword)}
-              disabled={isLoading}
-            >
-              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
-            </Button>
+            <div id="password-requirements" className="text-xs text-gray-500 flex items-start gap-1">
+              <Info className="h-3 w-3 mt-0.5 flex-shrink-0" />
+              <span>
+                Password should be at least 8 characters long and include uppercase, lowercase, numbers, and special
+                characters for better security.
+              </span>
+            </div>
+            {fieldErrors.password && (
+              <p id="password-error" className="mt-1 text-sm text-red-600">
+                {fieldErrors.password}
+              </p>
+            )}
           </div>
-          {errors.password && <p className="text-sm text-red-500">{errors.password.message}</p>}
-        </div>
-        <div className="space-y-2">
-          <Label htmlFor="confirmPassword">Confirm Password</Label>
-          <div className="relative">
+
+          <div className="space-y-2">
+            <Label htmlFor="confirm-password" id="confirm-password-label">
+              Confirm Password
+            </Label>
             <Input
-              id="confirmPassword"
-              type={showConfirmPassword ? "text" : "password"}
-              placeholder="••••••••"
+              id="confirm-password"
+              type="password"
+              value={confirmPassword}
+              onChange={(e) => setConfirmPassword(e.target.value)}
+              required
+              disabled={isLoading || signUpSuccess}
+              aria-labelledby="confirm-password-label"
+              aria-required="true"
               autoComplete="new-password"
-              disabled={isLoading}
-              {...register("confirmPassword")}
+              aria-invalid={password !== confirmPassword && confirmPassword !== ""}
+              className={password !== confirmPassword && confirmPassword !== "" ? "border-red-500" : ""}
             />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="absolute right-2 top-1/2 -translate-y-1/2 px-2"
-              onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-              disabled={isLoading}
-            >
-              {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-              <span className="sr-only">{showConfirmPassword ? "Hide password" : "Show password"}</span>
-            </Button>
+            {password !== confirmPassword && confirmPassword !== "" && (
+              <p className="mt-1 text-sm text-red-600">Passwords do not match</p>
+            )}
           </div>
-          {errors.confirmPassword && <p className="text-sm text-red-500">{errors.confirmPassword.message}</p>}
-        </div>
 
-        {error && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4 mr-2" />
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
-        )}
-
-        {success && (
-          <Alert variant="default" className="bg-green-50 border-green-200">
-            <AlertCircle className="h-4 w-4 mr-2 text-green-500" />
-            <AlertDescription>{success}</AlertDescription>
-          </Alert>
-        )}
-
-        <Button type="submit" className="w-full" disabled={isLoading}>
-          {isLoading ? (
-            <>
-              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-              Signing up...
-            </>
-          ) : (
-            "Sign Up"
-          )}
-        </Button>
-      </form>
+          <Button
+            type="submit"
+            className="w-full"
+            disabled={isLoading || signUpSuccess}
+            aria-busy={isLoading}
+            aria-live="polite"
+          >
+            {isLoading ? (
+              <>
+                <RefreshCw className="h-4 w-4 mr-2 animate-spin" aria-hidden="true" />
+                Signing up...
+              </>
+            ) : signUpSuccess ? (
+              <>
+                <CheckCircle className="h-4 w-4 mr-2" aria-hidden="true" />
+                Success!
+              </>
+            ) : (
+              "Sign up"
+            )}
+          </Button>
+        </>
+      )}
 
       <div className="text-center text-sm">
         Already have an account?{" "}
-        <Link href="/auth/sign-in" className="text-primary hover:underline">
+        <Link
+          href="/auth/sign-in"
+          className="text-blue-600 hover:text-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 rounded"
+        >
           Sign in
         </Link>
       </div>
-    </div>
+    </form>
   )
 }

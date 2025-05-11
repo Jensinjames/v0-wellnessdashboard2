@@ -15,8 +15,7 @@ export type AuthContextType = {
   user: User | null
   session: Session | null
   isLoading: boolean
-  signIn: (email: string, password: string) => Promise<{ error: AuthError | null; data?: { session: Session | null } }>
-  bypassSignIn: (email: string) => Promise<{ error: AuthError | null; data?: { session: Session | null } }>
+  signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>
   signUp: (email: string, password: string) => Promise<{ error: AuthError | null }>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<{ error: AuthError | null }>
@@ -26,20 +25,7 @@ export type AuthContextType = {
 }
 
 // Create the context
-export const AuthContext = createContext<AuthContextType | undefined>(undefined)
-
-// Helper function to check if an error is a database grant error
-function isDatabaseGrantError(error: any): boolean {
-  if (!error || !error.message) return false
-
-  const errorMessage = error.message.toLowerCase()
-  return (
-    errorMessage.includes("database error granting") ||
-    errorMessage.includes("granting user") ||
-    errorMessage.includes("permission denied") ||
-    errorMessage.includes("database permission error")
-  )
-}
+const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
 // Provider component
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -174,54 +160,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (result.error) {
         // Check for database grant errors
-        if (isDatabaseGrantError(result.error)) {
+        if (
+          result.error.message?.includes("Database error granting") ||
+          result.error.message?.includes("database error") ||
+          result.error.message?.includes("granting user undefined")
+        ) {
           logger.error("Database grant error during sign-in:", result.error)
 
-          // Try to fix database permissions via API
-          try {
-            await fetch("/api/database/fix-permissions", {
-              method: "POST",
-              headers: {
-                "Content-Type": "application/json",
-              },
-            })
+          // Try to recover by resetting the client and trying again
+          resetSupabaseClient()
 
-            // Reset the client and try again
-            resetSupabaseClient()
-
-            // Try signing in again
-            const retryResult = await supabase.auth.signInWithPassword({
-              email,
-              password,
-            })
-
-            if (!retryResult.error) {
-              return retryResult
-            }
-
-            // If we still have an error, return it with a more user-friendly message
-            if (isDatabaseGrantError(retryResult.error)) {
-              return {
-                error: {
-                  ...retryResult.error,
-                  message: "Database error granting user",
-                } as AuthError,
-                data: retryResult.data,
-              }
-            }
-
-            return retryResult
-          } catch (fixError) {
-            logger.error("Error fixing permissions:", fixError)
-
-            // Return the original error with a more user-friendly message
-            return {
-              error: {
-                ...result.error,
-                message: "Database error granting user",
-              } as AuthError,
-              data: result.data,
-            }
+          // Return a more user-friendly error
+          return {
+            error: {
+              ...result.error,
+              message: "A database permission error occurred. Please try again or contact support.",
+            } as AuthError,
           }
         }
 
@@ -231,58 +185,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       return result
     } catch (error) {
       logger.error("Unexpected error during sign-in:", error)
-      return { error: error as AuthError }
-    }
-  }, [])
-
-  // Bypass authentication method for emergency access
-  const bypassSignIn = useCallback(async (email: string) => {
-    logger.info("Using bypass sign-in for emergency access", { email: email.substring(0, 3) + "..." })
-
-    try {
-      // Create a minimal user object for emergency access
-      const emergencyUser: User = {
-        id: "emergency-access",
-        app_metadata: {},
-        user_metadata: { email },
-        aud: "authenticated",
-        created_at: new Date().toISOString(),
-        email: email,
-        email_confirmed_at: new Date().toISOString(),
-        phone: "",
-        confirmed_at: new Date().toISOString(),
-        last_sign_in_at: new Date().toISOString(),
-        role: "authenticated",
-        updated_at: new Date().toISOString(),
-      }
-
-      // Create a minimal session
-      const emergencySession: Session = {
-        access_token: "emergency-access-token",
-        token_type: "bearer",
-        expires_in: 3600,
-        expires_at: Math.floor(Date.now() / 1000) + 3600,
-        refresh_token: "",
-        user: emergencyUser,
-      }
-
-      // Set the emergency user and session
-      setUser(emergencyUser)
-      setSession(emergencySession)
-
-      // Store emergency access info in localStorage
-      localStorage.setItem(
-        "emergency_access",
-        JSON.stringify({
-          email,
-          timestamp: Date.now(),
-        }),
-      )
-
-      logger.info("Emergency access granted")
-      return { data: { session: emergencySession } }
-    } catch (error) {
-      logger.error("Error in bypass sign-in:", error)
       return { error: error as AuthError }
     }
   }, [])
@@ -309,16 +211,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     logger.info("Signing out user")
 
     try {
-      // Check if we're in emergency access mode
-      const emergencyAccess = localStorage.getItem("emergency_access")
-      if (emergencyAccess) {
-        localStorage.removeItem("emergency_access")
-        setUser(null)
-        setSession(null)
-        router.push("/auth/sign-in")
-        return
-      }
-
       const supabase = getSupabaseClient()
       await supabase.auth.signOut()
 
@@ -332,7 +224,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setSession(null)
       resetSupabaseClient()
     }
-  }, [router])
+  }, [])
 
   const resetPassword = useCallback(async (email: string) => {
     logger.info("Resetting password", { email: email.substring(0, 3) + "..." })
@@ -384,7 +276,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       session,
       isLoading,
       signIn,
-      bypassSignIn,
       signUp,
       signOut,
       resetPassword,
@@ -392,19 +283,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       refreshProfile,
       getClientInfo,
     }),
-    [
-      user,
-      session,
-      isLoading,
-      signIn,
-      bypassSignIn,
-      signUp,
-      signOut,
-      resetPassword,
-      updatePassword,
-      refreshProfile,
-      getClientInfo,
-    ],
+    [user, session, isLoading, signIn, signUp, signOut, resetPassword, updatePassword, refreshProfile, getClientInfo],
   )
 
   return <AuthContext.Provider value={contextValue}>{children}</AuthContext.Provider>
@@ -417,4 +296,10 @@ export function useAuth() {
     throw new Error("useAuth must be used within an AuthProvider")
   }
   return context
+}
+
+// Export for backward compatibility
+export function setAuthDebugMode(): void {
+  // This function is kept for backward compatibility but does nothing now
+  return
 }

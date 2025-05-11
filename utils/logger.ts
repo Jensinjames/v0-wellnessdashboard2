@@ -1,3 +1,7 @@
+/**
+ * Logger utility for consistent logging across the application
+ */
+
 // Define log levels
 export enum LogLevel {
   DEBUG = 0,
@@ -21,50 +25,175 @@ export interface Logger {
   error: (message: string, ...args: any[]) => void
 }
 
-// Get current log level from environment or default to INFO
-const getCurrentLogLevel = (): LogLevel => {
-  const envLevel =
-    typeof window !== "undefined" ? window.localStorage.getItem("log_level") : process.env.NEXT_PUBLIC_DEBUG_LEVEL
+// Define LogEntry interface
+export interface LogEntry {
+  timestamp: number
+  level: LogLevel
+  module: string
+  message: string
+  data?: any
+  error?: any
+  context?: any
+}
 
-  switch (envLevel) {
-    case "debug":
-      return LogLevel.DEBUG
-    case "info":
-      return LogLevel.INFO
-    case "warn":
-      return LogLevel.WARN
-    case "error":
-      return LogLevel.ERROR
-    default:
-      return LogLevel.INFO
-  }
+// Current log level (can be changed at runtime)
+let currentLogLevel: LogLevel = LogLevel.INFO
+
+// In-memory log storage
+const logEntries: LogEntry[] = []
+const MAX_LOG_ENTRIES = 200
+
+// Check if the current level allows the specified level
+function shouldLog(level: LogLevel): boolean {
+  return level >= currentLogLevel
+}
+
+// Format the log message with timestamp and module name
+function formatLogMessage(module: string, level: LogLevel, message: string): string {
+  const timestamp = new Date().toISOString()
+  // Use the LOG_LEVEL_NAMES mapping to get the string representation of the level
+  const levelName = LOG_LEVEL_NAMES[level] || "Unknown"
+  return `[${timestamp}] [${levelName}] [${module}] ${message}`
 }
 
 // Create a logger instance for a specific module
 export function createLogger(module: string): Logger {
   return {
-    debug: (message: string, ...args: any[]) => {
-      if (getCurrentLogLevel() <= LogLevel.DEBUG) {
-        console.debug(`[DEBUG] [${module}] ${message}`, ...args)
+    debug: (message: string, data: any = {}, error?: any) => {
+      if (shouldLog(LogLevel.DEBUG)) {
+        log(LogLevel.DEBUG, module, message, data, error)
       }
     },
-    info: (message: string, ...args: any[]) => {
-      if (getCurrentLogLevel() <= LogLevel.INFO) {
-        console.info(`[INFO] [${module}] ${message}`, ...args)
+    info: (message: string, data: any = {}) => {
+      if (shouldLog(LogLevel.INFO)) {
+        log(LogLevel.INFO, module, message, data)
       }
     },
-    warn: (message: string, ...args: any[]) => {
-      if (getCurrentLogLevel() <= LogLevel.WARN) {
-        console.warn(`[WARN] [${module}] ${message}`, ...args)
+    warn: (message: string, data: any = {}) => {
+      if (shouldLog(LogLevel.WARN)) {
+        log(LogLevel.WARN, module, message, data)
       }
     },
-    error: (message: string, ...args: any[]) => {
-      if (getCurrentLogLevel() <= LogLevel.ERROR) {
-        console.error(`[ERROR] [${module}] ${message}`, ...args)
+    error: (message: string, data: any = {}, error?: any) => {
+      if (shouldLog(LogLevel.ERROR)) {
+        log(LogLevel.ERROR, module, message, data, error)
       }
     },
   }
 }
 
-// Export a default logger instance
+// Internal log function
+function log(level: LogLevel, module: string, message: string, data: any = {}, error?: any) {
+  const timestamp = Date.now()
+  const logEntry: LogEntry = {
+    timestamp,
+    level,
+    module,
+    message,
+    data,
+    error,
+  }
+
+  // Add to log entries
+  logEntries.unshift(logEntry)
+  if (logEntries.length > MAX_LOG_ENTRIES) {
+    logEntries.pop()
+  }
+
+  // Store in local storage
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("log_entries", JSON.stringify(logEntries))
+    }
+  } catch (e) {
+    // If localStorage is full, clear older items
+    if (e instanceof DOMException && e.name === "QuotaExceededError") {
+      clearLogs()
+      try {
+        if (typeof localStorage !== "undefined") {
+          localStorage.setItem("log_entries", JSON.stringify(logEntries))
+        }
+      } catch (retryError) {
+        console.error("Error setting log item after clearing old logs:", retryError)
+      }
+    }
+  }
+
+  // Log to console
+  const formattedMessage = formatLogMessage(module, level, message)
+  switch (level) {
+    case LogLevel.DEBUG:
+      console.debug(formattedMessage, data, error)
+      break
+    case LogLevel.INFO:
+      console.info(formattedMessage, data)
+      break
+    case LogLevel.WARN:
+      console.warn(formattedMessage, data)
+      break
+    case LogLevel.ERROR:
+      console.error(formattedMessage, data, error)
+      break
+    default:
+      console.log(formattedMessage, data, error)
+  }
+}
+
+// Set the current log level
+export function setLogLevel(level: LogLevel): void {
+  currentLogLevel = level
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.setItem("log_level", level.toString())
+    }
+  } catch (e) {
+    console.error("Error setting log level in localStorage:", e)
+  }
+  console.info(`Log level set to ${LOG_LEVEL_NAMES[level]}`)
+}
+
+// Get the current log level
+export function getLogLevel(): LogLevel {
+  return currentLogLevel
+}
+
+// Get all log entries
+export function getLogEntries(): LogEntry[] {
+  try {
+    if (typeof localStorage !== "undefined") {
+      const storedLogs = localStorage.getItem("log_entries")
+      return storedLogs ? JSON.parse(storedLogs) : []
+    }
+    return logEntries
+  } catch (e) {
+    return logEntries
+  }
+}
+
+// Clear all logs
+export function clearLogs(): void {
+  logEntries.length = 0
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem("log_entries")
+    }
+  } catch (e) {
+    console.error("Error clearing logs from localStorage:", e)
+  }
+  console.info("Logs cleared")
+}
+
+// Initialize log level from local storage
+try {
+  if (typeof localStorage !== "undefined") {
+    const storedLevel = localStorage.getItem("log_level")
+    if (storedLevel) {
+      currentLogLevel = Number(storedLevel)
+    }
+  }
+} catch (e) {
+  // If the item isn't a valid cache item, skip it
+}
+
+// Export the logger instance
 export const logger = createLogger("App")
