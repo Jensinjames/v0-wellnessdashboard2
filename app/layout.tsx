@@ -1,38 +1,45 @@
 import type React from "react"
+import "@/app/globals.css"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
-import "./globals.css"
-import { AuthProvider } from "@/context/auth-context"
-import { ProfileCompletionProvider } from "@/context/profile-completion-context"
-import { EnvProvider } from "@/components/providers/env-provider"
-import { NavigationProvider } from "@/context/navigation-context"
-import { SupabaseProvider } from "@/components/providers/supabase-provider"
+import { ThemeProvider } from "@/components/theme-provider"
+import { EnhancedThemeProvider, ThemeToggle } from "@/components/enhanced-theme-provider"
+import { IconProvider } from "@/context/icon-context"
+import { ScreenReaderAnnouncerProvider } from "@/components/accessibility/screen-reader-announcer"
+import { StatusAnnouncerProvider } from "@/components/accessibility/status-announcer"
+import { SkipLink } from "@/components/accessibility/skip-link"
+import { Toaster } from "@/components/ui/toaster"
 
 const inter = Inter({ subsets: ["latin"] })
 
 export const metadata: Metadata = {
   title: "Wellness Dashboard",
-  description: "Track and manage your wellness goals",
+  description: "Track and manage your wellness activities",
     generator: 'v0.dev'
 }
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode
-}>) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
-        <EnvProvider>
-          <SupabaseProvider>
-            <AuthProvider>
-              <ProfileCompletionProvider>
-                <NavigationProvider>{children}</NavigationProvider>
-              </ProfileCompletionProvider>
-            </AuthProvider>
-          </SupabaseProvider>
-        </EnvProvider>
+        <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+          <EnhancedThemeProvider>
+            <IconProvider>
+              <StatusAnnouncerProvider>
+                <ScreenReaderAnnouncerProvider>
+                  <SkipLink />
+                  <div className="fixed top-4 right-4 z-50">
+                    <ThemeToggle />
+                  </div>
+                  <main id="main-content" className="min-h-screen bg-white dark:bg-slate-950">
+                    {children}
+                  </main>
+                  <Toaster />
+                </ScreenReaderAnnouncerProvider>
+              </StatusAnnouncerProvider>
+            </IconProvider>
+          </EnhancedThemeProvider>
+        </ThemeProvider>
       </body>
     </html>
   )
