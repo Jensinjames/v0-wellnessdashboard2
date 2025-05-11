@@ -26,7 +26,7 @@ function exampleUsage() {
   console.log(className3) // "bg-blue-500 text-white"
 
   // Color utility
-  const bgColor = colorCn("bg", "red", 500)
+  const bgColor = colorCn("bg", "red", "500")
   const textColor = colorCn("text", "blue-600")
   console.log(bgColor, textColor) // "bg-red-500 text-blue-600"
 

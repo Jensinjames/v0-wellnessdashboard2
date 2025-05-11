@@ -9,7 +9,9 @@ import { type ReactElement, Children, isValidElement } from "react"
  * @param element The React element to check
  * @returns True if the element is a button with only an icon child and no aria-label
  */
-export function isIconOnlyButtonWithoutAriaLabel(element: ReactElement): boolean {
+export function isIconOnlyButtonWithoutAriaLabel(
+  element: ReactElement<{ role?: string; children?: React.ReactNode; ["aria-label"]?: string }>
+): boolean {
   // Check if the element is a button
   if (element.type !== "button" && element.props?.role !== "button") {
     return false

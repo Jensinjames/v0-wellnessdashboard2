@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useWellness } from "@/context/wellness-context"
@@ -20,6 +20,8 @@ export function CategoryDetails() {
   const [comparisonPeriod, setComparisonPeriod] = useState<ComparisonPeriod>("current")
   const { categories, entries } = useWellness()
   const { announce } = useScreenReaderAnnouncer()
+  const [categoryData, setCategoryData] = useState<Record<string, any[]>>({})
+  const initialized = useRef(false)
 
   // Generate unique IDs
   const tabsId = useUniqueId("category-tabs")
@@ -33,46 +35,63 @@ export function CategoryDetails() {
   // Generate gradient IDs for each category
   const getCategoryGradientId = (categoryId: string, index: number) => `${categoryId}Gradient${index}`
 
-  // Generate data for visualization with comparison
-  const getCategoryData = (categoryId: string, period: ComparisonPeriod = "current") => {
-    const category = categories.find((cat) => cat.id === categoryId)
-    if (!category) return []
+  // Generate deterministic placeholder on server, real random data on client
+  useEffect(() => {
+    if (!initialized.current) {
+      const data: Record<string, any[]> = {}
+      enabledCategories.forEach((category) => {
+        data[category.id] = category.metrics.map((metric, index) => {
+          // Generate current value (random, client-only)
+          const currentValue = Math.random() * 100
+          let previousValue: number
+          let changePercent: number
+          switch (comparisonPeriod) {
+            case "week":
+              previousValue = currentValue * (0.7 + Math.random() * 0.6)
+              break
+            case "month":
+              previousValue = currentValue * (0.6 + Math.random() * 0.8)
+              break
+            case "quarter":
+              previousValue = currentValue * (0.5 + Math.random() * 1.0)
+              break
+            default:
+              previousValue = currentValue
+          }
+          changePercent = previousValue > 0 ? ((currentValue - previousValue) / previousValue) * 100 : 0
+          return {
+            name: metric.name,
+            value: currentValue,
+            previousValue: comparisonPeriod === "current" ? null : previousValue,
+            changePercent: comparisonPeriod === "current" ? null : changePercent,
+            goal: metric.defaultGoal,
+            id: metric.id,
+            color: getMetricColor(category.id, index),
+          }
+        })
+      })
+      setCategoryData(data)
+      initialized.current = true
+    }
+  }, [enabledCategories, comparisonPeriod])
 
-    return category.metrics.map((metric, index) => {
-      // Generate current value (in a real app, this would come from actual data)
-      const currentValue = Math.random() * 100
-
-      // Generate previous value based on period (in a real app, this would come from historical data)
-      let previousValue: number
-      let changePercent: number
-
-      switch (period) {
-        case "week":
-          previousValue = currentValue * (0.7 + Math.random() * 0.6) // 70-130% of current
-          break
-        case "month":
-          previousValue = currentValue * (0.6 + Math.random() * 0.8) // 60-140% of current
-          break
-        case "quarter":
-          previousValue = currentValue * (0.5 + Math.random() * 1.0) // 50-150% of current
-          break
-        default:
-          previousValue = currentValue
-      }
-
-      // Calculate change percentage
-      changePercent = previousValue > 0 ? ((currentValue - previousValue) / previousValue) * 100 : 0
-
-      return {
+  // Helper to get data (use placeholder on server, real on client)
+  const getCategoryDataSafe = (categoryId: string, period: ComparisonPeriod = "current") => {
+    if (typeof window === "undefined" || !categoryData[categoryId]) {
+      // SSR: deterministic placeholder
+      const category = categories.find((cat) => cat.id === categoryId)
+      if (!category) return []
+      return category.metrics.map((metric, index) => ({
         name: metric.name,
-        value: currentValue,
-        previousValue: period === "current" ? null : previousValue,
-        changePercent: period === "current" ? null : changePercent,
+        value: 0,
+        previousValue: period === "current" ? null : 0,
+        changePercent: period === "current" ? null : 0,
         goal: metric.defaultGoal,
         id: metric.id,
         color: getMetricColor(categoryId, index),
-      }
-    })
+      }))
+    }
+    return categoryData[categoryId]
   }
 
   // Get color based on category and index
@@ -209,7 +228,6 @@ export function CategoryDetails() {
         <Select
           value={comparisonPeriod}
           onValueChange={(value) => handleComparisonChange(value as ComparisonPeriod)}
-          id={selectId}
         >
           <SelectTrigger className="h-8 w-[180px]" aria-label="Select comparison period">
             <SelectValue placeholder="Select comparison period" />
@@ -270,7 +288,7 @@ export function CategoryDetails() {
                     {/* SVG Definitions for gradients */}
                     <svg width="0" height="0" className="absolute" aria-hidden="true">
                       <defs>
-                        {getCategoryData(category.id, comparisonPeriod).map((item, index) => (
+                        {getCategoryDataSafe(category.id, comparisonPeriod).map((item, index) => (
                           <linearGradient
                             key={`gradient-${item.id}`}
                             id={getCategoryGradientId(category.id, index)}
@@ -299,7 +317,7 @@ export function CategoryDetails() {
 
                           {/* Current values ring */}
                           <Pie
-                            data={getCategoryData(category.id, comparisonPeriod)}
+                            data={getCategoryDataSafe(category.id, comparisonPeriod)}
                             dataKey="value"
                             nameKey="name"
                             cx="50%"
@@ -310,7 +328,7 @@ export function CategoryDetails() {
                             startAngle={90}
                             endAngle={-270}
                           >
-                            {getCategoryData(category.id, comparisonPeriod).map((entry, index) => (
+                            {getCategoryDataSafe(category.id, comparisonPeriod).map((entry, index) => (
                               <Cell
                                 key={`cell-${index}`}
                                 fill={`url(#${getCategoryGradientId(category.id, index)})`}
@@ -324,7 +342,7 @@ export function CategoryDetails() {
                           {/* Previous period ring (only shown when comparison is active) */}
                           {comparisonPeriod !== "current" && (
                             <Pie
-                              data={getCategoryData(category.id, comparisonPeriod)}
+                              data={getCategoryDataSafe(category.id, comparisonPeriod)}
                               dataKey="previousValue"
                               nameKey="name"
                               cx="50%"
@@ -335,7 +353,7 @@ export function CategoryDetails() {
                               startAngle={90}
                               endAngle={-270}
                             >
-                              {getCategoryData(category.id, comparisonPeriod).map((entry, index) => (
+                              {getCategoryDataSafe(category.id, comparisonPeriod).map((entry, index) => (
                                 <Cell
                                   key={`prev-cell-${index}`}
                                   fill={entry.color}
@@ -349,7 +367,7 @@ export function CategoryDetails() {
 
                           {/* Goal ring */}
                           <Pie
-                            data={getCategoryData(category.id, comparisonPeriod)}
+                            data={getCategoryDataSafe(category.id, comparisonPeriod)}
                             dataKey="goal"
                             nameKey="name"
                             cx="50%"
@@ -361,7 +379,7 @@ export function CategoryDetails() {
                             endAngle={-270}
                             stroke="none"
                           >
-                            {getCategoryData(category.id, comparisonPeriod).map((entry, index) => (
+                            {getCategoryDataSafe(category.id, comparisonPeriod).map((entry, index) => (
                               <Cell
                                 key={`goal-cell-${index}`}
                                 fill={adjustColorShade(entry.color, 40)}
@@ -374,7 +392,7 @@ export function CategoryDetails() {
                     </div>
                     <VisuallyHidden>
                       <ul>
-                        {getCategoryData(category.id, comparisonPeriod).map((item) => (
+                        {getCategoryDataSafe(category.id, comparisonPeriod).map((item) => (
                           <li key={item.id}>
                             {item.name}: Current value {item.value.toFixed(1)},
                             {item.previousValue !== null && ` Previous value ${item.previousValue.toFixed(1)},`}
@@ -387,16 +405,13 @@ export function CategoryDetails() {
 
                   {/* Legend */}
                   <div className="mt-4 flex flex-wrap justify-center gap-2" aria-label="Chart legend" id={legendId}>
-                    {getCategoryData(category.id, comparisonPeriod).map((metric, index) => (
+                    {getCategoryDataSafe(category.id, comparisonPeriod).map((metric, index) => (
                       <button
                         key={`legend-${metric.id}`}
                         className={safeCn(
                           "flex items-center gap-1.5 px-2 py-1 rounded-md transition-colors",
-                          conditionalCn({
-                            condition: highlightedMetric === metric.id,
-                            true: "bg-muted ring-1 ring-ring",
-                            false: "hover:bg-muted/50",
-                          }),
+                          conditionalCn("bg-muted ring-1 ring-ring", highlightedMetric === metric.id),
+                          conditionalCn("hover:bg-muted/50", highlightedMetric !== metric.id)
                         )}
                         onClick={() => handleMetricHighlight(highlightedMetric === metric.id ? null : metric.id)}
                         aria-pressed={highlightedMetric === metric.id}
@@ -417,7 +432,7 @@ export function CategoryDetails() {
                               condition: highlightedMetric === metric.id,
                               true: "font-medium",
                               false: "text-muted-foreground",
-                            }),
+                            })
                           )}
                         >
                           {metric.name}
@@ -427,7 +442,7 @@ export function CategoryDetails() {
                   </div>
                 </div>
                 <div className="space-y-4">
-                  {getCategoryData(category.id, comparisonPeriod).map((metric) => (
+                  {getCategoryDataSafe(category.id, comparisonPeriod).map((metric) => (
                     <div
                       key={metric.id}
                       className={safeCn(

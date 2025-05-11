@@ -9,6 +9,7 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "@hello-pangea/dnd": "^18.0.1",
     "@hookform/resolvers": "latest",
     "@radix-ui/react-accordion": "latest",
     "@radix-ui/react-alert-dialog": "latest",
@@ -48,7 +49,6 @@
     "next": "15.2.4",
     "next-themes": "latest",
     "react": "^19",
-    "react-beautiful-dnd": "latest",
     "react-day-picker": "latest",
     "react-dom": "^19",
     "react-hook-form": "latest",

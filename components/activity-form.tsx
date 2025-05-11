@@ -49,19 +49,45 @@ export function ActivityForm() {
     setSubmitSuccess(false)
 
     // Validate form
-    const validationErrors = validateActivityForm({ category, duration, intensity: intensity[0], notes })
-    setErrors(validationErrors)
+    const validationResult = validateActivityForm({ category, duration, intensity: intensity[0], notes })
+    if (validationResult.valid) {
+      setErrors({})
+    } else {
+      // Assuming errors is an array of strings, map them to a keyed object
+      // If errors is already an object, just use it directly
+      if (Array.isArray(validationResult.errors)) {
+        // Example: assign each error to a generic key or parse error messages for keys
+        const errorObj: Record<string, string> = {}
+        validationResult.errors.forEach((err, idx) => {
+          errorObj[`error${idx + 1}`] = err
+        })
+        setErrors(errorObj)
+      } else if (validationResult.errors && typeof validationResult.errors === "object") {
+        setErrors(validationResult.errors)
+      } else {
+        setErrors({})
+      }
+    }
 
-    if (Object.keys(validationErrors).length === 0) {
+    if (Object.keys(errors).length === 0) {
       // Create new activity
+      // Calculate timeRemaining as an example: let's say user has 120 minutes allocated per day
+      const ALLOCATED_TIME = 120 // in minutes
+      const totalLogged = activities.reduce((sum, a) => sum + (a.duration || 0), 0)
+      const timeRemaining = Math.max(0, ALLOCATED_TIME - (totalLogged + duration))
+
+      // Optionally, round to nearest 15 minutes increment
+      const timeRemainingRounded = Math.ceil(timeRemaining / 15) * 15
+
       const newActivity: Activity = {
         id: generateId(),
         date: date.toISOString(),
-        category,
+        categoryId: category,
         duration,
         intensity: intensity[0],
         notes,
         reminder,
+        timeRemaining: timeRemainingRounded, // add this property if your Activity type allows
       }
 
       // Add to activities list
@@ -99,7 +125,7 @@ export function ActivityForm() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="space-y-2">
                 <Label htmlFor="activity-date">Date</Label>
-                <DatePicker date={date} setDate={setDate} id="activity-date" />
+                <DatePicker date={date} onChange={setDate} id="activity-date" />
               </div>
 
               <div className="space-y-2">

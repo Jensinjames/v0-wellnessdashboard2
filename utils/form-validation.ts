@@ -220,27 +220,33 @@ export const createDateSchema = (options: {
   let schema = z.date({
     required_error: `${options.fieldName} is required`,
     invalid_type_error: `${options.fieldName} must be a valid date`,
+  }).superRefine((date, ctx) => {
+    const now = new Date()
+    if (!options.allowFuture && date > now) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${options.fieldName} cannot be in the future`,
+      })
+    }
+    if (!options.allowPast && date < now) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${options.fieldName} cannot be in the past`,
+      })
+    }
+    if (options.minDate && date < options.minDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${options.fieldName} cannot be before ${options.minDate.toLocaleDateString()}`,
+      })
+    }
+    if (options.maxDate && date > options.maxDate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: `${options.fieldName} cannot be after ${options.maxDate.toLocaleDateString()}`,
+      })
+    }
   })
-
-  if (!options.allowFuture) {
-    schema = schema.refine((date) => date <= new Date(), { message: `${options.fieldName} cannot be in the future` })
-  }
-
-  if (!options.allowPast) {
-    schema = schema.refine((date) => date >= new Date(), { message: `${options.fieldName} cannot be in the past` })
-  }
-
-  if (options.minDate) {
-    schema = schema.refine((date) => date >= options.minDate!, {
-      message: `${options.fieldName} cannot be before ${options.minDate!.toLocaleDateString()}`,
-    })
-  }
-
-  if (options.maxDate) {
-    schema = schema.refine((date) => date <= options.maxDate!, {
-      message: `${options.fieldName} cannot be after ${options.maxDate!.toLocaleDateString()}`,
-    })
-  }
 
   return options.required ? schema : schema.optional()
 }
