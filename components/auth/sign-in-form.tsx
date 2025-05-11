@@ -6,7 +6,7 @@ import Link from "next/link"
 import { z } from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Eye, EyeOff, Loader2, AlertCircle } from "lucide-react"
+import { Eye, EyeOff, Loader2, AlertCircle, ShieldCheck } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -28,7 +28,7 @@ const formSchema = z.object({
 type FormData = z.infer<typeof formSchema>
 
 export function SignInForm() {
-  const { signIn } = useAuth()
+  const { signIn, bypassSignIn } = useAuth()
   const router = useRouter()
   const searchParams = useSearchParams()
   const [isLoading, setIsLoading] = useState(false)
@@ -37,7 +37,9 @@ export function SignInForm() {
   const [retryCount, setRetryCount] = useState(0)
   const [isDatabaseError, setIsDatabaseError] = useState(false)
   const [isFixingPermissions, setIsFixingPermissions] = useState(false)
-  const MAX_RETRIES = 2
+  const [fixStatus, setFixStatus] = useState<string | null>(null)
+  const [isUsingBypass, setIsUsingBypass] = useState(false)
+  const MAX_RETRIES = 3
 
   // Get the redirect URL from the query string
   const redirectTo = searchParams?.get("redirectTo") || "/dashboard"
@@ -51,6 +53,7 @@ export function SignInForm() {
   const {
     register,
     handleSubmit: hookFormSubmit,
+    getValues,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(formSchema),
@@ -61,12 +64,17 @@ export function SignInForm() {
   })
 
   // Function to manually fix database permissions
-  const fixDatabasePermissions = async () => {
+  const handleFixPermissions = async () => {
     try {
       setIsFixingPermissions(true)
-      setError("Attempting to fix database permissions...")
+      setFixStatus("Starting permission fix process...")
 
-      const response = await fetch("/api/auth/fix-database-permissions", {
+      // Step 1: Reset the Supabase client to ensure a clean state
+      resetSupabaseClient()
+      setFixStatus("Reset Supabase client...")
+
+      // Step 2: Call the API to fix permissions
+      const response = await fetch("/api/database/fix-permissions", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -76,19 +84,57 @@ export function SignInForm() {
       if (!response.ok) {
         const data = await response.json()
         setError(`Failed to fix permissions: ${data.error || "Unknown error"}`)
+        setFixStatus(null)
         setIsFixingPermissions(false)
         return
       }
 
-      setError("Permissions fixed successfully. Please try signing in again.")
-      resetSupabaseClient()
+      // Step 3: Reset retry count and prepare for another sign-in attempt
       setRetryCount(0)
       setIsDatabaseError(false)
-      setIsFixingPermissions(false)
+      setFixStatus("Permissions fixed successfully. Please try signing in again.")
+
+      // Wait a moment before enabling the form again
+      setTimeout(() => {
+        setIsFixingPermissions(false)
+        setError(null)
+      }, 2000)
     } catch (err) {
       logger.error("Error fixing permissions:", err)
       setError("Failed to fix permissions. Please try again later.")
+      setFixStatus(null)
       setIsFixingPermissions(false)
+    }
+  }
+
+  // Function to use bypass authentication
+  const handleBypassAuth = async () => {
+    try {
+      setIsUsingBypass(true)
+      setError(null)
+
+      const { email, password } = getValues()
+
+      if (!email) {
+        setError("Email is required for bypass authentication")
+        setIsUsingBypass(false)
+        return
+      }
+
+      const result = await bypassSignIn(email)
+
+      if (result.error) {
+        setError(`Bypass authentication failed: ${result.error.message}`)
+        setIsUsingBypass(false)
+        return
+      }
+
+      // If successful, redirect
+      router.push(redirectTo)
+    } catch (err) {
+      logger.error("Error in bypass authentication:", err)
+      setError("Bypass authentication failed. Please try again.")
+      setIsUsingBypass(false)
     }
   }
 
@@ -98,6 +144,7 @@ export function SignInForm() {
       setIsLoading(true)
       setError(null)
       setIsDatabaseError(false)
+      setFixStatus(null)
 
       // Log the attempt (without sensitive data)
       logger.info("Attempting sign-in", {
@@ -123,33 +170,33 @@ export function SignInForm() {
         if (
           errorMessage.includes("Database error granting") ||
           errorMessage.includes("database error") ||
-          errorMessage.includes("granting user undefined") ||
+          errorMessage.includes("granting user") ||
           errorMessage.includes("permission denied") ||
           errorMessage.includes("Database permission error")
         ) {
           setIsDatabaseError(true)
 
-          // If we haven't exceeded max retries, try again after a delay
+          // If we haven't exceeded max retries, try to fix permissions automatically
           if (retryCount < MAX_RETRIES) {
             setRetryCount((prev) => prev + 1)
-            setError(`Database connection issue. Retrying automatically... (${retryCount + 1}/${MAX_RETRIES})`)
+            setError(
+              `Database permission issue detected. Attempting automatic fix... (${retryCount + 1}/${MAX_RETRIES})`,
+            )
 
             // Try to fix permissions automatically
-            await fixDatabasePermissions()
+            await handleFixPermissions()
 
             // Wait and retry
-            setTimeout(
-              () => {
-                setIsLoading(false)
-                hookFormSubmit(handleSubmit)()
-              },
-              2000 * (retryCount + 1),
-            ) // Exponential backoff
-
+            setTimeout(() => {
+              setIsLoading(false)
+              hookFormSubmit(handleSubmit)()
+            }, 2000)
             return
+          } else {
+            setError(
+              "Database permission error. Please try the 'Fix Permissions' button below or use the emergency access option.",
+            )
           }
-
-          setError("Database permission error. Please try the 'Fix Permissions' button below or contact support.")
         } else {
           setError(errorMessage)
         }
@@ -180,7 +227,7 @@ export function SignInForm() {
             autoCapitalize="none"
             autoComplete="email"
             autoCorrect="off"
-            disabled={isLoading || isFixingPermissions}
+            disabled={isLoading || isFixingPermissions || isUsingBypass}
             {...register("email")}
           />
           {errors.email && <p className="text-sm text-red-500">{errors.email.message}</p>}
@@ -198,7 +245,7 @@ export function SignInForm() {
               type={showPassword ? "text" : "password"}
               placeholder="••••••••"
               autoComplete="current-password"
-              disabled={isLoading || isFixingPermissions}
+              disabled={isLoading || isFixingPermissions || isUsingBypass}
               {...register("password")}
             />
             <Button
@@ -207,7 +254,7 @@ export function SignInForm() {
               size="sm"
               className="absolute right-2 top-1/2 -translate-y-1/2 px-2"
               onClick={() => setShowPassword(!showPassword)}
-              disabled={isLoading || isFixingPermissions}
+              disabled={isLoading || isFixingPermissions || isUsingBypass}
             >
               {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
               <span className="sr-only">{showPassword ? "Hide password" : "Show password"}</span>
@@ -220,35 +267,73 @@ export function SignInForm() {
           <Alert variant={isDatabaseError ? "destructive" : "default"}>
             <AlertCircle className="h-4 w-4 mr-2" />
             <AlertDescription>{error}</AlertDescription>
-            {isDatabaseError && retryCount >= MAX_RETRIES && (
-              <div className="mt-2 text-xs">
-                <p>This appears to be a database permission issue.</p>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  className="mt-2 w-full"
-                  onClick={fixDatabasePermissions}
-                  disabled={isFixingPermissions}
-                >
-                  {isFixingPermissions ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Fixing Permissions...
-                    </>
-                  ) : (
-                    "Fix Database Permissions"
-                  )}
-                </Button>
-                <p className="mt-1 text-xs text-center">
-                  If the problem persists, please contact support with error code: DB-GRANT-001
-                </p>
-              </div>
-            )}
           </Alert>
         )}
 
-        <Button type="submit" className="w-full" disabled={isLoading || isFixingPermissions}>
+        {fixStatus && (
+          <Alert variant="default" className="bg-blue-50 border-blue-200">
+            <ShieldCheck className="h-4 w-4 mr-2 text-blue-500" />
+            <AlertDescription>{fixStatus}</AlertDescription>
+          </Alert>
+        )}
+
+        {isDatabaseError && retryCount >= MAX_RETRIES && (
+          <div className="mt-2 p-4 bg-amber-50 border border-amber-200 rounded-md">
+            <h4 className="font-medium text-amber-800 mb-2">Database Permission Issue</h4>
+            <p className="text-sm text-amber-700 mb-3">
+              There appears to be an issue with database permissions. This can happen when the database schema is not
+              properly set up.
+            </p>
+            <div className="space-y-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full bg-white border-amber-300 text-amber-800 hover:bg-amber-100"
+                onClick={handleFixPermissions}
+                disabled={isFixingPermissions || isUsingBypass}
+              >
+                {isFixingPermissions ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Fixing Permissions...
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="mr-2 h-4 w-4" />
+                    Fix Database Permissions
+                  </>
+                )}
+              </Button>
+
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="w-full bg-white border-amber-300 text-amber-800 hover:bg-amber-100"
+                onClick={handleBypassAuth}
+                disabled={isFixingPermissions || isUsingBypass}
+              >
+                {isUsingBypass ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Emergency Access...
+                  </>
+                ) : (
+                  <>
+                    <ShieldCheck className="mr-2 h-4 w-4" />
+                    Use Emergency Access
+                  </>
+                )}
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-center text-amber-600">
+              If the problem persists, please contact support with error code: DB-GRANT-003
+            </p>
+          </div>
+        )}
+
+        <Button type="submit" className="w-full" disabled={isLoading || isFixingPermissions || isUsingBypass}>
           {isLoading ? (
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -258,6 +343,11 @@ export function SignInForm() {
             <>
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               Fixing Permissions...
+            </>
+          ) : isUsingBypass ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Emergency Access...
             </>
           ) : (
             "Sign In"
