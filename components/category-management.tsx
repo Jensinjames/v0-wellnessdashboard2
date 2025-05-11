@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
-import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd"
+import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd"
 
 import { Button } from "@/components/ui/button"
 import { EnhancedButton } from "@/components/ui/enhanced-button"
@@ -97,7 +97,7 @@ export function CategoryManagement() {
   const [open, setOpen] = useState(false)
   const [editingCategory, setEditingCategory] = useState<WellnessCategory | null>(null)
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null)
-  const [showAddMetric, setShowAddMetric] = useState(false)
+  const [showAddMetric, setShowAddMetric] = useState<string>("")
   const [editingMetric, setEditingMetric] = useState<{ categoryId: string; metric: WellnessMetric } | null>(null)
   const [expandedItems, setExpandedItems] = useState<string[]>([])
   const statusRef = useRef<HTMLDivElement>(null)
@@ -607,7 +607,6 @@ export function CategoryManagement() {
                                 categoryId={category.id}
                                 icon={category.icon as any}
                                 label={category.name}
-                                className="mr-3"
                               />
 
                               <div className="flex-1">

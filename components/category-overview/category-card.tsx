@@ -87,7 +87,11 @@ export function CategoryCard({
           <CategoryIcon
             categoryId={category.id}
             icon={(iconPref?.name || category.icon) as any}
-            size={iconPref?.size || "sm"}
+            size={
+              ["xs", "sm", "md", "lg"].includes(iconPref?.size as string)
+                ? (iconPref?.size as "xs" | "sm" | "md" | "lg")
+                : "sm"
+            }
             label={category.name}
             color={baseColor}
             shade={shade}
