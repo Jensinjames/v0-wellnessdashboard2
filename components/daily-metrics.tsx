@@ -77,10 +77,10 @@ function MetricCard({ title, value, description, icon, color, trend, trendValue 
 function getTrendColor(trend: "up" | "down" | "neutral") {
   switch (trend) {
     case "up":
-      return "text-green-500"
+      return "text-green-700" // Darker green for better contrast
     case "down":
-      return "text-red-500"
+      return "text-red-700" // Darker red for better contrast
     default:
-      return "text-gray-500"
+      return "text-gray-700" // Darker gray for better contrast
   }
 }

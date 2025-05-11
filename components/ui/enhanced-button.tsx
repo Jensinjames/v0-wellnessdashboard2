@@ -104,7 +104,7 @@ const EnhancedButton = React.forwardRef<HTMLButtonElement, EnhancedButtonProps>(
     const buttonClasses = safeCn(buttonVariants({ variant, size, className }))
 
     return (
-      <Comp className={buttonClasses} ref={ref} disabled={props.disabled || loading} {...props}>
+      <Comp className={buttonClasses} ref={ref} disabled={props.disabled || loading} aria-busy={loading} {...props}>
         {loading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
 
         {!loading && icon && iconPosition === "left" && iconElement}

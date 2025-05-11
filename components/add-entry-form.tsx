@@ -7,7 +7,7 @@ import { useForm } from "react-hook-form"
 import { format } from "date-fns"
 import { CalendarIcon } from "lucide-react"
 import * as z from "zod"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useRef, useState, useMemo } from "react"
 
 import { Button } from "@/components/ui/button"
 import { Calendar } from "@/components/ui/calendar"
@@ -39,17 +39,38 @@ interface AddEntryFormProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   entryToEdit?: WellnessEntryData | null
+  categoryFilter?: string // Optional prop to filter by specific category
 }
 
-export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormProps) {
+export function AddEntryForm({ open, onOpenChange, entryToEdit, categoryFilter }: AddEntryFormProps) {
   const { categories, addEntry, updateEntry } = useWellness()
-  const enabledCategories = categories.filter((cat) => cat.enabled)
   const statusRef = useRef<HTMLDivElement>(null)
   const valueChangesRef = useRef<HTMLDivElement>(null)
-  const [activeTab, setActiveTab] = useState<string>(enabledCategories[0]?.id || "")
 
-  // Create a dynamic form schema based on categories
-  const createFormSchema = () => {
+  // Memoize filtered categories to prevent unnecessary recalculations
+  const enabledCategories = useMemo(() => categories.filter((cat) => cat.enabled), [categories])
+
+  // Filter categories if categoryFilter is provided
+  const filteredCategories = useMemo(() => {
+    return categoryFilter ? enabledCategories.filter((cat) => cat.id === categoryFilter) : enabledCategories
+  }, [enabledCategories, categoryFilter])
+
+  // Set initial active tab based on filtered categories
+  const initialActiveTab = useMemo(() => {
+    return filteredCategories.length > 0 ? filteredCategories[0].id : ""
+  }, [filteredCategories])
+
+  const [activeTab, setActiveTab] = useState<string>(initialActiveTab)
+
+  // Update active tab when filtered categories change
+  useEffect(() => {
+    if (filteredCategories.length > 0 && !filteredCategories.some((cat) => cat.id === activeTab)) {
+      setActiveTab(filteredCategories[0].id)
+    }
+  }, [filteredCategories, activeTab])
+
+  // Create a dynamic form schema based on categories - memoized to prevent recreation on every render
+  const formSchema = useMemo(() => {
     const schemaFields: Record<string, any> = {
       id: z.string().optional(),
       date: z.date({
@@ -58,7 +79,7 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
     }
 
     // Add fields for each metric in enabled categories
-    enabledCategories.forEach((category) => {
+    filteredCategories.forEach((category) => {
       category.metrics.forEach((metric) => {
         schemaFields[`${category.id}_${metric.id}`] = z
           .number()
@@ -69,13 +90,12 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
     })
 
     return z.object(schemaFields)
-  }
+  }, [filteredCategories])
 
-  const formSchema = createFormSchema()
   type FormValues = z.infer<typeof formSchema>
 
-  // Get default values from current entry or defaults
-  function getDefaultValues(): Partial<FormValues> {
+  // Get default values from current entry or defaults - memoized to prevent recreation on every render
+  const defaultValues = useMemo((): Partial<FormValues> => {
     const values: Record<string, any> = {
       date: new Date(),
     }
@@ -90,7 +110,7 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
       })
     } else {
       // Set default values for all metrics
-      enabledCategories.forEach((category) => {
+      filteredCategories.forEach((category) => {
         category.metrics.forEach((metric) => {
           values[`${category.id}_${metric.id}`] = metric.defaultValue
         })
@@ -98,40 +118,37 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
     }
 
     return values
-  }
+  }, [entryToEdit, filteredCategories])
 
-  // Initialize form
+  // Initialize form with memoized resolver and default values
   const form = useForm<FormValues>({
     resolver: zodResolver(formSchema),
-    defaultValues: getDefaultValues(),
+    defaultValues,
+    mode: "onChange",
   })
 
-  // Update form values when editing an entry
+  // Reset form when dialog opens or entry/categories change
   useEffect(() => {
-    if (entryToEdit) {
-      const values = getDefaultValues()
-      form.reset(values)
+    if (open) {
+      form.reset(defaultValues)
 
       // Announce to screen readers
       if (statusRef.current) {
-        statusRef.current.textContent = `Editing entry from ${format(new Date(entryToEdit.date), "MMMM d, yyyy")}`
-      }
-    } else {
-      form.reset(getDefaultValues())
-
-      // Announce to screen readers
-      if (statusRef.current && open) {
-        statusRef.current.textContent = "Adding a new wellness entry"
+        if (entryToEdit) {
+          statusRef.current.textContent = `Editing entry from ${format(new Date(entryToEdit.date), "MMMM d, yyyy")}`
+        } else {
+          statusRef.current.textContent = "Adding a new wellness entry"
+        }
       }
     }
-  }, [entryToEdit, form, open])
+  }, [open, entryToEdit, form, defaultValues])
 
   // Form submission handler
   function onSubmit(data: FormValues) {
     // Convert form data to entry format
     const metrics: WellnessEntryMetric[] = []
 
-    enabledCategories.forEach((category) => {
+    filteredCategories.forEach((category) => {
       category.metrics.forEach((metric) => {
         const fieldName = `${category.id}_${metric.id}`
         const value = data[fieldName as keyof FormValues] as number
@@ -169,6 +186,36 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
     onOpenChange(false)
   }
 
+  // If no categories are available, show a message
+  if (filteredCategories.length === 0) {
+    return (
+      <Dialog open={open} onOpenChange={onOpenChange}>
+        <DialogContent className="sm:max-w-[600px]">
+          <DialogHeader>
+            <DialogTitle>No Categories Available</DialogTitle>
+            <DialogDescription>You need to create and enable categories before you can add entries.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => onOpenChange(false)} aria-label="Close dialog">
+              Close
+            </Button>
+            <Button
+              onClick={() => {
+                onOpenChange(false)
+                // Navigate to categories page
+                window.location.href = "/categories"
+              }}
+              formContext="category"
+              aria-label="Manage categories"
+            >
+              Manage Categories
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    )
+  }
+
   return (
     <>
       {/* Hidden status announcer for screen readers */}
@@ -189,7 +236,13 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
           </DialogHeader>
 
           <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6" id="entry-form">
+            <form
+              onSubmit={form.handleSubmit(onSubmit)}
+              className="space-y-6"
+              id="entry-form"
+              data-category-filter={categoryFilter || "all"}
+              aria-label={entryToEdit ? "Edit wellness entry form" : "Add new wellness entry form"}
+            >
               {/* Date Picker */}
               <FormField
                 control={form.control}
@@ -223,10 +276,12 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
                           mode="single"
                           selected={field.value}
                           onSelect={(date) => {
-                            field.onChange(date)
-                            // Announce date change to screen readers
-                            if (valueChangesRef.current && date) {
-                              valueChangesRef.current.textContent = `Date set to ${format(date, "MMMM d, yyyy")}`
+                            if (date) {
+                              field.onChange(date)
+                              // Announce date change to screen readers
+                              if (valueChangesRef.current) {
+                                valueChangesRef.current.textContent = `Date set to ${format(date, "MMMM d, yyyy")}`
+                              }
                             }
                           }}
                           disabled={(date) => date > new Date() || date < new Date("1900-01-01")}
@@ -239,78 +294,112 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
                 )}
               />
 
-              {/* Category Tabs */}
-              <Tabs
-                defaultValue={enabledCategories[0]?.id}
-                className="w-full"
-                onValueChange={(value) => setActiveTab(value)}
-              >
-                <TabsList className="grid grid-cols-4 w-full">
-                  {enabledCategories.slice(0, 4).map((category) => (
-                    <TabsTrigger
-                      key={category.id}
-                      value={category.id}
-                      id={`tab-${category.id}`}
-                      className={conditionalCn({
-                        condition: activeTab === category.id,
-                        true: "font-medium",
-                        false: "",
-                      })}
-                    >
-                      {category.name}
-                    </TabsTrigger>
-                  ))}
-                </TabsList>
+              {/* Only show tabs if there's more than one category */}
+              {filteredCategories.length > 1 ? (
+                <Tabs value={activeTab} className="w-full" onValueChange={setActiveTab}>
+                  <TabsList className="grid grid-cols-4 w-full">
+                    {filteredCategories.slice(0, 4).map((category) => (
+                      <TabsTrigger
+                        key={category.id}
+                        value={category.id}
+                        id={`tab-${category.id}`}
+                        className={conditionalCn({
+                          condition: activeTab === category.id,
+                          true: "font-medium",
+                          false: "",
+                        })}
+                      >
+                        {category.name}
+                      </TabsTrigger>
+                    ))}
+                  </TabsList>
 
-                {/* Generate tab content for each category */}
-                {enabledCategories.map((category) => {
+                  {/* Generate tab content for each category */}
+                  {filteredCategories.map((category) => {
+                    const categoryColor = getCategoryColorKey(category.id)
+
+                    return (
+                      <TabsContent
+                        key={category.id}
+                        value={category.id}
+                        className="space-y-4 pt-4"
+                        id={`tabpanel-${category.id}`}
+                      >
+                        <div
+                          className={safeCn(
+                            "p-4 rounded-md space-y-4 border",
+                            colorCn("bg", categoryColor, "50", { dark: `${categoryColor}-950/20` }),
+                            "border-slate-200 dark:border-slate-800",
+                          )}
+                        >
+                          <h3
+                            className={safeCn(
+                              "font-medium",
+                              colorCn("text", categoryColor, "800", { dark: `${categoryColor}-300` }),
+                            )}
+                          >
+                            {category.name} Activities
+                          </h3>
+
+                          {/* Generate form fields for each metric in the category */}
+                          {category.metrics.map((metric) => (
+                            <MetricEntryField
+                              key={`${category.id}_${metric.id}`}
+                              category={category}
+                              metric={metric}
+                              form={form}
+                              valueChangesRef={valueChangesRef}
+                            />
+                          ))}
+                        </div>
+                      </TabsContent>
+                    )
+                  })}
+                </Tabs>
+              ) : (
+                // If there's only one category, show it directly without tabs
+                filteredCategories.map((category) => {
                   const categoryColor = getCategoryColorKey(category.id)
 
                   return (
-                    <TabsContent
+                    <div
                       key={category.id}
-                      value={category.id}
-                      className="space-y-4 pt-4"
-                      id={`tabpanel-${category.id}`}
+                      className={safeCn(
+                        "p-4 rounded-md space-y-4 border",
+                        colorCn("bg", categoryColor, "50", { dark: `${categoryColor}-950/20` }),
+                        "border-slate-200 dark:border-slate-800",
+                      )}
                     >
-                      <div
+                      <h3
                         className={safeCn(
-                          "p-4 rounded-md space-y-4 border",
-                          colorCn("bg", categoryColor, "50", { dark: `${categoryColor}-950/20` }),
-                          "border-slate-200 dark:border-slate-800",
+                          "font-medium",
+                          colorCn("text", categoryColor, "800", { dark: `${categoryColor}-300` }),
                         )}
                       >
-                        <h3
-                          className={safeCn(
-                            "font-medium",
-                            colorCn("text", categoryColor, "800", { dark: `${categoryColor}-300` }),
-                          )}
-                        >
-                          {category.name} Activities
-                        </h3>
+                        {category.name} Activities
+                      </h3>
 
-                        {/* Generate form fields for each metric in the category */}
-                        {category.metrics.map((metric) => (
-                          <MetricEntryField
-                            key={`${category.id}_${metric.id}`}
-                            category={category}
-                            metric={metric}
-                            form={form}
-                            valueChangesRef={valueChangesRef}
-                          />
-                        ))}
-                      </div>
-                    </TabsContent>
+                      {/* Generate form fields for each metric in the category */}
+                      {category.metrics.map((metric) => (
+                        <MetricEntryField
+                          key={`${category.id}_${metric.id}`}
+                          category={category}
+                          metric={metric}
+                          form={form}
+                          valueChangesRef={valueChangesRef}
+                        />
+                      ))}
+                    </div>
                   )
-                })}
-              </Tabs>
+                })
+              )}
 
-              {/* Additional categories section */}
-              {enabledCategories.length > 4 && (
+              {/* Additional categories section (only if we have more than 4 categories) */}
+              {filteredCategories.length > 4 && (
                 <div className="space-y-4">
                   <h3 className="text-lg font-medium">Additional Categories</h3>
 
-                  {enabledCategories.slice(4).map((category) => {
+                  {filteredCategories.slice(4).map((category) => {
                     const categoryColor = getCategoryColorKey(category.id)
 
                     return (
@@ -356,7 +445,12 @@ export function AddEntryForm({ open, onOpenChange, entryToEdit }: AddEntryFormPr
                 >
                   Cancel
                 </Button>
-                <Button type="submit" aria-label={entryToEdit ? "Update entry" : "Save entry"}>
+                <Button
+                  type="submit"
+                  aria-label={entryToEdit ? "Update entry" : "Save entry"}
+                  formContext="entry"
+                  categoryContext={categoryFilter || "all"}
+                >
                   {entryToEdit ? "Update" : "Save"} Entry
                 </Button>
               </DialogFooter>
@@ -416,7 +510,7 @@ function MetricEntryField({ category, metric, form, valueChangesRef }: MetricEnt
                 min={metric.min}
                 max={metric.max}
                 step={metric.step}
-                {...field}
+                value={field.value}
                 onChange={(e) => {
                   const value = Number(e.target.value)
                   field.onChange(value)
@@ -455,10 +549,12 @@ function MetricEntryField({ category, metric, form, valueChangesRef }: MetricEnt
               min={metric.min}
               max={metric.max}
               step={metric.step}
-              value={[field.value]}
-              onValueChange={(value) => {
-                field.onChange(value[0])
-                announceValueChange(value[0])
+              defaultValue={[field.value]}
+              onValueChange={(values) => {
+                if (values.length > 0) {
+                  field.onChange(values[0])
+                  announceValueChange(values[0])
+                }
               }}
               className="py-4"
               aria-label={`${metric.name} value: ${field.value}`}

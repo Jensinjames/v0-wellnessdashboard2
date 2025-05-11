@@ -1,3 +1,5 @@
+"use client"
+
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
@@ -36,10 +38,33 @@ export interface ButtonProps
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
   id?: string
+  isToggle?: boolean
+  isExpanded?: boolean
+  isPressed?: boolean
+  categoryContext?: string
+  formContext?: "activity" | "category" | "entry" | string
+  onStateChange?: (state: { pressed?: boolean; expanded?: boolean }) => void
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, id, children, ...props }, ref) => {
+  (
+    {
+      className,
+      variant,
+      size,
+      asChild = false,
+      id,
+      children,
+      isToggle,
+      isPressed,
+      isExpanded,
+      categoryContext,
+      formContext,
+      onStateChange,
+      ...props
+    },
+    ref,
+  ) => {
     const Comp = asChild ? Slot : "button"
     const uniqueId = useUniqueId("btn")
     const buttonId = id || uniqueId
@@ -53,8 +78,51 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       console.warn("Button with only icon child should have an aria-label")
     }
 
+    // Handle toggle button functionality
+    const ariaProps: Record<string, any> = {}
+
+    if (isToggle) {
+      ariaProps["aria-pressed"] = isPressed
+      ariaProps.role = "button"
+    }
+
+    if (isExpanded !== undefined) {
+      ariaProps["aria-expanded"] = isExpanded
+    }
+
+    // Add form and category context for better integration
+    if (formContext) {
+      ariaProps["data-form-context"] = formContext
+    }
+
+    if (categoryContext) {
+      ariaProps["data-category-context"] = categoryContext
+    }
+
+    // Handle click events for toggle buttons
+    const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
+      if (props.onClick) {
+        props.onClick(e)
+      }
+
+      if (isToggle && onStateChange) {
+        onStateChange({ pressed: !isPressed })
+      }
+
+      if (isExpanded !== undefined && onStateChange) {
+        onStateChange({ expanded: !isExpanded })
+      }
+    }
+
     return (
-      <Comp className={cn(buttonVariants({ variant, size, className }))} ref={ref} id={buttonId} {...props}>
+      <Comp
+        className={cn(buttonVariants({ variant, size, className }))}
+        ref={ref}
+        id={buttonId}
+        onClick={handleClick}
+        {...ariaProps}
+        {...props}
+      >
         {children}
       </Comp>
     )
