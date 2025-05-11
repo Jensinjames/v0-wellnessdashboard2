@@ -1,77 +1,47 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, useRef, type ReactNode } from "react"
-import { getSupabaseClient, resetSupabaseClient } from "@/lib/supabase-client"
-import { startDatabaseHeartbeat } from "@/utils/db-heartbeat"
-import { createLogger } from "@/utils/logger"
+import type React from "react"
 
-const logger = createLogger("SupabaseProvider")
+import { createContext, useContext, useEffect, useState } from "react"
+import { createClientComponentClient } from "@supabase/auth-helpers-nextjs"
+import { useRouter } from "next/navigation"
+import type { Database } from "@/types/database"
+import { AuthContext } from "@/context/auth-context"
 
-// Create a context for the Supabase client
-type SupabaseContext = {
-  initialized: boolean
-  error: Error | null
-}
+// Create a Supabase client for use in the browser
+const createBrowserClient = () => createClientComponentClient<Database>()
 
-const SupabaseContext = createContext<SupabaseContext>({
-  initialized: false,
-  error: null,
-})
+// Context to provide Supabase client
+export const SupabaseContext = createContext<ReturnType<typeof createBrowserClient> | undefined>(undefined)
 
-// Provider component that wraps your app and makes Supabase client available
-export function SupabaseProvider({ children }: { children: ReactNode }) {
-  const [initialized, setInitialized] = useState(false)
-  const [error, setError] = useState<Error | null>(null)
-  const heartbeatCleanup = useRef<(() => void) | null>(null)
+export function SupabaseProvider({ children }: { children: React.ReactNode }) {
+  const [supabase] = useState(() => createBrowserClient())
+  const router = useRouter()
 
   useEffect(() => {
-    // Initialize Supabase client
-    try {
-      // Get the client (this will initialize it if it doesn't exist)
-      const supabase = getSupabaseClient()
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(() => {
+      router.refresh()
+    })
 
-      // Start the database heartbeat
-      heartbeatCleanup.current = startDatabaseHeartbeat(supabase)
-
-      // Mark as initialized
-      setInitialized(true)
-
-      logger.info("Supabase provider initialized successfully")
-    } catch (err) {
-      logger.error("Error initializing Supabase provider:", err)
-      setError(err instanceof Error ? err : new Error(String(err)))
-    }
-
-    // Cleanup function
     return () => {
-      // Stop the database heartbeat
-      if (heartbeatCleanup.current) {
-        heartbeatCleanup.current()
-        heartbeatCleanup.current = null
-      }
-
-      // Reset the client on unmount to prevent memory leaks
-      resetSupabaseClient()
-
-      logger.info("Supabase provider cleaned up")
+      subscription.unsubscribe()
     }
-  }, [])
+  }, [router, supabase])
 
-  // If there's an error, show an error message
-  if (error) {
-    return (
-      <div className="p-4 bg-red-50 text-red-800 rounded-md">
-        <h2 className="text-lg font-semibold">Supabase Configuration Error</h2>
-        <p>{error.message}</p>
-        <p className="mt-2 text-sm">Please check your environment variables and make sure they are correctly set.</p>
-      </div>
-    )
-  }
-
-  return <SupabaseContext.Provider value={{ initialized, error }}>{children}</SupabaseContext.Provider>
+  return (
+    <SupabaseContext.Provider value={supabase}>
+      <AuthContext>{children}</AuthContext>
+    </SupabaseContext.Provider>
+  )
 }
 
-// Hook to check if Supabase is initialized
-export function useSupabaseStatus() {
-  return useContext(SupabaseContext)
+// Hook to use Supabase client
+export const useSupabase = () => {
+  const context = useContext(SupabaseContext)
+  if (context === undefined) {
+    throw new Error("useSupabase must be used within a SupabaseProvider")
+  }
+  return context
 }

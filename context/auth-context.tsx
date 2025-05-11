@@ -15,7 +15,7 @@ export type AuthContextType = {
   user: User | null
   session: Session | null
   isLoading: boolean
-  signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>
+  signIn: (email: string, password: string) => Promise<{ error: AuthError | null; data?: { session: Session | null } }>
   signUp: (email: string, password: string) => Promise<{ error: AuthError | null }>
   signOut: () => Promise<void>
   resetPassword: (email: string) => Promise<{ error: AuthError | null }>
@@ -26,6 +26,19 @@ export type AuthContextType = {
 
 // Create the context
 const AuthContext = createContext<AuthContextType | undefined>(undefined)
+
+// Helper function to check if an error is a database grant error
+function isDatabaseGrantError(error: any): boolean {
+  if (!error || !error.message) return false
+
+  const errorMessage = error.message.toLowerCase()
+  return (
+    errorMessage.includes("database error granting") ||
+    errorMessage.includes("granting user undefined") ||
+    errorMessage.includes("permission denied") ||
+    errorMessage.includes("database permission error")
+  )
+}
 
 // Provider component
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -144,50 +157,106 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [handleAuthStateChange])
 
-  // Auth methods
-  const signIn = useCallback(async (email: string, password: string) => {
-    logger.info("Signing in user", { email: email.substring(0, 3) + "..." })
-
+  // Function to fix database permissions
+  const fixDatabasePermissions = useCallback(async (): Promise<boolean> => {
     try {
-      // Reset the client before sign-in to ensure clean state
-      resetSupabaseClient()
+      logger.info("Attempting to fix database permissions")
 
-      const supabase = getSupabaseClient()
-      const result = await supabase.auth.signInWithPassword({
-        email,
-        password,
+      const response = await fetch("/api/auth/fix-database-permissions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
       })
 
-      if (result.error) {
-        // Check for database grant errors
-        if (
-          result.error.message?.includes("Database error granting") ||
-          result.error.message?.includes("database error") ||
-          result.error.message?.includes("granting user undefined")
-        ) {
-          logger.error("Database grant error during sign-in:", result.error)
-
-          // Try to recover by resetting the client and trying again
-          resetSupabaseClient()
-
-          // Return a more user-friendly error
-          return {
-            error: {
-              ...result.error,
-              message: "A database permission error occurred. Please try again or contact support.",
-            } as AuthError,
-          }
-        }
-
-        logger.error("Sign-in error:", result.error)
+      if (!response.ok) {
+        const data = await response.json()
+        logger.error("Failed to fix database permissions:", data)
+        return false
       }
 
-      return result
+      logger.info("Successfully fixed database permissions")
+      return true
     } catch (error) {
-      logger.error("Unexpected error during sign-in:", error)
-      return { error: error as AuthError }
+      logger.error("Error fixing database permissions:", error)
+      return false
     }
   }, [])
+
+  // Auth methods
+  const signIn = useCallback(
+    async (email: string, password: string) => {
+      logger.info("Signing in user", { email: email.substring(0, 3) + "..." })
+
+      try {
+        // Reset the client before sign-in to ensure clean state
+        resetSupabaseClient()
+
+        const supabase = getSupabaseClient()
+        const result = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
+
+        if (result.error) {
+          // Check for database grant errors
+          if (isDatabaseGrantError(result.error)) {
+            logger.error("Database grant error during sign-in:", result.error)
+
+            // Try to fix database permissions
+            const fixed = await fixDatabasePermissions()
+
+            if (fixed) {
+              logger.info("Fixed database permissions, retrying sign-in")
+
+              // Reset the client and try again
+              resetSupabaseClient()
+
+              // Try signing in again
+              const retryResult = await supabase.auth.signInWithPassword({
+                email,
+                password,
+              })
+
+              if (!retryResult.error) {
+                return retryResult
+              }
+
+              // If we still have an error, return it with a more user-friendly message
+              if (isDatabaseGrantError(retryResult.error)) {
+                return {
+                  error: {
+                    ...retryResult.error,
+                    message: "Database permission error persists. Please try again later or contact support.",
+                  } as AuthError,
+                  data: retryResult.data,
+                }
+              }
+
+              return retryResult
+            }
+
+            // Return a more user-friendly error
+            return {
+              error: {
+                ...result.error,
+                message: "A database permission error occurred. Please try again or contact support.",
+              } as AuthError,
+              data: result.data,
+            }
+          }
+
+          logger.error("Sign-in error:", result.error)
+        }
+
+        return result
+      } catch (error) {
+        logger.error("Unexpected error during sign-in:", error)
+        return { error: error as AuthError }
+      }
+    },
+    [fixDatabasePermissions],
+  )
 
   const signUp = useCallback(async (email: string, password: string) => {
     logger.info("Signing up user", { email: email.substring(0, 3) + "..." })
@@ -296,10 +365,4 @@ export function useAuth() {
     throw new Error("useAuth must be used within an AuthProvider")
   }
   return context
-}
-
-// Export for backward compatibility
-export function setAuthDebugMode(): void {
-  // This function is kept for backward compatibility but does nothing now
-  return
 }

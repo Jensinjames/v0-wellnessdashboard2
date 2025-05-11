@@ -1,36 +1,15 @@
-"use client"
-
-import { useEffect, useState } from "react"
 import { SignInForm } from "@/components/auth/sign-in-form"
-import { AuthLayout } from "@/components/auth/auth-layout"
-import { useAuth } from "@/context/auth-context"
-import { useRouter } from "next/navigation"
-import { Suspense } from "react"
 
 export default function SignInPage() {
-  const { user, isLoading } = useAuth()
-  const router = useRouter()
-  const [isClient, setIsClient] = useState(false)
-
-  useEffect(() => {
-    setIsClient(true)
-  }, [])
-
-  useEffect(() => {
-    if (isClient && !isLoading && user) {
-      router.push("/dashboard")
-    }
-  }, [isClient, isLoading, user, router])
-
-  if (!isClient) {
-    return null
-  }
-
   return (
-    <AuthLayout title="Sign In" description="Enter your credentials to access your account">
-      <Suspense fallback={<div className="p-4 text-center">Loading sign-in form...</div>}>
+    <div className="flex min-h-screen flex-col items-center justify-center p-4">
+      <div className="w-full max-w-md space-y-6 rounded-lg border border-gray-200 bg-white p-6 shadow-md">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold">Sign In</h1>
+          <p className="mt-2 text-gray-600">Enter your credentials to access your account</p>
+        </div>
         <SignInForm />
-      </Suspense>
-    </AuthLayout>
+      </div>
+    </div>
   )
 }
