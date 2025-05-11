@@ -35,7 +35,7 @@ export function SignInForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [retryCount, setRetryCount] = useState(0)
-  const [isDatabaseError, setIsDatabaseError] = useState(isDatabaseError)
+  const [isDatabaseError, setIsDatabaseError] = useState(false)
   const [isFixingPermissions, setIsFixingPermissions] = useState(false)
   const [fixStatus, setFixStatus] = useState<string | null>(null)
   const [isUsingBypass, setIsUsingBypass] = useState(false)
@@ -113,7 +113,7 @@ export function SignInForm() {
       setIsUsingBypass(true)
       setError(null)
 
-      const { email, password } = getValues()
+      const { email } = getValues()
 
       if (!email) {
         setError("Email is required for bypass authentication")

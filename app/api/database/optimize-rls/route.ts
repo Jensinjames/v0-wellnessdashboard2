@@ -61,7 +61,7 @@ export async function POST() {
                   
                   -- Replace current_setting() with (SELECT current_setting())
                   IF policy_record.qual LIKE '%current_setting(%' AND policy_record.qual NOT LIKE '%(SELECT current_setting(%' THEN
-                    new_qual := regexp_replace(policy_record.qual, 'current_setting$$([^)]+)$$', '(SELECT current_setting(\1))', 'g');
+                    new_qual := regexp_replace(policy_record.qual, 'current_setting\$$([^)]+)\$$', '(SELECT current_setting($1))', 'g');
                   END IF;
                 END IF;
                 
@@ -74,7 +74,7 @@ export async function POST() {
                   
                   -- Replace current_setting() with (SELECT current_setting())
                   IF policy_record.with_check LIKE '%current_setting(%' AND policy_record.with_check NOT LIKE '%(SELECT current_setting(%' THEN
-                    new_with_check := regexp_replace(policy_record.with_check, 'current_setting$$([^)]+)$$', '(SELECT current_setting(\1))', 'g');
+                    new_with_check := regexp_replace(policy_record.with_check, 'current_setting\$$([^)]+)\$$', '(SELECT current_setting($1))', 'g');
                   END IF;
                 END IF;
                 
