@@ -30,7 +30,6 @@ export function DashboardHeader({ onAddEntry }: DashboardHeaderProps) {
             variant="outline"
             size="sm"
             className="bg-white/20 text-white hover:bg-white/30 border-white/30"
-            aria-label="Go to categories management page"
             id={categoriesButtonId}
           >
             <Link href="/categories">Manage Categories</Link>

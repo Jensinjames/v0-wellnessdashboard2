@@ -51,9 +51,11 @@ export default function Dashboard() {
                   <DailyMetrics />
                 </section>
 
-                <section>
+                <section aria-labelledby="category-performance-heading">
                   <div className="flex items-center justify-between mb-3">
-                    <h2 className="text-sm font-medium">Category Performance</h2>
+                    <h2 id="category-performance-heading" className="text-sm font-medium">
+                      Category Performance
+                    </h2>
                     <div className="flex items-center gap-2">
                       <div className="text-xs text-muted-foreground mr-2">
                         {comparisonMode ? "Comparison Mode" : "Daily Progress"}
@@ -64,17 +66,20 @@ export default function Dashboard() {
                         className="h-8 gap-1"
                         onClick={toggleComparisonMode}
                         aria-pressed={comparisonMode}
-                        aria-label={comparisonMode ? "Switch to standard view" : "Switch to comparison view"}
                       >
                         {comparisonMode ? (
                           <>
                             <Grid2X2 className="h-4 w-4" />
+                            <span className="sr-only">Switch to </span>
                             <span className="hidden sm:inline">Standard View</span>
+                            <span className="inline sm:hidden">Standard</span>
                           </>
                         ) : (
                           <>
                             <BarChart3 className="h-4 w-4" />
+                            <span className="sr-only">Switch to </span>
                             <span className="hidden sm:inline">Compare Categories</span>
+                            <span className="inline sm:hidden">Compare</span>
                           </>
                         )}
                       </Button>

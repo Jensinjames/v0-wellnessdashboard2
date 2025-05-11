@@ -143,20 +143,25 @@ export function EnhancedEntriesTable({
 
   return (
     <div className="w-full">
-      <Tabs value={activeView} onValueChange={(value) => setActiveView(value as "table" | "goals")} className="mb-4">
+      <Tabs
+        value={activeView}
+        onValueChange={(value) => setActiveView(value as "table" | "goals")}
+        className="mb-4"
+        id="entries-view-tabs"
+      >
         <TabsList className="grid w-full grid-cols-2 max-w-[400px] mx-auto">
-          <TabsTrigger value="table" className="flex items-center gap-2">
+          <TabsTrigger value="table" className="flex items-center gap-2" id="table-tab" aria-controls="table-content">
             <BarChart2 className="h-4 w-4" />
             <span>Table View</span>
           </TabsTrigger>
-          <TabsTrigger value="goals" className="flex items-center gap-2">
+          <TabsTrigger value="goals" className="flex items-center gap-2" id="goals-tab" aria-controls="goals-content">
             <Target className="h-4 w-4" />
             <span>Goal Comparison</span>
           </TabsTrigger>
         </TabsList>
       </Tabs>
 
-      <TabsContent value="table" className="mt-0">
+      <TabsContent value="table" className="mt-0" id="table-content">
         <Card>
           <CardContent className="p-0">
             <Table>
@@ -380,7 +385,7 @@ export function EnhancedEntriesTable({
         </Card>
       </TabsContent>
 
-      <TabsContent value="goals" className="mt-0">
+      <TabsContent value="goals" className="mt-0" id="goals-content">
         <Card>
           <CardContent className="p-4">
             {entries.length > 0 ? (

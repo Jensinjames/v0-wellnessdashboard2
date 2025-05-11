@@ -232,6 +232,7 @@ export function CategoryDetails() {
                   value={category.id}
                   className="relative rounded-none border-b-2 border-transparent px-4 py-2 data-[state=active]:border-primary data-[state=active]:bg-transparent data-[state=active]:shadow-none"
                   id={`category-tab-${category.id}`}
+                  aria-controls={`category-content-${category.id}`}
                 >
                   {category.name}
                 </TabsTrigger>
@@ -240,7 +241,7 @@ export function CategoryDetails() {
           </div>
 
           {enabledCategories.slice(0, 4).map((category) => (
-            <TabsContent key={category.id} value={category.id} className="p-4">
+            <TabsContent key={category.id} value={category.id} className="p-4" id={`category-content-${category.id}`}>
               <LiveRegion>
                 <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
                   <div className="flex flex-col items-center justify-center">
