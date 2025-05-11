@@ -4,23 +4,29 @@ import { Skeleton } from "@/components/ui/skeleton"
 
 export default function SignUpPage() {
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center p-4">
+    <main
+      id="main-content"
+      aria-labelledby="sign-up-heading"
+      className="flex min-h-screen flex-col items-center justify-center p-4"
+    >
       <div className="w-full max-w-md space-y-6 rounded-lg border border-gray-200 bg-white p-6 shadow-md">
         <div className="text-center">
-          <h1 className="text-2xl font-bold">Sign Up</h1>
+          <h1 id="sign-up-heading" className="text-2xl font-bold">
+            Sign Up
+          </h1>
           <p className="mt-2 text-gray-600">Create your account to get started</p>
         </div>
         <Suspense fallback={<SignUpFormSkeleton />}>
           <SignUpForm />
         </Suspense>
       </div>
-    </div>
+    </main>
   )
 }
 
 function SignUpFormSkeleton() {
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" aria-label="Loading sign-up form">
       <div className="space-y-2">
         <Skeleton className="h-4 w-16" />
         <Skeleton className="h-10 w-full" />

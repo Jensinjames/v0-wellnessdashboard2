@@ -8,15 +8,17 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return (
     <div className="flex min-h-screen flex-col">
       <EmergencyAccessBanner />
-      <div className="border-b">
+      <header className="border-b">
         <div className="container flex h-16 items-center justify-between px-4">
-          <Suspense fallback={<div className="h-6 w-32 bg-gray-200 animate-pulse rounded"></div>}>
+          <Suspense fallback={<div className="h-6 w-32 bg-gray-200 animate-pulse rounded" aria-hidden="true"></div>}>
             <DashboardNav />
           </Suspense>
           <UserNav />
         </div>
-      </div>
-      <div className="flex-1">{children}</div>
+      </header>
+      <main id="main-content" className="flex-1">
+        {children}
+      </main>
     </div>
   )
 }
