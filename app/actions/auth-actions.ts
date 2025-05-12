@@ -1,8 +1,7 @@
 "use server"
 
-import { createActionClient } from "@/lib/supabase"
+import { createActionClient } from "@/lib/supabase-server"
 import { revalidatePath } from "next/cache"
-import { cookies } from "next/headers"
 
 // Get the app URL for redirects
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
@@ -107,10 +106,6 @@ export async function signOut() {
     if (error) {
       return { success: false, error: error.message }
     }
-
-    // Clear cookies and redirect to login page
-    cookies().delete("sb-access-token")
-    cookies().delete("sb-refresh-token")
 
     return { success: true }
   } catch (error) {

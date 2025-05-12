@@ -1,6 +1,6 @@
+"use client"
+
 import { createClient } from "@supabase/supabase-js"
-import { createServerClient as createServerClient$1 } from "@supabase/ssr"
-import { cookies } from "next/headers"
 import type { Database } from "@/types/supabase"
 
 // Environment variables validation
@@ -51,31 +51,51 @@ export function createBrowserClient() {
   return browserClient
 }
 
-// Server-side Supabase client (for Server Components)
-export function createServerClient() {
-  const cookieStore = cookies()
+// Helper function to get the current user (client-side)
+export async function getCurrentUser() {
+  const supabase = createBrowserClient()
 
-  return createServerClient$1<Database>(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      get(name: string) {
-        return cookieStore.get(name)?.value
-      },
-      set(name: string, value: string, options: any) {
-        cookieStore.set(name, value, options)
-      },
-      remove(name: string, options: any) {
-        cookieStore.set(name, "", { ...options, maxAge: 0 })
-      },
-    },
-  })
+  try {
+    const {
+      data: { session },
+      error,
+    } = await supabase.auth.getSession()
+
+    if (error) {
+      console.log("Error getting session:", error.message)
+      return null
+    }
+
+    return session?.user || null
+  } catch (error) {
+    console.error("Unexpected error getting current user:", error)
+    return null
+  }
 }
 
-// Server-side Supabase client (for Server Actions)
-export function createActionClient() {
-  return createServerClient()
+// Helper function to get a user's profile
+export async function getUserProfile(userId: string) {
+  const supabase = createBrowserClient()
+
+  try {
+    const { data, error } = await supabase.from("users").select("*").eq("id", userId).single()
+
+    if (error) {
+      console.error("Error getting user profile:", error.message)
+      return null
+    }
+
+    return data
+  } catch (error) {
+    console.error("Unexpected error getting user profile:", error)
+    return null
+  }
 }
 
-// Server-side Supabase client (for Server Actions)
 export function createActionSupabaseClient() {
-  return createServerClient()
+  return createBrowserClient()
+}
+
+export function createServerClient() {
+  return createBrowserClient()
 }
