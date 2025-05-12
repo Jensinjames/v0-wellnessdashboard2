@@ -1,142 +1,59 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { createClient } from "@/lib/supabase-client"
 import type { User, Session } from "@supabase/supabase-js"
+import { getSupabaseClient, authStateChangeMiddleware } from "."
 
-export type AuthState = {
-  user: User | null
-  session: Session | null
-  isLoading: boolean
-  isAuthenticated: boolean
-  error: Error | null
-}
-
+/**
+ * Hook to manage authentication state
+ * Provides current user, session, loading state, and authentication status
+ */
 export function useAuthState() {
-  const [state, setState] = useState<AuthState>({
-    user: null,
-    session: null,
-    isLoading: true,
-    isAuthenticated: false,
-    error: null,
-  })
+  const [user, setUser] = useState<User | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [isAuthenticated, setIsAuthenticated] = useState(false)
 
   useEffect(() => {
-    // Only run this effect in the browser
-    if (typeof window === "undefined") {
-      setState((prev) => ({ ...prev, isLoading: false }))
-      return
-    }
-
-    const supabase = createClient()
-    let isMounted = true
+    // Get the Supabase client
+    const supabase = getSupabaseClient()
 
     // Get the initial session
-    const initializeAuth = async () => {
+    const getInitialSession = async () => {
       try {
-        // Get the session from Supabase
-        const { data, error } = await supabase.auth.getSession()
+        setLoading(true)
+        const { data } = await supabase.auth.getSession()
 
-        if (!isMounted) return
-
-        if (error) {
-          console.error("Error getting session:", error.message)
-          setState((prev) => ({
-            ...prev,
-            isLoading: false,
-            error: new Error(error.message),
-          }))
-          return
+        if (data.session) {
+          setSession(data.session)
+          setUser(data.session.user)
+          setIsAuthenticated(true)
         }
-
-        if (data?.session) {
-          // Get the user data
-          const { data: userData, error: userError } = await supabase.auth.getUser()
-
-          if (userError || !userData?.user) {
-            console.error("Error getting user data:", userError?.message || "No user data")
-            setState((prev) => ({
-              ...prev,
-              isLoading: false,
-              error: new Error(userError?.message || "Failed to get user data"),
-            }))
-            return
-          }
-
-          setState({
-            user: userData.user,
-            session: data.session,
-            isLoading: false,
-            isAuthenticated: true,
-            error: null,
-          })
-        } else {
-          setState({
-            user: null,
-            session: null,
-            isLoading: false,
-            isAuthenticated: false,
-            error: null,
-          })
-        }
-      } catch (err) {
-        console.error("Error initializing auth:", err)
-        if (isMounted) {
-          setState((prev) => ({
-            ...prev,
-            isLoading: false,
-            error: err instanceof Error ? err : new Error("Unknown error initializing auth"),
-          }))
-        }
+      } catch (error) {
+        console.error("Error getting session:", error)
+      } finally {
+        setLoading(false)
       }
     }
 
-    initializeAuth()
+    // Call the function to get the initial session
+    getInitialSession()
 
-    // Subscribe to auth changes
+    // Set up the auth state change listener using our middleware
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      if (!isMounted) return
-
-      if (newSession) {
-        // Get the user data
-        const { data: userData, error: userError } = await supabase.auth.getUser()
-
-        if (userError || !userData?.user) {
-          console.error("Error getting user data:", userError?.message || "No user data")
-          setState((prev) => ({
-            ...prev,
-            isLoading: false,
-            error: new Error(userError?.message || "Failed to get user data"),
-          }))
-          return
-        }
-
-        setState({
-          user: userData.user,
-          session: newSession,
-          isLoading: false,
-          isAuthenticated: true,
-          error: null,
-        })
-      } else {
-        setState({
-          user: null,
-          session: null,
-          isLoading: false,
-          isAuthenticated: false,
-          error: null,
-        })
-      }
+    } = authStateChangeMiddleware((event, session) => {
+      setSession(session)
+      setUser(session?.user ?? null)
+      setIsAuthenticated(!!session)
+      setLoading(false)
     })
 
-    // Cleanup subscription
+    // Clean up the subscription when the component unmounts
     return () => {
-      isMounted = false
       subscription.unsubscribe()
     }
   }, [])
 
-  return state
+  return { user, session, loading, isAuthenticated }
 }

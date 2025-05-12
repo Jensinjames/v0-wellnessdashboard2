@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { createServerClient as createSupabaseServerClient } from "@supabase/ssr"
+import { createServerClient } from "@supabase/ssr"
 
 export async function middleware(request: NextRequest) {
   // Create a response object that we'll modify and return
   const response = NextResponse.next()
 
   // Create a Supabase client specifically for the middleware
-  const supabase = createSupabaseServerClient(
+  const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
@@ -31,7 +31,7 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getSession()
 
   // Define protected routes that require authentication
-  const protectedRoutes = ["/profile", "/dashboard", "/settings"]
+  const protectedRoutes = ["/profile", "/dashboard", "/settings", "/categories", "/activity"]
 
   // Define auth routes that should redirect to profile if already logged in
   const authRoutes = ["/auth/login", "/auth/register", "/auth/reset-password"]
@@ -49,7 +49,7 @@ export async function middleware(request: NextRequest) {
 
   // Check if the route is an auth route and user is already authenticated
   if (authRoutes.some((route) => path.startsWith(route)) && session) {
-    return NextResponse.redirect(new URL("/profile", request.url))
+    return NextResponse.redirect(new URL("/dashboard", request.url))
   }
 
   // For all other routes, continue with the response
@@ -63,6 +63,8 @@ export const config = {
     "/profile/:path*",
     "/dashboard/:path*",
     "/settings/:path*",
+    "/categories/:path*",
+    "/activity/:path*",
     "/auth/:path*",
   ],
 }

@@ -11,8 +11,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Eye, EyeOff, Mail, User, Lock, AlertCircle } from "lucide-react"
-import { useSignUp } from "@/hooks/auth"
+import { Eye, EyeOff, Mail, User, Lock, AlertCircle, Info } from "lucide-react"
+import { useAuth } from "@/providers/auth-provider"
 import { useToast } from "@/hooks/use-toast"
 
 // Form validation schema
@@ -30,12 +30,24 @@ const registerSchema = z
 
 type RegisterFormValues = z.infer<typeof registerSchema>
 
+// Check if we're in a preview environment
+const isPreviewEnvironment = () => {
+  return (
+    process.env.NEXT_PUBLIC_VERCEL_ENV === "preview" ||
+    process.env.NEXT_PUBLIC_VERCEL_ENV === "development" ||
+    process.env.NODE_ENV === "development"
+  )
+}
+
 export function RegisterForm() {
   const router = useRouter()
   const { toast } = useToast()
-  const { signUp, loading, error } = useSignUp()
+  const { signUp } = useAuth()
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [isPreview, setIsPreview] = useState(isPreviewEnvironment())
 
   // Initialize form with react-hook-form
   const form = useForm<RegisterFormValues>({
@@ -48,22 +60,48 @@ export function RegisterForm() {
     },
   })
 
+  // Simulated registration for preview environments
+  const handleSimulatedRegistration = async (values: RegisterFormValues) => {
+    setLoading(true)
+    setError(null)
+
+    // Simulate network delay
+    await new Promise((resolve) => setTimeout(resolve, 1500))
+
+    toast({
+      title: "Simulation: Registration successful",
+      description: "This is a simulated registration in preview mode. In production, real authentication would occur.",
+    })
+
+    router.push(`/auth/verify-email?email=${encodeURIComponent(values.email)}&simulation=true`)
+    setLoading(false)
+  }
+
   // Handle form submission
   const onSubmit = async (values: RegisterFormValues) => {
     try {
-      const result = await signUp({
-        email: values.email,
-        password: values.password,
+      // If in preview environment, use simulated registration
+      if (isPreview) {
+        await handleSimulatedRegistration(values)
+        return
+      }
+
+      // Otherwise, use real Supabase auth
+      setLoading(true)
+      setError(null)
+
+      const { error: signUpError, emailConfirmationSent } = await signUp(values.email, values.password, {
         name: values.name,
       })
 
-      if (result.error) {
+      if (signUpError) {
+        setError(signUpError.message)
         toast({
           title: "Registration failed",
-          description: result.error.message || "Please check your information and try again",
+          description: signUpError.message || "Please check your information and try again",
           variant: "destructive",
         })
-      } else if (result.emailConfirmationSent) {
+      } else if (emailConfirmationSent) {
         // Redirect to email verification page
         toast({
           title: "Registration successful",
@@ -80,11 +118,14 @@ export function RegisterForm() {
       }
     } catch (err) {
       console.error("Registration error:", err)
+      setError("An unexpected error occurred. Please try again later.")
       toast({
         title: "Registration failed",
         description: "An unexpected error occurred. Please try again later.",
         variant: "destructive",
       })
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -95,10 +136,19 @@ export function RegisterForm() {
         <CardDescription>Enter your information to create an account</CardDescription>
       </CardHeader>
       <CardContent>
+        {isPreview && (
+          <Alert className="mb-4 border-blue-200 bg-blue-50">
+            <Info className="h-4 w-4 text-blue-600" />
+            <AlertDescription className="text-blue-800">
+              <strong>Preview Mode:</strong> Registration is simulated. No real account will be created.
+            </AlertDescription>
+          </Alert>
+        )}
+
         {error && (
           <Alert variant="destructive" className="mb-4">
             <AlertCircle className="h-4 w-4" />
-            <AlertDescription>{error.message}</AlertDescription>
+            <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
 
@@ -211,7 +261,7 @@ export function RegisterForm() {
             />
 
             <Button type="submit" className="w-full" disabled={loading}>
-              {loading ? "Creating account..." : "Create account"}
+              {loading ? "Creating account..." : isPreview ? "Create account (Simulation)" : "Create account"}
             </Button>
           </form>
         </Form>

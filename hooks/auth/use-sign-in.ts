@@ -1,83 +1,57 @@
 "use client"
 
 import { useState } from "react"
-import { createClient } from "@/lib/supabase-client"
 import type { AuthError } from "@supabase/supabase-js"
+import { getSupabaseClient, getAuthConfig } from "."
 
-type SignInCredentials = {
+interface SignInCredentials {
   email: string
   password: string
-  rememberMe?: boolean
 }
 
-type SignInResult = {
-  success: boolean
+interface UseSignInReturn {
+  signIn: (credentials: SignInCredentials) => Promise<{
+    error: AuthError | null
+    success: boolean
+  }>
+  loading: boolean
   error: AuthError | null
-  redirectTo: string | null
-  emailVerificationRequired?: boolean
 }
 
-export function useSignIn() {
+/**
+ * Hook for handling user sign-in
+ */
+export function useSignIn(): UseSignInReturn {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<AuthError | null>(null)
-  const [isEmailVerificationError, setIsEmailVerificationError] = useState(false)
 
-  const signIn = async (credentials: SignInCredentials, redirectTo = "/dashboard"): Promise<SignInResult> => {
+  const signIn = async (credentials: SignInCredentials) => {
     setLoading(true)
     setError(null)
-    setIsEmailVerificationError(false)
 
     try {
-      const supabase = createClient()
+      const supabase = getSupabaseClient()
+      const config = getAuthConfig()
 
-      const { data, error: signInError } = await supabase.auth.signInWithPassword({
+      const { error } = await supabase.auth.signInWithPassword({
         email: credentials.email,
         password: credentials.password,
       })
 
-      if (signInError) {
-        setError(signInError)
-
-        // Check if this is an email verification error
-        if (signInError.message.includes("Email not confirmed") || signInError.message.includes("Email not verified")) {
-          setIsEmailVerificationError(true)
-          return {
-            success: false,
-            error: signInError,
-            redirectTo: null,
-            emailVerificationRequired: true,
-          }
-        }
-
-        return {
-          success: false,
-          error: signInError,
-          redirectTo: null,
-        }
+      if (error) {
+        setError(error)
+        return { error, success: false }
       }
 
-      return {
-        success: true,
-        error: null,
-        redirectTo,
-      }
+      return { error: null, success: true }
     } catch (err) {
       const authError = err as AuthError
       setError(authError)
-      return {
-        success: false,
-        error: authError,
-        redirectTo: null,
-      }
+      return { error: authError, success: false }
     } finally {
       setLoading(false)
     }
   }
 
-  return {
-    signIn,
-    loading,
-    error,
-    isEmailVerificationError,
-  }
+  return { signIn, loading, error }
 }

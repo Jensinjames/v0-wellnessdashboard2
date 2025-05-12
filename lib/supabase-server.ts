@@ -1,6 +1,6 @@
-import { createServerClient as createSupabaseServerClient } from "@supabase/ssr"
+import { createServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
-import type { Database } from "@/types/supabase"
+import type { Database } from "@/types/database"
 
 // Environment variables validation
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
@@ -10,11 +10,13 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error("Missing Supabase environment variables")
 }
 
-// Server-side Supabase client (for Server Components)
-export function createServerClient() {
+/**
+ * Creates a Supabase client for use in Server Components
+ */
+export function createClient() {
   const cookieStore = cookies()
 
-  return createSupabaseServerClient<Database>(supabaseUrl, supabaseAnonKey, {
+  return createServerClient<Database>(supabaseUrl, supabaseAnonKey, {
     cookies: {
       get(name: string) {
         return cookieStore.get(name)?.value
@@ -29,10 +31,30 @@ export function createServerClient() {
   })
 }
 
-// Server-side Supabase client (for Server Actions)
-export function createActionClient() {
-  return createServerClient()
+/**
+ * Get the current session asynchronously (server-side)
+ */
+export async function getServerSession() {
+  const supabase = createClient()
+  const { data, error } = await supabase.auth.getSession()
+
+  if (error) {
+    console.error("Error getting server session:", error.message)
+    return null
+  }
+
+  return data.session
 }
 
-// For backward compatibility
-export const createClient = createServerClient
+/**
+ * Get the current user asynchronously (server-side)
+ */
+export async function getServerUser() {
+  const session = await getServerSession()
+
+  if (!session) {
+    return null
+  }
+
+  return session.user
+}

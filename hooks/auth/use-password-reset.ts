@@ -1,165 +1,130 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useCallback } from "react"
 import { createClient } from "@/lib/supabase-client"
 import type { AuthError } from "@supabase/supabase-js"
 
-export type PasswordResetState = {
-  loading: boolean
+type ResetPasswordResult = {
   success: boolean
   error: AuthError | null
 }
 
 export function usePasswordReset() {
-  const [state, setState] = useState<PasswordResetState>({
-    loading: false,
-    success: false,
-    error: null,
-  })
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<AuthError | null>(null)
+  const [resetEmailSent, setResetEmailSent] = useState(false)
 
-  // Request password reset email
-  const requestReset = async (email: string) => {
-    if (!email || typeof email !== "string") {
-      const error = {
-        message: "Please provide a valid email address",
-        name: "InvalidEmailError",
-        status: 400,
-      } as AuthError
-
-      setState({ loading: false, success: false, error })
-      return { success: false, error }
-    }
+  const sendResetEmail = async (email: string): Promise<ResetPasswordResult> => {
+    setLoading(true)
+    setError(null)
+    setResetEmailSent(false)
 
     try {
-      setState({ loading: true, success: false, error: null })
       const supabase = createClient()
-
-      // Validate Supabase client
-      if (!supabase) {
-        throw new Error("Failed to initialize Supabase client")
-      }
-
-      // Use absolute URL for redirectTo
-      const origin = typeof window !== "undefined" ? window.location.origin : ""
-      const redirectUrl = `${origin}/auth/reset-password/confirm`
-
-      console.log("Sending password reset to:", email, "with redirect:", redirectUrl)
-
-      const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: redirectUrl,
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password/confirm`,
       })
 
-      if (error) {
-        console.error("Supabase resetPasswordForEmail error:", error)
-        setState({ loading: false, success: false, error })
-        return { success: false, error }
+      if (resetError) {
+        setError(resetError)
+        return {
+          success: false,
+          error: resetError,
+        }
       }
 
-      setState({ loading: false, success: true, error: null })
-      return { success: true, error: null }
+      setResetEmailSent(true)
+      return {
+        success: true,
+        error: null,
+      }
     } catch (err) {
-      console.error("Password reset request error:", err)
-      const error =
-        (err as AuthError) ||
-        ({
-          message: "Failed to send password reset email. Please try again.",
-          name: "ResetError",
-          status: 500,
-        } as AuthError)
-
-      setState({ loading: false, success: false, error })
-      return { success: false, error }
+      const authError = err as AuthError
+      setError(authError)
+      return {
+        success: false,
+        error: authError,
+      }
+    } finally {
+      setLoading(false)
     }
   }
 
-  return {
-    requestReset,
-    ...state,
-  }
-}
-
-export function usePasswordUpdate() {
-  const [state, setState] = useState<PasswordResetState & { sessionValid: boolean }>({
-    loading: false,
-    success: false,
-    error: null,
-    sessionValid: false,
-  })
-
-  // Update password with the new one
-  const updatePassword = async (newPassword: string) => {
-    if (!newPassword || typeof newPassword !== "string" || newPassword.length < 6) {
-      const error = {
-        message: "Password must be at least 6 characters",
-        name: "InvalidPasswordError",
-        status: 400,
-      } as AuthError
-
-      setState({ ...state, loading: false, error, success: false })
-      return { success: false, error }
-    }
+  const validateSession = useCallback(async (): Promise<ResetPasswordResult> => {
+    setLoading(true)
+    setError(null)
 
     try {
-      setState({ ...state, loading: true, error: null })
       const supabase = createClient()
-
-      // Validate Supabase client
-      if (!supabase) {
-        throw new Error("Failed to initialize Supabase client")
-      }
-
-      // Check if we have an active session first
-      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+      const { error: sessionError } = await supabase.auth.getSession()
 
       if (sessionError) {
-        console.error("Session error:", sessionError)
-        setState({ ...state, loading: false, sessionValid: false, error: sessionError })
-        return { success: false, error: sessionError }
+        setError(sessionError)
+        return {
+          success: false,
+          error: sessionError,
+        }
       }
 
-      if (!sessionData?.session) {
-        const error = {
-          message: "No active session. Your password reset link may have expired.",
-          name: "SessionError",
-          status: 401,
-        } as AuthError
-
-        setState({ ...state, loading: false, sessionValid: false, error })
-        return { success: false, error }
+      return {
+        success: true,
+        error: null,
       }
+    } catch (err) {
+      const authError = err as AuthError
+      setError(authError)
+      return {
+        success: false,
+        error: authError,
+      }
+    } finally {
+      setLoading(false)
+    }
+  }, [])
 
-      setState({ ...state, sessionValid: true })
+  const updatePassword = useCallback(async (newPassword: string): Promise<ResetPasswordResult> => {
+    setLoading(true)
+    setError(null)
 
-      // Now update the password
-      const { error } = await supabase.auth.updateUser({
+    try {
+      const supabase = createClient()
+      const { error: updateError } = await supabase.auth.updateUser({
         password: newPassword,
       })
 
-      if (error) {
-        console.error("Password update error:", error)
-        setState({ ...state, loading: false, error, success: false })
-        return { success: false, error }
+      if (updateError) {
+        setError(updateError)
+        return {
+          success: false,
+          error: updateError,
+        }
       }
 
-      setState({ ...state, loading: false, success: true, error: null })
-      return { success: true, error: null }
+      return {
+        success: true,
+        error: null,
+      }
     } catch (err) {
-      console.error("Password update error:", err)
-      const error =
-        (err as AuthError) ||
-        ({
-          message: "Failed to update password. Please try again.",
-          name: "UpdateError",
-          status: 500,
-        } as AuthError)
-
-      setState({ ...state, loading: false, error, success: false })
-      return { success: false, error }
+      const authError = err as AuthError
+      setError(authError)
+      return {
+        success: false,
+        error: authError,
+      }
+    } finally {
+      setLoading(false)
     }
-  }
+  }, [])
 
   return {
+    sendResetEmail,
     updatePassword,
-    ...state,
+    validateSession,
+    loading,
+    error,
+    resetEmailSent,
+    sessionValid: error === null && !loading,
   }
 }
+
+export const usePasswordUpdate = usePasswordReset

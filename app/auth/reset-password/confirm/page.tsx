@@ -1,8 +1,9 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
+
+import { useState } from "react"
+import { useRouter } from "next/navigation"
 import { z } from "zod"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -12,12 +13,11 @@ import { Input } from "@/components/ui/input"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Lock, AlertCircle, CheckCircle, Loader2 } from "lucide-react"
-import { usePasswordUpdate } from "@/hooks/auth/use-password-reset" // Fixed import path
+import { useAuth } from "@/providers/auth-provider"
 import { useToast } from "@/hooks/use-toast"
-import { createClient } from "@/lib/supabase-client"
 
 // Form validation schema
-const resetPasswordSchema = z
+const resetSchema = z
   .object({
     password: z.string().min(8, { message: "Password must be at least 8 characters" }),
     confirmPassword: z.string(),
@@ -27,116 +27,70 @@ const resetPasswordSchema = z
     path: ["confirmPassword"],
   })
 
-type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>
+type ResetFormValues = z.infer<typeof resetSchema>
 
 export default function ResetPasswordConfirmPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const { updatePassword, validateSession, loading, error, success, sessionValid } = usePasswordUpdate()
+  const { updatePassword } = useAuth()
+  const [loading, setLoading] = useState(false)
+  const [success, setSuccess] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
-  const [resetSuccess, setResetSuccess] = useState(false)
-  const [sessionChecked, setSessionChecked] = useState(false)
-  const [sessionCheckError, setSessionCheckError] = useState<string | null>(null)
-  const statusRef = useRef<HTMLDivElement>(null)
 
   // Initialize form with react-hook-form
-  const form = useForm<ResetPasswordFormValues>({
-    resolver: zodResolver(resetPasswordSchema),
+  const form = useForm<ResetFormValues>({
+    resolver: zodResolver(resetSchema),
     defaultValues: {
       password: "",
       confirmPassword: "",
     },
   })
 
-  // Validate session on component mount
-  useEffect(() => {
-    const checkSession = async () => {
-      try {
-        // First check if we have a session directly
-        const supabase = createClient()
-        const { data, error: sessionError } = await supabase.auth.getSession()
-
-        if (sessionError) {
-          console.error("Session check error:", sessionError.message)
-          setSessionCheckError(sessionError.message)
-          setSessionChecked(true)
-          return
-        }
-
-        if (!data || !data.session) {
-          console.log("No active session found")
-          setSessionCheckError("No active session found. Your password reset link may have expired.")
-          setSessionChecked(true)
-          return
-        }
-
-        // If we have a session, validate it
-        await validateSession()
-        setSessionChecked(true)
-      } catch (err) {
-        console.error("Error checking session:", err)
-        setSessionCheckError("Failed to validate your session. Please try again.")
-        setSessionChecked(true)
-      }
-    }
-
-    checkSession()
-  }, [validateSession])
-
   // Handle form submission
-  const onSubmit = async (values: ResetPasswordFormValues) => {
+  const onSubmit = async (values: ResetFormValues) => {
     try {
-      // Double-check session before attempting password update
-      const supabase = createClient()
-      const { data } = await supabase.auth.getSession()
+      setLoading(true)
+      setError(null)
+      setSuccess(false)
 
-      if (!data || !data.session) {
+      const { error: updateError } = await updatePassword(values.password)
+
+      if (updateError) {
+        setError(updateError.message || "Failed to update password. Please try again.")
         toast({
-          title: "Session expired",
-          description: "Your session has expired. Please request a new password reset link.",
+          title: "Password update failed",
+          description: updateError.message || "Please try again",
           variant: "destructive",
         })
         return
       }
 
-      const { success, error } = await updatePassword(values.password)
+      // Handle success
+      setSuccess(true)
+      toast({
+        title: "Password updated",
+        description: "Your password has been updated successfully.",
+      })
 
-      if (error) {
-        toast({
-          title: "Password reset failed",
-          description: error.message || "Please try again",
-          variant: "destructive",
-        })
+      // Reset the form
+      form.reset()
 
-        // Focus the status message for screen readers
-        if (statusRef.current) {
-          statusRef.current.focus()
-        }
-      } else if (success) {
-        setResetSuccess(true)
-        toast({
-          title: "Password reset successful",
-          description: "Your password has been updated. You can now log in with your new password.",
-        })
-
-        // Focus the status message for screen readers
-        if (statusRef.current) {
-          statusRef.current.focus()
-        }
-
-        // Redirect to login after a short delay
-        setTimeout(() => {
-          router.push("/auth/login")
-        }, 3000)
-      }
+      // Redirect to login after a delay
+      setTimeout(() => {
+        router.push("/auth/login")
+      }, 3000)
     } catch (err) {
       console.error("Password update error:", err)
+      setError("An unexpected error occurred. Please try again later.")
       toast({
-        title: "Password reset failed",
+        title: "Password update failed",
         description: "An unexpected error occurred. Please try again later.",
         variant: "destructive",
       })
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -148,68 +102,37 @@ export default function ResetPasswordConfirmPage() {
           <CardDescription className="text-center">Enter your new password below</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Session validation status */}
-          {!sessionChecked && (
-            <div className="flex items-center justify-center p-4" aria-live="polite">
-              <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" aria-hidden="true" />
-              <span>Validating your session...</span>
-            </div>
-          )}
-
-          {/* Session error */}
-          {sessionChecked && (sessionCheckError || (error && !sessionValid)) && (
-            <Alert variant="destructive" ref={statusRef} tabIndex={-1} aria-live="assertive" role="alert">
+          {error && (
+            <Alert variant="destructive" role="alert">
               <AlertCircle className="h-4 w-4" aria-hidden="true" />
-              <AlertDescription>
-                {sessionCheckError ||
-                  error?.message ||
-                  "Your password reset link is invalid or has expired. Please request a new password reset."}
-              </AlertDescription>
-              <div className="mt-4">
-                <Button asChild>
-                  <Link href="/auth/reset-password">Request new reset link</Link>
-                </Button>
-              </div>
+              <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
 
-          {/* Success message */}
-          {resetSuccess && (
-            <Alert
-              className="bg-green-50 border-green-200"
-              ref={statusRef}
-              tabIndex={-1}
-              aria-live="assertive"
-              role="status"
-            >
+          {success ? (
+            <Alert className="bg-green-50 border-green-200" role="status">
               <CheckCircle className="h-4 w-4 text-green-600" aria-hidden="true" />
               <AlertDescription className="text-green-600">
-                Your password has been reset successfully. Redirecting to login...
+                Your password has been updated successfully. You will be redirected to the login page shortly.
               </AlertDescription>
             </Alert>
-          )}
-
-          {/* Password reset form */}
-          {sessionChecked && !sessionCheckError && sessionValid && !resetSuccess && (
+          ) : (
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" aria-labelledby="reset-password-title">
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
                 <FormField
                   control={form.control}
                   name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel id="password-label">New Password</FormLabel>
+                      <FormLabel>New Password</FormLabel>
                       <div className="relative">
-                        <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                        <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                         <FormControl>
                           <Input
                             type={showPassword ? "text" : "password"}
                             placeholder="••••••••"
                             className="pl-10 pr-10"
                             disabled={loading}
-                            aria-labelledby="password-label"
-                            aria-invalid={!!form.formState.errors.password}
-                            aria-describedby={form.formState.errors.password ? "password-error" : undefined}
                             {...field}
                           />
                         </FormControl>
@@ -220,16 +143,11 @@ export default function ResetPasswordConfirmPage() {
                           className="absolute right-0 top-0 h-10 w-10"
                           onClick={() => setShowPassword(!showPassword)}
                           aria-label={showPassword ? "Hide password" : "Show password"}
-                          aria-pressed={showPassword}
                         >
-                          {showPassword ? (
-                            <EyeOff className="h-4 w-4" aria-hidden="true" />
-                          ) : (
-                            <Eye className="h-4 w-4" aria-hidden="true" />
-                          )}
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
                       </div>
-                      <FormMessage id="password-error" aria-live="polite" />
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -239,20 +157,15 @@ export default function ResetPasswordConfirmPage() {
                   name="confirmPassword"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel id="confirm-password-label">Confirm Password</FormLabel>
+                      <FormLabel>Confirm New Password</FormLabel>
                       <div className="relative">
-                        <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
+                        <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
                         <FormControl>
                           <Input
                             type={showConfirmPassword ? "text" : "password"}
                             placeholder="••••••••"
                             className="pl-10 pr-10"
                             disabled={loading}
-                            aria-labelledby="confirm-password-label"
-                            aria-invalid={!!form.formState.errors.confirmPassword}
-                            aria-describedby={
-                              form.formState.errors.confirmPassword ? "confirm-password-error" : undefined
-                            }
                             {...field}
                           />
                         </FormControl>
@@ -262,17 +175,12 @@ export default function ResetPasswordConfirmPage() {
                           size="icon"
                           className="absolute right-0 top-0 h-10 w-10"
                           onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                          aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
-                          aria-pressed={showConfirmPassword}
+                          aria-label={showConfirmPassword ? "Hide password" : "Show password"}
                         >
-                          {showConfirmPassword ? (
-                            <EyeOff className="h-4 w-4" aria-hidden="true" />
-                          ) : (
-                            <Eye className="h-4 w-4" aria-hidden="true" />
-                          )}
+                          {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                         </Button>
                       </div>
-                      <FormMessage id="confirm-password-error" aria-live="polite" />
+                      <FormMessage />
                     </FormItem>
                   )}
                 />
@@ -281,10 +189,10 @@ export default function ResetPasswordConfirmPage() {
                   {loading ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
-                      <span>Resetting password...</span>
+                      <span>Updating password...</span>
                     </>
                   ) : (
-                    "Reset password"
+                    "Update password"
                   )}
                 </Button>
               </form>

@@ -2,210 +2,247 @@
 
 import type React from "react"
 
-import { createContext, useContext, useEffect, useState } from "react"
+import { createContext, useContext, useEffect, useState, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase-client"
-import type { User, Session } from "@supabase/supabase-js"
+import type { User, Session, AuthError } from "@supabase/supabase-js"
+import { useToast } from "@/hooks/use-toast"
 
-// Check if we're in development mode
-const isDevelopment = process.env.NEXT_PUBLIC_APP_ENV === "development"
-
-// Helper for conditional logging
-const logDebug = (message: string, data?: any) => {
-  if (isDevelopment) {
-    if (data) {
-      console.log(`[Auth] ${message}`, data)
-    } else {
-      console.log(`[Auth] ${message}`)
-    }
-  }
-}
-
-type AuthContextType = {
+// Auth context type
+interface AuthContextType {
   user: User | null
   session: Session | null
   isLoading: boolean
   isAuthenticated: boolean
+  signIn: (email: string, password: string) => Promise<{ error: AuthError | null }>
+  signUp: (
+    email: string,
+    password: string,
+    metadata?: { [key: string]: any },
+  ) => Promise<{
+    error: AuthError | null
+    emailConfirmationSent?: boolean
+  }>
+  signOut: () => Promise<void>
+  resetPassword: (email: string) => Promise<{ error: AuthError | null }>
+  updatePassword: (password: string) => Promise<{ error: AuthError | null }>
+  refreshSession: () => Promise<void>
 }
 
-// Create context with default values
-const AuthContext = createContext<AuthContextType>({
-  user: null,
-  session: null,
-  isLoading: true,
-  isAuthenticated: false,
-})
+// Create the auth context
+const AuthContext = createContext<AuthContextType | undefined>(undefined)
 
-export const useAuth = () => useContext(AuthContext)
+// Auth provider props
+interface AuthProviderProps {
+  children: React.ReactNode
+}
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+// Auth provider component
+export function AuthProvider({ children }: AuthProviderProps) {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [isLoading, setIsLoading] = useState<boolean>(true)
   const router = useRouter()
+  const { toast } = useToast()
 
-  useEffect(() => {
-    // Only run this effect in the browser
-    if (typeof window === "undefined") {
-      setIsLoading(false)
-      return
-    }
+  // Refresh the session
+  const refreshSession = useCallback(async () => {
+    try {
+      setIsLoading(true)
+      const supabase = createClient()
 
-    // Get the Supabase client (singleton)
-    const supabase = createClient()
+      const {
+        data: { session },
+        error,
+      } = await supabase.auth.getSession()
 
-    // Flag to prevent state updates after unmount
-    let isMounted = true
-
-    // Function to get the initial session
-    const initializeAuth = async () => {
-      try {
-        logDebug("Initializing auth state...")
-
-        // Get the session from Supabase
-        const {
-          data: { session },
-          error: sessionError,
-        } = await supabase.auth.getSession()
-
-        if (!isMounted) return
-
-        if (sessionError) {
-          logDebug(`No active session found: ${sessionError.message}`)
-          setUser(null)
-          setSession(null)
-
-          // Announce session error to screen readers if needed
-          if (typeof window !== "undefined" && window.document) {
-            const statusElement = document.getElementById("auth-status")
-            if (statusElement) {
-              statusElement.setAttribute("aria-live", "polite")
-              statusElement.textContent = "Authentication session error. Please sign in again."
-            }
-          }
-        } else if (session) {
-          logDebug(`Session found for user: ${session.user.email}`)
-
-          // Get the user data
-          const {
-            data: { user: userData },
-            error: userError,
-          } = await supabase.auth.getUser()
-
-          if (userError || !userData) {
-            logDebug(`Error getting user data: ${userError?.message || "No user data"}`)
-            setUser(null)
-            setSession(null)
-          } else {
-            setSession(session)
-            setUser(userData)
-            logDebug("User data retrieved", userData)
-
-            // Announce successful authentication to screen readers if needed
-            if (typeof window !== "undefined" && window.document) {
-              const statusElement = document.getElementById("auth-status")
-              if (statusElement) {
-                statusElement.setAttribute("aria-live", "polite")
-                statusElement.textContent = "Authentication successful."
-              }
-            }
-          }
-        } else {
-          logDebug("No session found")
-          setUser(null)
-          setSession(null)
-        }
-      } catch (error) {
-        console.error("[Auth] Error initializing auth:", error)
-        if (isMounted) {
-          setUser(null)
-          setSession(null)
-        }
-      } finally {
-        if (isMounted) {
-          setIsLoading(false)
-        }
+      if (error) {
+        console.error("Error refreshing session:", error.message)
+        return
       }
-    }
 
-    // Initialize auth
-    initializeAuth()
-
-    // Subscribe to auth changes
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
-      if (!isMounted) return
-
-      logDebug(`Auth state change: ${event}`)
-
-      if (newSession) {
-        // Get the user data
-        const {
-          data: { user: userData },
-          error: userError,
-        } = await supabase.auth.getUser()
-
-        if (userError || !userData) {
-          logDebug(`Error getting user data: ${userError?.message || "No user data"}`)
-          setUser(null)
-          setSession(null)
-        } else {
-          setSession(newSession)
-          setUser(userData)
-          logDebug("User authenticated", {
-            id: userData.id,
-            email: userData.email,
-          })
-
-          // Announce auth state change to screen readers
-          if (typeof window !== "undefined" && window.document) {
-            const statusElement = document.getElementById("auth-status")
-            if (statusElement) {
-              statusElement.setAttribute("aria-live", "polite")
-              statusElement.textContent =
-                event === "SIGNED_IN" ? "You have successfully signed in." : "Your authentication has been updated."
-            }
-          }
-        }
+      if (session) {
+        setSession(session)
+        setUser(session.user)
       } else {
         setSession(null)
         setUser(null)
-        logDebug("User signed out or session expired")
+      }
+    } catch (error) {
+      console.error("Unexpected error refreshing session:", error)
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
 
-        // Announce sign out to screen readers
-        if (event === "SIGNED_OUT" && typeof window !== "undefined" && window.document) {
-          const statusElement = document.getElementById("auth-status")
-          if (statusElement) {
-            statusElement.setAttribute("aria-live", "polite")
-            statusElement.textContent = "You have been signed out."
-          }
+  // Sign in with email and password
+  const signIn = async (email: string, password: string) => {
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.auth.signInWithPassword({ email, password })
+
+      if (!error) {
+        await refreshSession()
+        router.refresh()
+      }
+
+      return { error }
+    } catch (err) {
+      console.error("Sign in error:", err)
+      return { error: err as AuthError }
+    }
+  }
+
+  // Sign up with email and password
+  const signUp = async (email: string, password: string, metadata?: { [key: string]: any }) => {
+    try {
+      const supabase = createClient()
+
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: metadata,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
+
+      if (!error) {
+        // Check if email confirmation is required
+        const emailConfirmationSent = !data.session
+
+        if (!emailConfirmationSent) {
+          // If no email confirmation is required, user is already signed in
+          await refreshSession()
+          router.refresh()
         }
+
+        return { error: null, emailConfirmationSent }
+      }
+
+      return { error }
+    } catch (err) {
+      console.error("Sign up error:", err)
+      return { error: err as AuthError }
+    }
+  }
+
+  // Sign out
+  const signOut = async () => {
+    try {
+      const supabase = createClient()
+      await supabase.auth.signOut()
+
+      setUser(null)
+      setSession(null)
+
+      router.push("/auth/login")
+      router.refresh()
+    } catch (error) {
+      console.error("Sign out error:", error)
+      toast({
+        title: "Error signing out",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive",
+      })
+    }
+  }
+
+  // Reset password
+  const resetPassword = async (email: string) => {
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password/confirm`,
+      })
+
+      return { error }
+    } catch (err) {
+      console.error("Reset password error:", err)
+      return { error: err as AuthError }
+    }
+  }
+
+  // Update password
+  const updatePassword = async (password: string) => {
+    try {
+      const supabase = createClient()
+      const { error } = await supabase.auth.updateUser({ password })
+
+      if (!error) {
+        await refreshSession()
+      }
+
+      return { error }
+    } catch (err) {
+      console.error("Update password error:", err)
+      return { error: err as AuthError }
+    }
+  }
+
+  // Initialize auth state
+  useEffect(() => {
+    const initializeAuth = async () => {
+      await refreshSession()
+    }
+
+    initializeAuth()
+  }, [refreshSession])
+
+  // Set up auth state change listener
+  useEffect(() => {
+    const supabase = createClient()
+
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, session) => {
+      console.log("Auth state changed:", event)
+
+      if (session) {
+        setSession(session)
+        setUser(session.user)
+      } else {
+        setSession(null)
+        setUser(null)
       }
 
       setIsLoading(false)
 
-      // Handle auth events
-      if (event === "SIGNED_IN" || event === "TOKEN_REFRESHED") {
+      // Refresh the router to update server components
+      if (event === "SIGNED_IN" || event === "SIGNED_OUT" || event === "TOKEN_REFRESHED") {
         router.refresh()
       }
     })
 
-    // Cleanup subscription and prevent state updates after unmount
     return () => {
-      logDebug("Cleaning up auth subscriptions")
-      isMounted = false
       subscription.unsubscribe()
     }
   }, [router])
 
-  // Compute authentication status
-  const isAuthenticated = !!user && !!session
+  // Create the context value
+  const value: AuthContextType = {
+    user,
+    session,
+    isLoading,
+    isAuthenticated: !!user && !!session,
+    signIn,
+    signUp,
+    signOut,
+    resetPassword,
+    updatePassword,
+    refreshSession,
+  }
 
-  return (
-    <AuthContext.Provider value={{ user, session, isLoading, isAuthenticated }}>
-      <div id="auth-status" className="sr-only" aria-live="polite"></div>
-      {children}
-    </AuthContext.Provider>
-  )
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
+}
+
+// Hook to use the auth context
+export function useAuth() {
+  const context = useContext(AuthContext)
+
+  if (context === undefined) {
+    throw new Error("useAuth must be used within an AuthProvider")
+  }
+
+  return context
 }

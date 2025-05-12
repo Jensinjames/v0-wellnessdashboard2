@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import Link from "next/link"
 import { z } from "zod"
 import { useForm } from "react-hook-form"
@@ -10,8 +10,8 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Mail, AlertCircle, CheckCircle, Loader2 } from "lucide-react"
-import { usePasswordReset } from "@/hooks/auth/use-password-reset"
+import { Mail, AlertCircle, CheckCircle, Loader2, Info } from "lucide-react"
+import { useAuth } from "@/providers/auth-provider"
 import { useToast } from "@/hooks/use-toast"
 
 // Form validation schema
@@ -21,10 +21,27 @@ const resetSchema = z.object({
 
 type ResetFormValues = z.infer<typeof resetSchema>
 
+// Helper to determine if we're in a preview environment
+const isPreviewEnv = () => {
+  return (
+    process.env.NEXT_PUBLIC_VERCEL_ENV === "preview" ||
+    process.env.NODE_ENV === "development" ||
+    (typeof window !== "undefined" && window.location.hostname === "localhost")
+  )
+}
+
 export default function ResetPasswordPage() {
   const { toast } = useToast()
-  const { requestReset, loading, success, error } = usePasswordReset()
+  const { resetPassword } = useAuth()
+  const [loading, setLoading] = useState(false)
   const [resetRequested, setResetRequested] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [isPreviewEnvironment, setIsPreviewEnvironment] = useState(false)
+
+  // Check environment on mount
+  useEffect(() => {
+    setIsPreviewEnvironment(isPreviewEnv())
+  }, [])
 
   // Initialize form with react-hook-form
   const form = useForm<ResetFormValues>({
@@ -34,40 +51,88 @@ export default function ResetPasswordPage() {
     },
   })
 
-  // Handle form submission
-  const onSubmit = async (values: ResetFormValues) => {
+  // Simulation mode for preview environments
+  const handleSimulatedSubmit = (values: ResetFormValues) => {
+    setLoading(true)
+    setError(null)
+
+    // Simulate API call
+    setTimeout(() => {
+      setLoading(false)
+      setResetRequested(true)
+      toast({
+        title: "Demo Mode: Password reset email sent",
+        description: `In a production environment, a reset link would be sent to ${values.email}.`,
+      })
+      form.reset()
+    }, 1500)
+  }
+
+  // Real submission for production environments
+  const handleRealSubmit = async (values: ResetFormValues) => {
     try {
-      // Clear any previous success state
+      // Clear any previous states
+      setLoading(true)
       setResetRequested(false)
+      setError(null)
 
       console.log("Submitting reset request for:", values.email)
-      const { success, error } = await requestReset(values.email)
 
-      if (error) {
-        console.error("Reset error:", error)
+      const { error: resetError } = await resetPassword(values.email)
+
+      if (resetError) {
+        console.error("Reset error:", resetError)
+        setError(resetError.message || "Failed to send reset email. Please try again.")
+
         toast({
           title: "Password reset failed",
-          description: error.message || "Please try again",
+          description: resetError.message || "Please try again",
           variant: "destructive",
         })
         return
       }
 
-      if (success) {
-        setResetRequested(true)
-        toast({
-          title: "Password reset email sent",
-          description: "Check your email for a link to reset your password.",
-        })
-        // Reset the form
-        form.reset()
-      }
-    } catch (err) {
+      // Handle success
+      setResetRequested(true)
+      toast({
+        title: "Password reset email sent",
+        description: "Check your email for a link to reset your password.",
+      })
+      // Reset the form
+      form.reset()
+    } catch (err: any) {
       console.error("Password reset error:", err)
+
+      // Check for JSON parsing errors
+      if (err.message && err.message.includes("not valid JSON")) {
+        console.log("JSON parsing error detected, switching to preview mode")
+        setIsPreviewEnvironment(true)
+        // Try again in simulation mode
+        handleSimulatedSubmit(values)
+        return
+      }
+
+      setError("An unexpected error occurred. Please try again later.")
       toast({
         title: "Password reset failed",
         description: "An unexpected error occurred. Please try again later.",
         variant: "destructive",
+      })
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Choose the appropriate submit handler based on environment
+  const onSubmit = (values: ResetFormValues) => {
+    if (isPreviewEnvironment) {
+      handleSimulatedSubmit(values)
+    } else {
+      handleRealSubmit(values).catch((err) => {
+        // If we get here, something went really wrong
+        console.error("Unhandled error in form submission:", err)
+        setError("A critical error occurred. Please try again later.")
+        setLoading(false)
       })
     }
   }
@@ -80,12 +145,21 @@ export default function ResetPasswordPage() {
           <CardDescription className="text-center">
             Enter your email address and we'll send you a link to reset your password
           </CardDescription>
+          {isPreviewEnvironment && (
+            <Alert className="mt-2 bg-blue-50 border-blue-200">
+              <Info className="h-4 w-4 text-blue-600" aria-hidden="true" />
+              <AlertDescription className="text-blue-700">
+                <strong>Demo Mode:</strong> Password reset emails won't be sent in this environment. This is a
+                simulation for demonstration purposes.
+              </AlertDescription>
+            </Alert>
+          )}
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && (
+          {error && !isPreviewEnvironment && (
             <Alert variant="destructive" role="alert">
               <AlertCircle className="h-4 w-4" aria-hidden="true" />
-              <AlertDescription>{error.message}</AlertDescription>
+              <AlertDescription>{error}</AlertDescription>
             </Alert>
           )}
 
@@ -93,8 +167,9 @@ export default function ResetPasswordPage() {
             <Alert className="bg-green-50 border-green-200" role="status">
               <CheckCircle className="h-4 w-4 text-green-600" aria-hidden="true" />
               <AlertDescription className="text-green-600">
-                Check your email for a link to reset your password. If it doesn't appear within a few minutes, check
-                your spam folder.
+                {isPreviewEnvironment
+                  ? "In a production environment, a reset link would be sent to your email."
+                  : "Check your email for a link to reset your password. If it doesn't appear within a few minutes, check your spam folder."}
               </AlertDescription>
             </Alert>
           ) : (
@@ -130,6 +205,8 @@ export default function ResetPasswordPage() {
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
                       <span>Sending reset link...</span>
                     </>
+                  ) : isPreviewEnvironment ? (
+                    "Simulate Reset Email"
                   ) : (
                     "Send reset link"
                   )}

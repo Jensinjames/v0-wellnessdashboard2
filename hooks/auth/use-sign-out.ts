@@ -1,50 +1,48 @@
 "use client"
 
 import { useState } from "react"
-import { createClient } from "@/lib/supabase-client"
-import { useRouter } from "next/navigation"
 import type { AuthError } from "@supabase/supabase-js"
+import { getSupabaseClient } from "."
 
-type SignOutOptions = {
-  redirectTo?: string
+interface UseSignOutReturn {
+  signOut: () => Promise<{
+    error: AuthError | null
+    success: boolean
+  }>
+  loading: boolean
+  error: AuthError | null
 }
 
-export function useSignOut() {
+/**
+ * Hook for handling user sign-out
+ */
+export function useSignOut(): UseSignOutReturn {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<AuthError | null>(null)
-  const router = useRouter()
 
-  const signOut = async (options: SignOutOptions = {}) => {
+  const signOut = async () => {
     setLoading(true)
     setError(null)
 
     try {
-      const supabase = createClient()
-      const { error: signOutError } = await supabase.auth.signOut()
+      const supabase = getSupabaseClient()
 
-      if (signOutError) {
-        setError(signOutError)
-        return { success: false, error: signOutError }
+      const { error } = await supabase.auth.signOut()
+
+      if (error) {
+        setError(error)
+        return { error, success: false }
       }
 
-      // Redirect if specified
-      if (options.redirectTo) {
-        router.push(options.redirectTo)
-      }
-
-      return { success: true, error: null }
+      return { error: null, success: true }
     } catch (err) {
       const authError = err as AuthError
       setError(authError)
-      return { success: false, error: authError }
+      return { error: authError, success: false }
     } finally {
       setLoading(false)
     }
   }
 
-  return {
-    signOut,
-    loading,
-    error,
-  }
+  return { signOut, loading, error }
 }

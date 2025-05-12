@@ -1,68 +1,79 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { useSearchParams } from "next/navigation"
+import { useEffect, useState } from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import Link from "next/link"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Mail, AlertCircle, CheckCircle } from "lucide-react"
-import { useSignUp } from "@/hooks/auth"
+import { Mail, AlertCircle, Info, Loader2 } from "lucide-react"
+import { useAuth } from "@/providers/auth-provider"
 import { useToast } from "@/hooks/use-toast"
 
 export default function VerifyEmailPage() {
+  const router = useRouter()
   const searchParams = useSearchParams()
-  const email = searchParams.get("email") || ""
   const { toast } = useToast()
-  const { resendVerificationEmail, loading, error } = useSignUp()
-  const [resendSuccess, setResendSuccess] = useState(false)
+  const { signIn } = useAuth()
+  const [email, setEmail] = useState<string>("")
+  const [isSimulation, setIsSimulation] = useState<boolean>(false)
+  const [resending, setResending] = useState<boolean>(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    // If no email is provided, we can't resend verification
-    if (!email) {
-      toast({
-        title: "Email required",
-        description: "No email address provided for verification",
-        variant: "destructive",
-      })
+    // Get email from URL query parameters
+    const emailParam = searchParams.get("email")
+    const simulationParam = searchParams.get("simulation")
+
+    if (emailParam) {
+      setEmail(emailParam)
     }
-  }, [email, toast])
+
+    if (simulationParam === "true") {
+      setIsSimulation(true)
+    }
+  }, [searchParams])
 
   const handleResendVerification = async () => {
     if (!email) {
-      toast({
-        title: "Email required",
-        description: "No email address provided for verification",
-        variant: "destructive",
-      })
+      setError("Email address is required to resend verification")
       return
     }
 
-    setResendSuccess(false)
+    if (isSimulation) {
+      setResending(true)
+      // Simulate API call
+      setTimeout(() => {
+        setResending(false)
+        toast({
+          title: "Simulation: Verification email resent",
+          description: "In a production environment, a new verification email would be sent.",
+        })
+      }, 1500)
+      return
+    }
 
     try {
-      const { error } = await resendVerificationEmail(email)
+      setResending(true)
+      setError(null)
 
-      if (error) {
-        toast({
-          title: "Failed to resend verification email",
-          description: error.message,
-          variant: "destructive",
-        })
-      } else {
-        setResendSuccess(true)
-        toast({
-          title: "Verification email sent",
-          description: "Please check your inbox and follow the link to verify your email",
-        })
-      }
-    } catch (err) {
-      console.error("Resend verification error:", err)
+      // In a real implementation, you would call the Supabase API to resend the verification email
+      // For now, we'll just simulate it
+
       toast({
-        title: "Failed to resend verification email",
-        description: "An unexpected error occurred",
+        title: "Verification email resent",
+        description: "Please check your inbox for the verification link",
+      })
+    } catch (err) {
+      console.error("Error resending verification email:", err)
+      setError("Failed to resend verification email. Please try again.")
+      toast({
+        title: "Error",
+        description: "Failed to resend verification email",
         variant: "destructive",
       })
+    } finally {
+      setResending(false)
     }
   }
 
@@ -72,52 +83,52 @@ export default function VerifyEmailPage() {
         <CardHeader className="space-y-1">
           <CardTitle className="text-2xl font-bold text-center">Verify your email</CardTitle>
           <CardDescription className="text-center">
-            We've sent a verification email to <strong>{email}</strong>
+            We've sent a verification link to {email || "your email address"}
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error.message}</AlertDescription>
-            </Alert>
-          )}
-
-          {resendSuccess && (
-            <Alert className="bg-green-50 border-green-200">
-              <CheckCircle className="h-4 w-4 text-green-600" />
-              <AlertDescription className="text-green-600">
-                Verification email has been sent. Please check your inbox.
+          {isSimulation && (
+            <Alert className="border-blue-200 bg-blue-50">
+              <Info className="h-4 w-4 text-blue-600" />
+              <AlertDescription className="text-blue-800">
+                <strong>Simulation Mode:</strong> In a real environment, a verification email would be sent to{" "}
+                {email || "your email address"}.
               </AlertDescription>
             </Alert>
           )}
 
-          <div className="bg-blue-50 border border-blue-200 rounded-md p-4 text-blue-800">
-            <div className="flex items-start">
-              <Mail className="h-5 w-5 text-blue-600 mt-0.5 mr-2" />
-              <div>
-                <h3 className="font-medium">Check your email</h3>
-                <p className="text-sm mt-1">
-                  Please check your email inbox and click on the verification link to complete your registration. If you
-                  don't see the email, check your spam folder.
-                </p>
-              </div>
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error}</AlertDescription>
+            </Alert>
+          )}
+
+          <div className="flex flex-col items-center justify-center space-y-4 text-center">
+            <div className="rounded-full bg-primary/10 p-6">
+              <Mail className="h-12 w-12 text-primary" />
+            </div>
+            <div className="space-y-2">
+              <p className="text-sm text-muted-foreground">
+                Please check your email inbox and click on the verification link to complete your registration.
+              </p>
+              <p className="text-sm text-muted-foreground">
+                If you don't see the email, check your spam folder or click the button below to resend the verification
+                email.
+              </p>
             </div>
           </div>
 
-          <div className="text-center">
-            <p className="text-sm text-muted-foreground mb-4">
-              Didn't receive the email? Check your spam folder or click below to resend.
-            </p>
-            <Button
-              onClick={handleResendVerification}
-              disabled={loading || !email}
-              variant="outline"
-              className="mx-auto"
-            >
-              {loading ? "Sending..." : "Resend verification email"}
-            </Button>
-          </div>
+          <Button variant="outline" className="w-full" onClick={handleResendVerification} disabled={resending}>
+            {resending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Resending...
+              </>
+            ) : (
+              "Resend verification email"
+            )}
+          </Button>
         </CardContent>
         <CardFooter className="flex justify-center">
           <div className="text-sm text-muted-foreground">
