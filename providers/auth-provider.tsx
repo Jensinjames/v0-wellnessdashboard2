@@ -7,6 +7,20 @@ import { useRouter } from "next/navigation"
 import { createBrowserClient } from "@/lib/supabase"
 import type { User, Session } from "@supabase/supabase-js"
 
+// Check if we're in development mode
+const isDevelopment = process.env.NEXT_PUBLIC_APP_ENV === "development"
+
+// Helper for conditional logging
+const logDebug = (message: string, data?: any) => {
+  if (isDevelopment) {
+    if (data) {
+      console.log(`[Auth] ${message}`, data)
+    } else {
+      console.log(`[Auth] ${message}`)
+    }
+  }
+}
+
 type AuthContextType = {
   user: User | null
   session: Session | null
@@ -40,33 +54,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Get the Supabase client (singleton)
     const supabase = createBrowserClient()
 
+    // Flag to prevent state updates after unmount
+    let isMounted = true
+
     // Function to get the initial session
     const initializeAuth = async () => {
       try {
-        console.log("Initializing auth state...")
+        logDebug("Initializing auth state...")
 
         // Get the session from Supabase
         const { data, error } = await supabase.auth.getSession()
 
+        if (!isMounted) return
+
         if (error) {
-          console.log("No active session found:", error.message)
+          logDebug(`No active session found: ${error.message}`)
           setUser(null)
           setSession(null)
         } else if (data?.session) {
-          console.log("Session found:", data.session.user.email)
+          logDebug(`Session found for user: ${data.session.user.email}`)
           setSession(data.session)
           setUser(data.session.user)
         } else {
-          console.log("No session found")
+          logDebug("No session found")
           setUser(null)
           setSession(null)
         }
       } catch (error) {
-        console.error("Error initializing auth:", error)
-        setUser(null)
-        setSession(null)
+        console.error("[Auth] Error initializing auth:", error)
+        if (isMounted) {
+          setUser(null)
+          setSession(null)
+        }
       } finally {
-        setIsLoading(false)
+        if (isMounted) {
+          setIsLoading(false)
+        }
       }
     }
 
@@ -77,14 +100,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((event, newSession) => {
-      console.log("Auth state change:", event)
+      if (!isMounted) return
+
+      logDebug(`Auth state change: ${event}`)
 
       if (newSession) {
         setSession(newSession)
         setUser(newSession.user)
+        logDebug("User authenticated", {
+          id: newSession.user.id,
+          email: newSession.user.email,
+        })
       } else {
         setSession(null)
         setUser(null)
+        logDebug("User signed out or session expired")
       }
 
       setIsLoading(false)
@@ -95,8 +125,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     })
 
-    // Cleanup subscription
+    // Cleanup subscription and prevent state updates after unmount
     return () => {
+      logDebug("Cleaning up auth subscriptions")
+      isMounted = false
       subscription.unsubscribe()
     }
   }, [router])

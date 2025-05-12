@@ -80,32 +80,46 @@ export const useEnhancedTheme = () => {
 }
 
 export function ThemeToggle() {
-  const { theme, setTheme } = useEnhancedTheme()
+  const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
 
-  // Only show the toggle once the component has mounted to avoid hydration mismatch
+  // Avoid hydration mismatch
   useEffect(() => {
     setMounted(true)
   }, [])
 
   if (!mounted) {
-    return <div className="w-10 h-10" /> // Placeholder with same dimensions
+    return (
+      <Button variant="ghost" size="icon" disabled aria-label="Theme toggle (loading)">
+        <Sun
+          className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0"
+          aria-hidden="true"
+        />
+        <Moon
+          className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100"
+          aria-hidden="true"
+        />
+      </Button>
+    )
   }
 
   return (
     <Button
-      variant="outline"
+      variant="ghost"
       size="icon"
-      onClick={() => setTheme(theme === "light" ? "dark" : "light")}
-      aria-label={theme === "light" ? "Switch to dark theme" : "Switch to light theme"}
-      className="rounded-full bg-white/90 backdrop-blur-sm border border-slate-200 shadow-sm"
+      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+      aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
+      aria-pressed={theme === "dark"}
     >
-      <Sun className="h-5 w-5 rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0" aria-hidden="true" />
-      <Moon
-        className="absolute h-5 w-5 rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100"
+      <Sun
+        className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0"
         aria-hidden="true"
       />
-      <span className="sr-only">{theme === "light" ? "Switch to dark theme" : "Switch to light theme"}</span>
+      <Moon
+        className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100"
+        aria-hidden="true"
+      />
+      <span className="sr-only">{theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}</span>
     </Button>
   )
 }

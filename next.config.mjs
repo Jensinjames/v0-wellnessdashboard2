@@ -33,6 +33,10 @@ const nextConfig = {
       },
     ]
   },
+  // Add environment variables that should be available on the client
+  env: {
+    NEXT_PUBLIC_APP_ENV: process.env.NODE_ENV || 'production',
+  },
 }
 
 export default nextConfig

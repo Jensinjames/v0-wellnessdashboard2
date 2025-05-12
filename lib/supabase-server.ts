@@ -1,4 +1,4 @@
-import { createServerClient as createServerClient$1 } from "@supabase/ssr"
+import { createServerClient as createSupaServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import type { Database } from "@/types/supabase"
 
@@ -14,7 +14,7 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export function createServerClient() {
   const cookieStore = cookies()
 
-  return createServerClient$1<Database>(supabaseUrl, supabaseAnonKey, {
+  return createSupaServerClient<Database>(supabaseUrl, supabaseAnonKey, {
     cookies: {
       get(name: string) {
         return cookieStore.get(name)?.value
@@ -34,7 +34,5 @@ export function createActionClient() {
   return createServerClient()
 }
 
-// Server-side Supabase client (for Server Actions)
-export function createActionSupabaseClient() {
-  return createServerClient()
-}
+// For backward compatibility
+export const createClient = createServerClient

@@ -1,84 +1,128 @@
 "use server"
 
-import { createActionSupabaseClient } from "@/lib/supabase"
+import { revalidatePath } from "next/cache"
+import { createServerClient } from "@/lib/supabase-server"
+import { getUserProfile, updateUserProfile, type UserProfileUpdate } from "@/lib/db"
 
-export async function updateUserProfile(formData: FormData) {
-  const supabase = createActionSupabaseClient()
+/**
+ * Get the authenticated user's profile
+ */
+export async function getProfile() {
+  try {
+    // Get current user
+    const supabase = createServerClient()
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-  // Get current user
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    if (userError || !user) {
+      return { success: false, error: userError?.message || "User not authenticated" }
+    }
 
-  if (!user) {
-    return { error: "Not authenticated" }
+    // Get user profile using the database service
+    const { data, error } = await getUserProfile(user.id)
+
+    if (error) {
+      return { success: false, error: error.message }
+    }
+
+    return { success: true, profile: data }
+  } catch (error) {
+    console.error("Get profile error:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unknown error occurred",
+    }
   }
+}
 
-  const name = formData.get("name") as string
-  const email = formData.get("email") as string
-  const phone = formData.get("phone") as string
-  const location = formData.get("location") as string
+/**
+ * Update the authenticated user's profile
+ */
+export async function updateProfile(formData: FormData) {
+  try {
+    // Get current user
+    const supabase = createServerClient()
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
 
-  // Update user metadata in auth
-  const { error: authError } = await supabase.auth.updateUser({
-    data: { name },
-  })
+    if (userError || !user) {
+      return { success: false, error: userError?.message || "User not authenticated" }
+    }
 
-  if (authError) {
-    return { error: authError.message }
-  }
+    // Extract profile data from form
+    const name = formData.get("name") as string
+    const phone = formData.get("phone") as string
+    const location = formData.get("location") as string
 
-  // Update user profile in users table
-  const { error: profileError } = await supabase
-    .from("users")
-    .update({
+    // Update user metadata in auth
+    const { error: authError } = await supabase.auth.updateUser({
+      data: { name },
+    })
+
+    if (authError) {
+      return { success: false, error: authError.message }
+    }
+
+    // Update user profile using the database service
+    const profileData: UserProfileUpdate = {
       name,
       phone,
       location,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", user.id)
+    }
 
-  if (profileError) {
-    return { error: profileError.message }
+    const { data, error } = await updateUserProfile(user.id, profileData)
+
+    if (error) {
+      return { success: false, error: error.message }
+    }
+    \
+      profileData)
+
+    if (error) {
+      return { success: false, error: error.message }
+    }
+
+    // Revalidate the profile page
+    revalidatePath("/profile")
+
+    return { success: true, data }
+  } catch (error) {
+    console.error("Update profile error:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unknown error occurred",
+    }
   }
-
-  return { success: true }
 }
 
-export async function getUserProfile() {
-  const supabase = createActionSupabaseClient()
-
-  // Get current user
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    return { error: "Not authenticated" }
-  }
-
-  // Get user profile from users table
-  const { data, error } = await supabase.from("users").select("*").eq("id", user.id).single()
-
-  if (error) {
-    return { error: error.message }
-  }
-
-  return { success: true, profile: data }
-}
-
+/**
+ * Update the authenticated user's password
+ */
 export async function updatePassword(formData: FormData) {
-  const supabase = createActionSupabaseClient()
-  const password = formData.get("password") as string
+  try {
+    // Get current user
+    const supabase = createServerClient()
+    const password = formData.get("password") as string
 
-  const { error } = await supabase.auth.updateUser({
-    password,
-  })
+    // Update user password
+    const { error } = await supabase.auth.updateUser({
+      password,
+    })
 
-  if (error) {
-    return { error: error.message }
+    if (error) {
+      return { success: false, error: error.message }
+    }
+
+    return { success: true }
+  } catch (error) {
+    console.error("Update password error:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unknown error occurred",
+    }
   }
-
-  return { success: true }
 }

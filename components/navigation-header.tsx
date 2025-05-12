@@ -1,6 +1,6 @@
 "use client"
 
-import Link from "next/link"
+import Link from "next/link" // Fixed import from "next/link" instead of "next/navigation"
 import { usePathname } from "next/navigation"
 import { useAuth } from "@/providers/auth-provider"
 import { Button } from "@/components/ui/button"
@@ -21,13 +21,10 @@ export function NavigationHeader() {
   }
 
   return (
-    <header
-      className="sticky top-0 z-50 w-full border-b bg-white dark:bg-slate-950 dark:border-slate-800"
-      role="banner"
-    >
+    <header className="sticky top-0 z-50 w-full border-b bg-white dark:bg-slate-950 dark:border-slate-800">
       <div className="container flex h-14 items-center justify-between">
         <div className="flex items-center gap-6 md:gap-8">
-          <Link href="/" className="flex items-center space-x-2" aria-label="Rollen Wellness home">
+          <Link href="/" className="flex items-center space-x-2">
             <span className="text-xl font-bold">Rollen Wellness</span>
           </Link>
 
@@ -54,7 +51,7 @@ export function NavigationHeader() {
                   </Button>
                 </SheetClose>
               </div>
-              <nav className="flex flex-col gap-3 py-4" id={navId} aria-label="Main navigation">
+              <nav id={navId} className="flex flex-col gap-3 py-4">
                 <Link
                   href="/"
                   className={`text-sm font-medium transition-colors hover:text-primary ${
@@ -123,7 +120,7 @@ export function NavigationHeader() {
             </SheetContent>
           </Sheet>
 
-          <nav className="hidden md:flex gap-6" aria-label="Main navigation">
+          <nav className="hidden md:flex gap-6">
             <Link
               href="/"
               className={`text-sm font-medium transition-colors hover:text-primary ${

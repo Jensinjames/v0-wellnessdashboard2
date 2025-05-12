@@ -1,13 +1,29 @@
 import { NextResponse } from "next/server"
 import type { NextRequest } from "next/server"
-import { createMiddlewareClient } from "@supabase/auth-helpers-nextjs"
+import { createServerClient } from "@supabase/ssr"
 
 export async function middleware(request: NextRequest) {
   // Create a response object that we'll modify and return
-  const res = NextResponse.next()
+  const response = NextResponse.next()
 
   // Create a Supabase client specifically for the middleware
-  const supabase = createMiddlewareClient({ req: request, res })
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return request.cookies.get(name)?.value
+        },
+        set(name: string, value: string, options: any) {
+          response.cookies.set(name, value, options)
+        },
+        remove(name: string, options: any) {
+          response.cookies.set(name, "", { ...options, maxAge: 0 })
+        },
+      },
+    },
+  )
 
   // Get the session - this will check for a valid session cookie
   const {
@@ -37,7 +53,7 @@ export async function middleware(request: NextRequest) {
   }
 
   // For all other routes, continue with the response
-  return res
+  return response
 }
 
 // Configure which routes the middleware should run on

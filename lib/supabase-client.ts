@@ -1,6 +1,6 @@
 "use client"
 
-import { createBrowserClient as createSupaBrowserClient } from "@supabase/ssr"
+import { createBrowserClient } from "@supabase/ssr"
 import type { Database } from "@/types/supabase"
 
 // Environment variables validation
@@ -11,17 +11,21 @@ if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error("Missing Supabase environment variables")
 }
 
-// Check if we're in development mode
-const isDevelopment = process.env.NEXT_PUBLIC_APP_ENV === "development"
+// Validate URL format
+try {
+  new URL(supabaseUrl)
+} catch (error) {
+  throw new Error(`Invalid Supabase URL: ${supabaseUrl}`)
+}
 
 // SINGLETON PATTERN: Create a single instance of the Supabase client for the browser
-let browserClient: ReturnType<typeof createSupaBrowserClient<Database>> | null = null
+let browserClient: ReturnType<typeof createBrowserClient<Database>> | null = null
 
 // Client-side Supabase client (browser)
-export function createBrowserClient() {
+export function createClient() {
   // For SSR, return a dummy client that won't persist anything
   if (typeof window === "undefined") {
-    return createSupaBrowserClient<Database>(supabaseUrl, supabaseAnonKey, {
+    return createBrowserClient<Database>(supabaseUrl, supabaseAnonKey, {
       auth: {
         persistSession: false,
         autoRefreshToken: false,
@@ -30,30 +34,26 @@ export function createBrowserClient() {
     })
   }
 
-  // Use a stronger singleton pattern with a global variable
-  if (!browserClient) {
-    // Create a new instance if it doesn't exist
-    browserClient = createSupaBrowserClient<Database>(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        detectSessionInUrl: true,
-        storageKey: "sb-auth-token",
-        flowType: "pkce",
-        debug: isDevelopment, // Only enable debug in development
-      },
-    })
-  }
+  // Return the existing instance if it exists
+  if (browserClient) return browserClient
+
+  // Create a new instance if it doesn't exist
+  browserClient = createBrowserClient<Database>(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storageKey: "sb-auth-token",
+      flowType: "pkce",
+    },
+  })
 
   return browserClient
 }
 
-// For backward compatibility
-export const createClient = createBrowserClient
-
 // Helper function to get the current user (client-side)
 export async function getCurrentUser() {
-  const supabase = createBrowserClient()
+  const supabase = createClient()
 
   try {
     const {
@@ -75,7 +75,7 @@ export async function getCurrentUser() {
 
 // Helper function to get a user's profile
 export async function getUserProfile(userId: string) {
-  const supabase = createBrowserClient()
+  const supabase = createClient()
 
   try {
     const { data, error } = await supabase.from("users").select("*").eq("id", userId).single()
@@ -91,6 +91,3 @@ export async function getUserProfile(userId: string) {
     return null
   }
 }
-
-// For backward compatibility
-export const createActionSupabaseClient = createBrowserClient
