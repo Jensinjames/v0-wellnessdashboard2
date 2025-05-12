@@ -9,9 +9,13 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
-  // Add experimental features to support Supabase auth
+  // Update experimental features with correct object structure for serverActions
   experimental: {
-    serverActions: true,
+    // Server Actions are now stable in Next.js 14+, but we configure it properly for compatibility
+    serverActions: {
+      bodySizeLimit: '2mb',
+      allowedOrigins: ['localhost:3000', 'rollen-wellness.vercel.app'],
+    },
   },
   // Add redirects for auth callback
   async redirects() {
