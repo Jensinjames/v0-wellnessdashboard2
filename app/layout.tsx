@@ -9,10 +9,10 @@ import { ScreenReaderAnnouncerProvider } from "@/components/accessibility/screen
 import { StatusAnnouncerProvider } from "@/components/accessibility/status-announcer"
 import { SkipLink } from "@/components/accessibility/skip-link"
 import { Toaster } from "@/components/ui/toaster"
-import { NavigationHeader } from "@/components/navigation-header"
 import { WellnessProvider } from "@/context/wellness-context"
 import { TrackingProvider } from "@/context/tracking-context"
 import { AuthProvider } from "@/providers/auth-provider"
+import { NavigationHeader } from "@/components/navigation-header"
 
 const inter = Inter({ subsets: ["latin"] })
 
