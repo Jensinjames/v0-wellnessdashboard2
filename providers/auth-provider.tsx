@@ -4,15 +4,13 @@ import type React from "react"
 
 import { createContext, useContext, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
-import { createBrowserClient } from "@/lib/supabase"
+import { createClient } from "@/lib/supabase-client"
 import type { User, Session } from "@supabase/supabase-js"
-
-// Check if we're in development mode
-const isDevelopment = process.env.NEXT_PUBLIC_APP_ENV === "development"
+import { clientEnv } from "@/lib/env"
 
 // Helper for conditional logging
 const logDebug = (message: string, data?: any) => {
-  if (isDevelopment) {
+  if (clientEnv.IS_DEVELOPMENT) {
     if (data) {
       console.log(`[Auth] ${message}`, data)
     } else {
@@ -52,7 +50,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
 
     // Get the Supabase client (singleton)
-    const supabase = createBrowserClient()
+    const supabase = createClient()
 
     // Flag to prevent state updates after unmount
     let isMounted = true
@@ -63,18 +61,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         logDebug("Initializing auth state...")
 
         // Get the session from Supabase
-        const { data, error } = await supabase.auth.getSession()
+        const {
+          data: { session },
+          error: sessionError,
+        } = await supabase.auth.getSession()
 
         if (!isMounted) return
 
-        if (error) {
-          logDebug(`No active session found: ${error.message}`)
+        if (sessionError) {
+          logDebug(`No active session found: ${sessionError.message}`)
           setUser(null)
           setSession(null)
-        } else if (data?.session) {
-          logDebug(`Session found for user: ${data.session.user.email}`)
-          setSession(data.session)
-          setUser(data.session.user)
+        } else if (session) {
+          logDebug(`Session found for user: ${session.user.email}`)
+
+          // Get the user data
+          const {
+            data: { user: userData },
+            error: userError,
+          } = await supabase.auth.getUser()
+
+          if (userError || !userData) {
+            logDebug(`Error getting user data: ${userError?.message || "No user data"}`)
+            setUser(null)
+            setSession(null)
+          } else {
+            setSession(session)
+            setUser(userData)
+            logDebug("User data retrieved", userData)
+          }
         } else {
           logDebug("No session found")
           setUser(null)
@@ -99,18 +114,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Subscribe to auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((event, newSession) => {
+    } = supabase.auth.onAuthStateChange(async (event, newSession) => {
       if (!isMounted) return
 
       logDebug(`Auth state change: ${event}`)
 
       if (newSession) {
-        setSession(newSession)
-        setUser(newSession.user)
-        logDebug("User authenticated", {
-          id: newSession.user.id,
-          email: newSession.user.email,
-        })
+        // Get the user data
+        const {
+          data: { user: userData },
+          error: userError,
+        } = await supabase.auth.getUser()
+
+        if (userError || !userData) {
+          logDebug(`Error getting user data: ${userError?.message || "No user data"}`)
+          setUser(null)
+          setSession(null)
+        } else {
+          setSession(newSession)
+          setUser(userData)
+          logDebug("User authenticated", {
+            id: userData.id,
+            email: userData.email,
+          })
+        }
       } else {
         setSession(null)
         setUser(null)

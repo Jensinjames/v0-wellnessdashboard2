@@ -8,7 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { createBrowserClient } from "@/lib/supabase"
+import { createClient } from "@/lib/supabase-client"
 import { updateUserProfile } from "@/app/actions/auth-actions"
 import type { User } from "@supabase/supabase-js"
 
@@ -48,7 +48,7 @@ export default function ProfileClient({ user, profile }: ProfileClientProps) {
 
   async function handleSignOut() {
     try {
-      const supabase = createBrowserClient()
+      const supabase = createClient()
       await supabase.auth.signOut()
       router.push("/auth/login")
     } catch (error) {
@@ -108,11 +108,23 @@ export default function ProfileClient({ user, profile }: ProfileClientProps) {
             </div>
 
             <div className="flex justify-between pt-4">
-              <Button type="submit" disabled={updating} data-auth-action="update-profile" aria-busy={updating}>
+              <Button
+                type="submit"
+                disabled={updating}
+                data-auth-action="update-profile"
+                aria-busy={updating}
+                aria-label={updating ? "Updating profile..." : "Update profile information"}
+              >
                 {updating ? "Updating..." : "Update Profile"}
               </Button>
 
-              <Button type="button" variant="outline" onClick={handleSignOut} data-auth-action="sign-out">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={handleSignOut}
+                data-auth-action="sign-out"
+                aria-label="Sign out of your account"
+              >
                 Sign Out
               </Button>
             </div>

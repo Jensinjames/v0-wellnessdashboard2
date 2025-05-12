@@ -2,10 +2,11 @@
 
 import { createBrowserClient } from "@supabase/ssr"
 import type { Database } from "@/types/supabase"
+import { clientEnv } from "@/lib/env"
 
 // Environment variables validation
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabaseUrl = clientEnv.SUPABASE_URL
+const supabaseAnonKey = clientEnv.SUPABASE_ANON_KEY
 
 if (!supabaseUrl || !supabaseAnonKey) {
   throw new Error("Missing Supabase environment variables")
@@ -23,7 +24,7 @@ let browserClient: ReturnType<typeof createBrowserClient<Database>> | null = nul
 
 // Client-side Supabase client (browser)
 export function createClient() {
-  // For SSR, return a dummy client that won't persist anything
+  // For SSR, create a client that won't persist anything
   if (typeof window === "undefined") {
     return createBrowserClient<Database>(supabaseUrl, supabaseAnonKey, {
       auth: {
@@ -56,17 +57,14 @@ export async function getCurrentUser() {
   const supabase = createClient()
 
   try {
-    const {
-      data: { session },
-      error,
-    } = await supabase.auth.getSession()
+    const { data, error } = await supabase.auth.getUser()
 
     if (error) {
-      console.log("Error getting session:", error.message)
+      console.error("Error getting user:", error.message)
       return null
     }
 
-    return session?.user || null
+    return data.user || null
   } catch (error) {
     console.error("Unexpected error getting current user:", error)
     return null

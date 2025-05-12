@@ -1,9 +1,29 @@
 import { redirect } from "next/navigation"
-import { createServerClient } from "@/lib/supabase-server"
+import { createServerClient } from "@supabase/ssr"
+import { cookies } from "next/headers"
 import ProfileClient from "@/components/profile-client"
+import type { Database } from "@/types/supabase"
 
 export default async function ProfilePage() {
-  const supabase = createServerClient()
+  const cookieStore = cookies()
+
+  const supabase = createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        get(name: string) {
+          return cookieStore.get(name)?.value
+        },
+        set(name: string, value: string, options: any) {
+          cookieStore.set({ name, value, ...options })
+        },
+        remove(name: string, options: any) {
+          cookieStore.set({ name, value: "", ...options, maxAge: 0 })
+        },
+      },
+    },
+  )
 
   // Check if the user is authenticated
   const {

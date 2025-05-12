@@ -45,6 +45,7 @@ export interface EnhancedButtonProps
   iconPosition?: "left" | "right"
   loading?: boolean
   loadingText?: string
+  iconLabel?: string // New prop for icon accessibility
 }
 
 const EnhancedButton = React.forwardRef<HTMLButtonElement, EnhancedButtonProps>(
@@ -58,13 +59,25 @@ const EnhancedButton = React.forwardRef<HTMLButtonElement, EnhancedButtonProps>(
       iconPosition = "left",
       loading = false,
       loadingText,
+      iconLabel,
       children,
+      "aria-label": ariaLabel,
       ...props
     },
     ref,
   ) => {
     const Comp = asChild ? Slot : "button"
     const content = loading ? loadingText || children : children
+
+    // If this is an icon-only button without text content, ensure it has an aria-label
+    const hasTextContent = React.Children.toArray(children).some(
+      (child) => typeof child === "string" || typeof child === "number",
+    )
+
+    const isIconOnly = size === "icon" || (!hasTextContent && icon)
+
+    // Determine the appropriate aria-label
+    const buttonAriaLabel = ariaLabel || (isIconOnly ? iconLabel || `${icon} button` : undefined)
 
     // Safely render icon as a component
     const renderIcon = () => {
@@ -104,7 +117,14 @@ const EnhancedButton = React.forwardRef<HTMLButtonElement, EnhancedButtonProps>(
     const buttonClasses = safeCn(buttonVariants({ variant, size, className }))
 
     return (
-      <Comp className={buttonClasses} ref={ref} disabled={props.disabled || loading} aria-busy={loading} {...props}>
+      <Comp
+        className={buttonClasses}
+        ref={ref}
+        disabled={props.disabled || loading}
+        aria-busy={loading}
+        aria-label={buttonAriaLabel}
+        {...props}
+      >
         {loading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
 
         {!loading && icon && iconPosition === "left" && iconElement}
@@ -112,6 +132,9 @@ const EnhancedButton = React.forwardRef<HTMLButtonElement, EnhancedButtonProps>(
         {content}
 
         {!loading && icon && iconPosition === "right" && iconElement}
+
+        {/* Add visually hidden text for screen readers if this is an icon-only button without an aria-label */}
+        {isIconOnly && !buttonAriaLabel && icon && <span className="sr-only">{iconLabel || icon}</span>}
       </Comp>
     )
   },

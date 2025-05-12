@@ -41,7 +41,11 @@ export default function LoginPage() {
           title: "Login successful",
           description: "Welcome back to your wellness dashboard!",
         })
-        router.push(result.redirectTo || "/profile")
+
+        // Add a small delay to ensure session is properly set
+        setTimeout(() => {
+          router.push(result.redirectTo || "/profile")
+        }, 500)
       } else {
         setError(result.error || "An error occurred during sign in")
         toast({

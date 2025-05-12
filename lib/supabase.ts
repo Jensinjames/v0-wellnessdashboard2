@@ -92,5 +92,8 @@ export async function getUserProfile(userId: string) {
   }
 }
 
+// Re-export the client creation function
+// export const createBrowserClient = createSupabaseClient // Removed to fix redeclaration
+
 // For backward compatibility
 export const createActionSupabaseClient = createBrowserClient

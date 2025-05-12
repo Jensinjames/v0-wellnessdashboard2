@@ -1,197 +1,270 @@
 "use server"
 
-import { createActionClient } from "@/lib/supabase-server"
-import { revalidatePath } from "next/cache"
+import { cookies } from "next/headers"
+import { redirect } from "next/navigation"
+import { createServerClient as createSupabaseServerClient } from "@supabase/ssr"
+import type { Database } from "@/types/supabase"
+import { handleSupabaseError } from "@/utils/supabase-error-handler"
 
-// Get the app URL for redirects
-const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+// Environment variables validation
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
+if (!supabaseUrl || !supabaseAnonKey) {
+  throw new Error("Missing Supabase environment variables")
+}
+
+// Helper to create a server client for auth actions
+function createActionClient() {
+  const cookieStore = cookies()
+
+  return createSupabaseServerClient<Database>(supabaseUrl, supabaseAnonKey, {
+    cookies: {
+      get(name: string) {
+        return cookieStore.get(name)?.value
+      },
+      set(name: string, value: string, options: any) {
+        cookieStore.set({ name, value, ...options })
+      },
+      remove(name: string, options: any) {
+        cookieStore.set({ name, value: "", ...options, maxAge: 0 })
+      },
+    },
+  })
+}
+
+// Sign in with email and password
 export async function signIn(formData: FormData) {
-  const supabase = createActionClient()
+  const email = formData.get("email") as string
+  const password = formData.get("password") as string
+  const redirectTo = (formData.get("redirectTo") as string) || "/profile"
+
+  if (!email || !password) {
+    return {
+      success: false,
+      error: "Email and password are required",
+    }
+  }
 
   try {
-    const email = formData.get("email") as string
-    const password = formData.get("password") as string
-    const redirectTo = (formData.get("redirectTo") as string) || "/profile"
+    const supabase = createActionClient()
 
-    if (!email || !password) {
-      return { success: false, error: "Email and password are required" }
-    }
-
-    const { data, error } = await supabase.auth.signInWithPassword({
+    const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
 
     if (error) {
-      return { success: false, error: error.message }
-    }
-
-    // Revalidate the profile page
-    revalidatePath("/profile")
-
-    return { success: true, data, redirectTo }
-  } catch (error) {
-    console.error("Sign in error:", error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "An unknown error occurred",
-    }
-  }
-}
-
-export async function signUp(formData: FormData) {
-  const supabase = createActionClient()
-
-  try {
-    const email = formData.get("email") as string
-    const password = formData.get("password") as string
-    const name = formData.get("name") as string
-
-    if (!email || !password || !name) {
-      return { success: false, error: "All fields are required" }
-    }
-
-    // Use the explicit redirectTo to ensure it matches what's in the Supabase dashboard
-    const { data: authData, error: authError } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          name,
-        },
-        emailRedirectTo: `${appUrl}/auth/callback`,
-      },
-    })
-
-    if (authError) {
-      return { success: false, error: authError.message }
-    }
-
-    // If sign up is successful and we have a user, create a profile in the users table
-    if (authData.user) {
-      const { error: profileError } = await supabase.from("users").insert({
-        id: authData.user.id,
-        email,
-        name,
-      })
-
-      if (profileError) {
-        console.error("Error creating user profile:", profileError)
-        // We don't want to fail the sign up if profile creation fails
-        // The user can create their profile later
+      return {
+        success: false,
+        error: error.message,
       }
     }
 
     return {
       success: true,
-      data: authData,
-      message: authData.session ? "Sign up successful!" : "Please check your email to confirm your account.",
+      redirectTo,
+    }
+  } catch (error) {
+    console.error("Sign in error:", error)
+    return {
+      success: false,
+      error: "An unexpected error occurred",
+    }
+  }
+}
+
+// Sign up with email and password
+export async function signUp(formData: FormData) {
+  const email = formData.get("email") as string
+  const password = formData.get("password") as string
+  const name = formData.get("name") as string
+  const redirectTo = (formData.get("redirectTo") as string) || "/profile"
+
+  if (!email || !password || !name) {
+    return {
+      success: false,
+      error: "Name, email, and password are required",
+    }
+  }
+
+  try {
+    const supabase = createActionClient()
+
+    // Get the base URL for the callback
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+    const callbackUrl = `${baseUrl}/auth/callback`
+
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { name },
+        emailRedirectTo: callbackUrl,
+      },
+    })
+
+    if (error) {
+      return {
+        success: false,
+        error: error.message,
+      }
+    }
+
+    return {
+      success: true,
+      message: "Check your email for the confirmation link",
     }
   } catch (error) {
     console.error("Sign up error:", error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : "An unknown error occurred",
+      error: "An unexpected error occurred",
     }
   }
 }
 
+// Sign out
 export async function signOut() {
   const supabase = createActionClient()
-
-  try {
-    const { error } = await supabase.auth.signOut()
-
-    if (error) {
-      return { success: false, error: error.message }
-    }
-
-    return { success: true }
-  } catch (error) {
-    console.error("Sign out error:", error)
-    return {
-      success: false,
-      error: error instanceof Error ? error.message : "An unknown error occurred",
-    }
-  }
+  await supabase.auth.signOut()
+  redirect("/auth/login")
 }
 
+// Reset password
 export async function resetPassword(formData: FormData) {
-  const supabase = createActionClient()
+  const email = formData.get("email") as string
+
+  if (!email) {
+    return {
+      success: false,
+      error: "Email is required",
+    }
+  }
 
   try {
-    const email = formData.get("email") as string
+    const supabase = createActionClient()
 
-    if (!email) {
-      return { success: false, error: "Email is required" }
-    }
+    // Get the base URL for the callback
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
+    const resetUrl = `${baseUrl}/auth/reset-password/confirm`
 
-    // Use the explicit redirectTo to ensure it matches what's in the Supabase dashboard
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${appUrl}/auth/callback?next=/auth/update-password`,
+      redirectTo: resetUrl,
     })
 
     if (error) {
-      return { success: false, error: error.message }
+      return {
+        success: false,
+        error: error.message,
+      }
     }
 
-    return { success: true, message: "Password reset instructions sent to your email" }
+    return {
+      success: true,
+    }
   } catch (error) {
     console.error("Reset password error:", error)
     return {
       success: false,
-      error: error instanceof Error ? error.message : "An unknown error occurred",
+      error: "An unexpected error occurred",
     }
   }
 }
 
+// Update password
+export async function updatePassword(formData: FormData) {
+  const password = formData.get("password") as string
+
+  if (!password) {
+    return {
+      success: false,
+      error: "Password is required",
+    }
+  }
+
+  try {
+    const supabase = createActionClient()
+
+    const { error } = await supabase.auth.updateUser({
+      password,
+    })
+
+    if (error) {
+      return {
+        success: false,
+        error: error.message,
+      }
+    }
+
+    return {
+      success: true,
+    }
+  } catch (error) {
+    console.error("Update password error:", error)
+    return {
+      success: false,
+      error: "An unexpected error occurred",
+    }
+  }
+}
+
+// Get the current session
+export async function getSession() {
+  const supabase = createActionClient()
+
+  const { data, error } = await supabase.auth.getSession()
+
+  if (error || !data.session) {
+    return null
+  }
+
+  return data.session
+}
+
+// Get the current user
+export async function getUser() {
+  const session = await getSession()
+
+  if (!session) {
+    return null
+  }
+
+  return session.user
+}
+
+// Update user profile
 export async function updateUserProfile(formData: FormData) {
   const supabase = createActionClient()
 
   try {
-    // Get current user
     const {
       data: { user },
-      error: userError,
     } = await supabase.auth.getUser()
 
-    if (userError || !user) {
-      return { success: false, error: userError?.message || "User not authenticated" }
+    if (!user) {
+      return { success: false, error: "Not authenticated" }
     }
 
     const name = formData.get("name") as string
     const phone = formData.get("phone") as string
     const location = formData.get("location") as string
 
-    // Update user metadata
-    const { error: updateError } = await supabase.auth.updateUser({
-      data: { name },
-    })
-
-    if (updateError) {
-      return { success: false, error: updateError.message }
-    }
-
-    // Update user profile in the users table
-    const { error: profileError } = await supabase
+    const { error } = await supabase
       .from("users")
       .update({
         name,
         phone,
         location,
-        updated_at: new Date().toISOString(),
       })
       .eq("id", user.id)
 
-    if (profileError) {
-      return { success: false, error: profileError.message }
+    if (error) {
+      const errorInfo = handleSupabaseError(error, "Failed to update profile")
+      return { success: false, error: errorInfo.message }
     }
 
-    // Revalidate the profile page to show updated data
-    revalidatePath("/profile")
-
-    return { success: true, message: "Profile updated successfully" }
+    return { success: true }
   } catch (error) {
     console.error("Update profile error:", error)
     return {

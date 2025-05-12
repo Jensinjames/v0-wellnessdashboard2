@@ -1,4 +1,4 @@
-import { createServerClient as createSupaServerClient } from "@supabase/ssr"
+import { createServerClient as createSupabaseServerClient } from "@supabase/ssr"
 import { cookies } from "next/headers"
 import type { Database } from "@/types/supabase"
 
@@ -14,16 +14,16 @@ if (!supabaseUrl || !supabaseAnonKey) {
 export function createServerClient() {
   const cookieStore = cookies()
 
-  return createSupaServerClient<Database>(supabaseUrl, supabaseAnonKey, {
+  return createSupabaseServerClient<Database>(supabaseUrl, supabaseAnonKey, {
     cookies: {
       get(name: string) {
         return cookieStore.get(name)?.value
       },
       set(name: string, value: string, options: any) {
-        cookieStore.set(name, value, options)
+        cookieStore.set({ name, value, ...options })
       },
       remove(name: string, options: any) {
-        cookieStore.set(name, "", { ...options, maxAge: 0 })
+        cookieStore.set({ name, value: "", ...options, maxAge: 0 })
       },
     },
   })

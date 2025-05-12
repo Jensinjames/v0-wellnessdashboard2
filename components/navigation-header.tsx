@@ -1,6 +1,6 @@
 "use client"
 
-import Link from "next/link" // Fixed import from "next/link" instead of "next/navigation"
+import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { useAuth } from "@/providers/auth-provider"
 import { Button } from "@/components/ui/button"
@@ -38,6 +38,7 @@ export function NavigationHeader() {
                 aria-controls={navId}
               >
                 <Menu className="h-5 w-5" aria-hidden="true" />
+                <span className="sr-only">Menu</span>
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-[240px] sm:w-[300px]">
@@ -48,6 +49,7 @@ export function NavigationHeader() {
                 <SheetClose asChild>
                   <Button variant="ghost" size="icon" aria-label="Close navigation menu">
                     <X className="h-5 w-5" aria-hidden="true" />
+                    <span className="sr-only">Close</span>
                   </Button>
                 </SheetClose>
               </div>
@@ -188,7 +190,7 @@ export function NavigationHeader() {
               Loading...
             </span>
           ) : isAuthenticated ? (
-            <Button onClick={handleSignOut} variant="outline" size="sm">
+            <Button onClick={handleSignOut} variant="outline" size="sm" aria-label="Sign out of your account">
               Sign Out
             </Button>
           ) : (

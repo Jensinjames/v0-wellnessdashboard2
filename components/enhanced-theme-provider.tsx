@@ -2,124 +2,140 @@
 
 import type React from "react"
 
-import { createContext, useContext, useEffect, useState } from "react"
-import { Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
 import { Button } from "@/components/ui/button"
+import { Moon, Sun } from "lucide-react"
+import { useEffect, useState } from "react"
+import { createContext, useContext } from "react"
 
-type ThemeProviderProps = {
-  children: React.ReactNode
-  defaultTheme?: string
-  storageKey?: string
+// Create a context for the enhanced theme
+type EnhancedThemeContextType = {
+  currentTheme: string
+  toggleHighContrast: () => void
+  isHighContrast: boolean
+  toggleLargeText: () => void
+  isLargeText: boolean
+  toggleReducedMotion: () => void
+  isReducedMotion: boolean
 }
 
-type ThemeProviderState = {
-  theme: string
-  setTheme: (theme: string) => void
-}
+const EnhancedThemeContext = createContext<EnhancedThemeContextType>({
+  currentTheme: "light",
+  toggleHighContrast: () => {},
+  isHighContrast: false,
+  toggleLargeText: () => {},
+  isLargeText: false,
+  toggleReducedMotion: () => {},
+  isReducedMotion: false,
+})
 
-const initialState: ThemeProviderState = {
-  theme: "light", // Changed default from "system" to "light"
-  setTheme: () => null,
-}
+export const useEnhancedTheme = () => useContext(EnhancedThemeContext)
 
-const ThemeProviderContext = createContext<ThemeProviderState>(initialState)
-
-export function EnhancedThemeProvider({
-  children,
-  defaultTheme = "light", // Changed default from "system" to "light"
-  storageKey = "ui-theme",
-  ...props
-}: ThemeProviderProps) {
+export function EnhancedThemeProvider({ children }: { children: React.ReactNode }) {
   const { theme, setTheme } = useTheme()
+  const [isHighContrast, setIsHighContrast] = useState(false)
+  const [isLargeText, setIsLargeText] = useState(false)
+  const [isReducedMotion, setIsReducedMotion] = useState(false)
   const [mounted, setMounted] = useState(false)
 
-  // Set the default theme to light on initial load
+  // After mounting, we have access to the theme
   useEffect(() => {
-    if (!mounted) {
-      setTheme(defaultTheme)
-      setMounted(true)
+    setMounted(true)
+
+    // Check for saved preferences
+    const savedHighContrast = localStorage.getItem("highContrast") === "true"
+    const savedLargeText = localStorage.getItem("largeText") === "true"
+    const savedReducedMotion = localStorage.getItem("reducedMotion") === "true"
+
+    setIsHighContrast(savedHighContrast)
+    setIsLargeText(savedLargeText)
+    setIsReducedMotion(savedReducedMotion)
+
+    // Apply preferences
+    if (savedHighContrast) document.documentElement.classList.add("high-contrast")
+    if (savedLargeText) document.documentElement.classList.add("large-text")
+    if (savedReducedMotion) document.documentElement.classList.add("reduced-motion")
+  }, [])
+
+  const toggleHighContrast = () => {
+    const newValue = !isHighContrast
+    setIsHighContrast(newValue)
+    localStorage.setItem("highContrast", String(newValue))
+
+    if (newValue) {
+      document.documentElement.classList.add("high-contrast")
+    } else {
+      document.documentElement.classList.remove("high-contrast")
     }
-  }, [defaultTheme, mounted, setTheme])
+  }
 
-  useEffect(() => {
-    const root = window.document.documentElement
-    root.classList.remove("light", "dark")
+  const toggleLargeText = () => {
+    const newValue = !isLargeText
+    setIsLargeText(newValue)
+    localStorage.setItem("largeText", String(newValue))
 
-    if (theme === "system") {
-      const systemTheme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"
-      root.classList.add(systemTheme)
-      return
+    if (newValue) {
+      document.documentElement.classList.add("large-text")
+    } else {
+      document.documentElement.classList.remove("large-text")
     }
+  }
 
-    root.classList.add(theme || "light") // Fallback to light if theme is undefined
-  }, [theme])
+  const toggleReducedMotion = () => {
+    const newValue = !isReducedMotion
+    setIsReducedMotion(newValue)
+    localStorage.setItem("reducedMotion", String(newValue))
+
+    if (newValue) {
+      document.documentElement.classList.add("reduced-motion")
+    } else {
+      document.documentElement.classList.remove("reduced-motion")
+    }
+  }
 
   const value = {
-    theme: theme || "light", // Fallback to light if theme is undefined
-    setTheme: (theme: string) => {
-      setTheme(theme)
-    },
+    currentTheme: theme || "light",
+    toggleHighContrast,
+    isHighContrast,
+    toggleLargeText,
+    isLargeText,
+    toggleReducedMotion,
+    isReducedMotion,
   }
 
-  return (
-    <ThemeProviderContext.Provider {...props} value={value}>
-      {children}
-    </ThemeProviderContext.Provider>
-  )
-}
-
-export const useEnhancedTheme = () => {
-  const context = useContext(ThemeProviderContext)
-
-  if (context === undefined) {
-    throw new Error("useEnhancedTheme must be used within a ThemeProvider")
+  if (!mounted) {
+    return <>{children}</>
   }
 
-  return context
+  return <EnhancedThemeContext.Provider value={value}>{children}</EnhancedThemeContext.Provider>
 }
 
 export function ThemeToggle() {
   const { theme, setTheme } = useTheme()
   const [mounted, setMounted] = useState(false)
 
-  // Avoid hydration mismatch
+  // After mounting, we have access to the theme
   useEffect(() => {
     setMounted(true)
   }, [])
 
   if (!mounted) {
-    return (
-      <Button variant="ghost" size="icon" disabled aria-label="Theme toggle (loading)">
-        <Sun
-          className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0"
-          aria-hidden="true"
-        />
-        <Moon
-          className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100"
-          aria-hidden="true"
-        />
-      </Button>
-    )
+    // Return a placeholder with the same dimensions to prevent layout shift
+    return <div className="w-9 h-9" />
   }
+
+  const isDark = theme === "dark"
+  const toggleTheme = () => setTheme(isDark ? "light" : "dark")
 
   return (
     <Button
       variant="ghost"
       size="icon"
-      onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-      aria-label={theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}
-      aria-pressed={theme === "dark"}
+      onClick={toggleTheme}
+      aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
     >
-      <Sun
-        className="h-[1.2rem] w-[1.2rem] rotate-0 scale-100 transition-all dark:-rotate-90 dark:scale-0"
-        aria-hidden="true"
-      />
-      <Moon
-        className="absolute h-[1.2rem] w-[1.2rem] rotate-90 scale-0 transition-all dark:rotate-0 dark:scale-100"
-        aria-hidden="true"
-      />
-      <span className="sr-only">{theme === "dark" ? "Switch to light theme" : "Switch to dark theme"}</span>
+      {isDark ? <Sun className="h-5 w-5" aria-hidden="true" /> : <Moon className="h-5 w-5" aria-hidden="true" />}
+      <span className="sr-only">{isDark ? "Light mode" : "Dark mode"}</span>
     </Button>
   )
 }
