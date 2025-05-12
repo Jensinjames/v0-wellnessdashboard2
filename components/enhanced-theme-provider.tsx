@@ -121,7 +121,7 @@ export function ThemeToggle() {
 
   if (!mounted) {
     // Return a placeholder with the same dimensions to prevent layout shift
-    return <div className="w-9 h-9" />
+    return <div className="w-9 h-9" aria-hidden="true" />
   }
 
   const isDark = theme === "dark"
@@ -133,6 +133,8 @@ export function ThemeToggle() {
       size="icon"
       onClick={toggleTheme}
       aria-label={isDark ? "Switch to light theme" : "Switch to dark theme"}
+      aria-pressed={isDark}
+      title={isDark ? "Switch to light theme" : "Switch to dark theme"}
     >
       {isDark ? <Sun className="h-5 w-5" aria-hidden="true" /> : <Moon className="h-5 w-5" aria-hidden="true" />}
       <span className="sr-only">{isDark ? "Light mode" : "Dark mode"}</span>

@@ -3,165 +3,168 @@
  */
 
 /**
- * Generates a unique ID with an optional prefix
- * @param prefix Optional prefix for the ID
- * @returns A unique ID string
+ * Determines if an element is focusable
+ * @param element The element to check
+ * @returns Boolean indicating if the element is focusable
  */
-export function generateUniqueId(prefix = "id"): string {
-  return `${prefix}-${Math.random().toString(36).substring(2, 9)}`
+export function isFocusable(element: HTMLElement): boolean {
+  // Elements that are naturally focusable
+  const focusableElements = [
+    "a[href]",
+    "button:not([disabled])",
+    "input:not([disabled])",
+    "select:not([disabled])",
+    "textarea:not([disabled])",
+    '[tabindex]:not([tabindex="-1"])',
+    "area[href]",
+    "iframe",
+    "object",
+    "embed",
+    "audio[controls]",
+    "video[controls]",
+  ]
+
+  // Check if the element matches any of the focusable selectors
+  return focusableElements.some((selector) => element.matches(selector))
 }
 
 /**
- * Calculates the contrast ratio between two colors
- * @param foreground The foreground color in hex format (e.g., "#ffffff")
- * @param background The background color in hex format (e.g., "#000000")
- * @returns The contrast ratio as a number
+ * Ensures that elements with aria-hidden="true" don't contain focusable elements
+ * @param rootElement The root element to check (usually document.body)
+ * @returns Array of accessibility issues
  */
-export function calculateContrastRatio(foreground: string, background: string): number {
-  // Convert hex to RGB
-  const hexToRgb = (hex: string): number[] => {
-    const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i
-    const fullHex = hex.replace(shorthandRegex, (_, r, g, b) => r + r + g + g + b + b)
-    const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(fullHex)
-    return result
-      ? [Number.parseInt(result[1], 16), Number.parseInt(result[2], 16), Number.parseInt(result[3], 16)]
-      : [0, 0, 0]
+export function checkAriaHiddenFocusable(rootElement: HTMLElement = document.body): string[] {
+  const issues: string[] = []
+
+  // Find all elements with aria-hidden="true"
+  const hiddenElements = Array.from(rootElement.querySelectorAll('[aria-hidden="true"]'))
+
+  hiddenElements.forEach((hiddenElement) => {
+    // Check if the hidden element itself is focusable
+    if (isFocusable(hiddenElement as HTMLElement)) {
+      issues.push(`Element with aria-hidden="true" is focusable: ${getElementIdentifier(hiddenElement)}`)
+    }
+
+    // Check if it contains any focusable descendants
+    const focusableDescendants = Array.from(hiddenElement.querySelectorAll("*")).filter((el) =>
+      isFocusable(el as HTMLElement),
+    )
+
+    if (focusableDescendants.length > 0) {
+      focusableDescendants.forEach((el) => {
+        issues.push(`Element with aria-hidden="true" contains focusable descendant: ${getElementIdentifier(el)}`)
+      })
+    }
+  })
+
+  return issues
+}
+
+/**
+ * Gets a string identifier for an element
+ * @param element The element to identify
+ * @returns A string identifying the element
+ */
+function getElementIdentifier(element: Element): string {
+  let identifier = element.tagName.toLowerCase()
+
+  if (element.id) {
+    identifier += `#${element.id}`
   }
 
-  // Calculate relative luminance
-  const calculateLuminance = (rgb: number[]): number => {
-    const [r, g, b] = rgb.map((c) => {
-      const channel = c / 255
-      return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4)
-    })
-    return 0.2126 * r + 0.7152 * g + 0.0722 * b
-  }
-
-  const foregroundRgb = hexToRgb(foreground)
-  const backgroundRgb = hexToRgb(background)
-
-  const foregroundLuminance = calculateLuminance(foregroundRgb)
-  const backgroundLuminance = calculateLuminance(backgroundRgb)
-
-  // Calculate contrast ratio
-  const lighter = Math.max(foregroundLuminance, backgroundLuminance)
-  const darker = Math.min(foregroundLuminance, backgroundLuminance)
-
-  return (lighter + 0.05) / (darker + 0.05)
-}
-
-/**
- * Checks if a contrast ratio meets WCAG AA standards
- * @param ratio The contrast ratio to check
- * @param isLargeText Whether the text is large (14pt bold or 18pt regular)
- * @returns True if the contrast ratio meets WCAG AA standards
- */
-export function meetsWcagAA(ratio: number, isLargeText = false): boolean {
-  return isLargeText ? ratio >= 3 : ratio >= 4.5
-}
-
-/**
- * Checks if a contrast ratio meets WCAG AAA standards
- * @param ratio The contrast ratio to check
- * @param isLargeText Whether the text is large (14pt bold or 18pt regular)
- * @returns True if the contrast ratio meets WCAG AAA standards
- */
-export function meetsWcagAAA(ratio: number, isLargeText = false): boolean {
-  return isLargeText ? ratio >= 4.5 : ratio >= 7
-}
-
-/**
- * Announces a message to screen readers
- * @param message The message to announce
- * @param assertive Whether the message should be announced assertively
- */
-export function announceToScreenReader(message: string, assertive = false): void {
-  if (typeof document === "undefined") return // SSR check
-
-  // Create or get the live region
-  const liveRegionId = assertive ? "screen-reader-assertive-announce" : "screen-reader-polite-announce"
-
-  let liveRegion = document.getElementById(liveRegionId)
-
-  if (!liveRegion) {
-    liveRegion = document.createElement("div")
-    liveRegion.id = liveRegionId
-    liveRegion.setAttribute("aria-live", assertive ? "assertive" : "polite")
-    liveRegion.setAttribute("aria-atomic", "true")
-    liveRegion.className = "sr-only"
-    document.body.appendChild(liveRegion)
-  }
-
-  // Clear the region first to ensure the announcement
-  liveRegion.textContent = ""
-
-  // Set the message after a brief delay
-  setTimeout(() => {
-    liveRegion!.textContent = message
-  }, 100)
-}
-
-/**
- * Focuses the first focusable element in a container
- * @param containerId The ID of the container element
- */
-export function focusFirstElement(containerId: string): void {
-  if (typeof document === "undefined") return // SSR check
-
-  const container = document.getElementById(containerId)
-  if (!container) return
-
-  const focusableElements = container.querySelectorAll(
-    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])',
-  )
-
-  if (focusableElements.length > 0) {
-    ;(focusableElements[0] as HTMLElement).focus()
-  }
-}
-
-/**
- * Traps focus within a container
- * @param containerId The ID of the container element
- * @returns A cleanup function to remove the trap
- */
-export function trapFocus(containerId: string): () => void {
-  if (typeof document === "undefined") return () => {} // SSR check
-
-  const container = document.getElementById(containerId)
-  if (!container) return () => {}
-
-  const focusableElements = Array.from(
-    container.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
-  ) as HTMLElement[]
-
-  if (focusableElements.length === 0) return () => {}
-
-  const firstElement = focusableElements[0]
-  const lastElement = focusableElements[focusableElements.length - 1]
-
-  const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key !== "Tab") return
-
-    if (e.shiftKey) {
-      // Shift + Tab: if focus is on first element, move to last
-      if (document.activeElement === firstElement) {
-        e.preventDefault()
-        lastElement.focus()
-      }
-    } else {
-      // Tab: if focus is on last element, move to first
-      if (document.activeElement === lastElement) {
-        e.preventDefault()
-        firstElement.focus()
-      }
+  if (element.className && typeof element.className === "string") {
+    const classes = element.className.split(" ").filter(Boolean).join(".")
+    if (classes) {
+      identifier += `.${classes}`
     }
   }
 
-  document.addEventListener("keydown", handleKeyDown)
+  return identifier
+}
 
-  // Return cleanup function
-  return () => {
-    document.removeEventListener("keydown", handleKeyDown)
-  }
+/**
+ * Checks that lists (ul/ol) only directly contain li elements
+ * @param rootElement The root element to check (usually document.body)
+ * @returns Array of accessibility issues
+ */
+export function checkListStructure(rootElement: HTMLElement = document.body): string[] {
+  const issues: string[] = []
+
+  // Find all ul and ol elements
+  const listElements = Array.from(rootElement.querySelectorAll("ul, ol"))
+
+  listElements.forEach((list) => {
+    // Get all direct children
+    const children = Array.from(list.children)
+
+    // Check if any direct children are not li, script, or template
+    const invalidChildren = children.filter((child) => {
+      const tagName = child.tagName.toLowerCase()
+      return tagName !== "li" && tagName !== "script" && tagName !== "template"
+    })
+
+    if (invalidChildren.length > 0) {
+      invalidChildren.forEach((child) => {
+        issues.push(
+          `List element contains invalid direct child: ${getElementIdentifier(list)} > ${getElementIdentifier(child)}`,
+        )
+      })
+    }
+  })
+
+  return issues
+}
+
+/**
+ * Ensures that elements have appropriate ARIA labels
+ * @param rootElement The root element to check
+ * @returns Array of accessibility issues
+ */
+export function checkAriaLabels(rootElement: HTMLElement = document.body): string[] {
+  const issues: string[] = []
+
+  // Elements that should have accessible names
+  const elementsRequiringLabels = [
+    "a[href]",
+    "button",
+    "input",
+    "select",
+    "textarea",
+    '[role="button"]',
+    '[role="checkbox"]',
+    '[role="radio"]',
+    '[role="tab"]',
+    '[role="menuitem"]',
+  ]
+
+  const selector = elementsRequiringLabels.join(",")
+  const elements = Array.from(rootElement.querySelectorAll(selector))
+
+  elements.forEach((element) => {
+    const hasAccessibleName =
+      element.hasAttribute("aria-label") ||
+      element.hasAttribute("aria-labelledby") ||
+      (element as HTMLElement).innerText?.trim() ||
+      element.getAttribute("title") ||
+      element.getAttribute("alt") ||
+      (element.tagName.toLowerCase() === "input" &&
+        element.getAttribute("type") === "button" &&
+        element.getAttribute("value"))
+
+    if (!hasAccessibleName) {
+      issues.push(`Element missing accessible name: ${getElementIdentifier(element)}`)
+    }
+  })
+
+  return issues
+}
+
+/**
+ * Generates a unique ID for accessibility purposes
+ *
+ * @param prefix - Optional prefix for the ID
+ * @returns A unique ID
+ */
+export function generateUniqueId(prefix?: string): string {
+  return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
 }

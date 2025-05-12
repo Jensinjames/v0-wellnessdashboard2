@@ -116,25 +116,35 @@ const EnhancedButton = React.forwardRef<HTMLButtonElement, EnhancedButtonProps>(
     // Use conditionalCn for dynamic classes
     const buttonClasses = safeCn(buttonVariants({ variant, size, className }))
 
+    const baseProps = {
+      className: buttonClasses,
+      ref,
+      disabled: props.disabled || loading,
+      "aria-busy": loading ? "true" : undefined,
+      "aria-label": buttonAriaLabel,
+      ...props,
+    }
+
+    // For icon-only buttons, ensure there's an accessible name
+    if (isIconOnly && !buttonAriaLabel && icon) {
+      // If no aria-label is provided, add a visually hidden span for screen readers
+      return (
+        <Comp {...baseProps}>
+          {loading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
+          {!loading && icon && iconPosition === "left" && iconElement}
+          {content}
+          {!loading && icon && iconPosition === "right" && iconElement}
+          <span className="sr-only">{iconLabel || icon}</span>
+        </Comp>
+      )
+    }
+
     return (
-      <Comp
-        className={buttonClasses}
-        ref={ref}
-        disabled={props.disabled || loading}
-        aria-busy={loading}
-        aria-label={buttonAriaLabel}
-        {...props}
-      >
+      <Comp {...baseProps}>
         {loading && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
-
         {!loading && icon && iconPosition === "left" && iconElement}
-
         {content}
-
         {!loading && icon && iconPosition === "right" && iconElement}
-
-        {/* Add visually hidden text for screen readers if this is an icon-only button without an aria-label */}
-        {isIconOnly && !buttonAriaLabel && icon && <span className="sr-only">{iconLabel || icon}</span>}
       </Comp>
     )
   },

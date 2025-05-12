@@ -15,16 +15,20 @@ export function NavigationHeader() {
   const { isAuthenticated, isLoading, user } = useAuth()
   const [open, setOpen] = useState(false)
   const navId = "main-navigation"
+  const mobileNavId = "mobile-navigation"
 
   const handleSignOut = async () => {
     await signOut()
   }
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-white dark:bg-slate-950 dark:border-slate-800">
+    <header
+      className="sticky top-0 z-50 w-full border-b bg-white dark:bg-slate-950 dark:border-slate-800"
+      role="banner"
+    >
       <div className="container flex h-14 items-center justify-between">
         <div className="flex items-center gap-6 md:gap-8">
-          <Link href="/" className="flex items-center space-x-2">
+          <Link href="/" className="flex items-center space-x-2" aria-label="Rollen Wellness home">
             <span className="text-xl font-bold">Rollen Wellness</span>
           </Link>
 
@@ -35,7 +39,7 @@ export function NavigationHeader() {
                 size="icon"
                 aria-label="Open navigation menu"
                 aria-expanded={open}
-                aria-controls={navId}
+                aria-controls={mobileNavId}
               >
                 <Menu className="h-5 w-5" aria-hidden="true" />
                 <span className="sr-only">Menu</span>
@@ -43,7 +47,12 @@ export function NavigationHeader() {
             </SheetTrigger>
             <SheetContent side="left" className="w-[240px] sm:w-[300px]">
               <div className="flex items-center justify-between py-2">
-                <Link href="/" className="text-lg font-medium" onClick={() => setOpen(false)}>
+                <Link
+                  href="/"
+                  className="text-lg font-medium"
+                  onClick={() => setOpen(false)}
+                  aria-label="Rollen Wellness home"
+                >
                   Rollen Wellness
                 </Link>
                 <SheetClose asChild>
@@ -53,134 +62,162 @@ export function NavigationHeader() {
                   </Button>
                 </SheetClose>
               </div>
-              <nav id={navId} className="flex flex-col gap-3 py-4">
+              <nav id={mobileNavId} className="flex flex-col gap-3 py-4" aria-label="Mobile navigation">
+                <ul className="flex flex-col gap-3 list-none p-0 m-0">
+                  <li>
+                    <Link
+                      href="/"
+                      className={`text-sm font-medium transition-colors hover:text-primary ${
+                        pathname === "/" ? "text-primary" : "text-muted-foreground"
+                      }`}
+                      onClick={() => setOpen(false)}
+                      aria-current={pathname === "/" ? "page" : undefined}
+                    >
+                      Home
+                    </Link>
+                  </li>
+                  {isAuthenticated && (
+                    <>
+                      <li>
+                        <Link
+                          href="/dashboard"
+                          className={`text-sm font-medium transition-colors hover:text-primary ${
+                            pathname === "/dashboard" ? "text-primary" : "text-muted-foreground"
+                          }`}
+                          onClick={() => setOpen(false)}
+                          aria-current={pathname === "/dashboard" ? "page" : undefined}
+                        >
+                          Dashboard
+                        </Link>
+                      </li>
+                      <li>
+                        <Link
+                          href="/profile"
+                          className={`text-sm font-medium transition-colors hover:text-primary ${
+                            pathname === "/profile" ? "text-primary" : "text-muted-foreground"
+                          }`}
+                          onClick={() => setOpen(false)}
+                          aria-current={pathname === "/profile" ? "page" : undefined}
+                        >
+                          Profile
+                        </Link>
+                      </li>
+                      <li>
+                        <Link
+                          href="/activity"
+                          className={`text-sm font-medium transition-colors hover:text-primary ${
+                            pathname === "/activity" ? "text-primary" : "text-muted-foreground"
+                          }`}
+                          onClick={() => setOpen(false)}
+                          aria-current={pathname === "/activity" ? "page" : undefined}
+                        >
+                          Activity
+                        </Link>
+                      </li>
+                      <li>
+                        <Link
+                          href="/categories"
+                          className={`text-sm font-medium transition-colors hover:text-primary ${
+                            pathname === "/categories" ? "text-primary" : "text-muted-foreground"
+                          }`}
+                          onClick={() => setOpen(false)}
+                          aria-current={pathname === "/categories" ? "page" : undefined}
+                        >
+                          Categories
+                        </Link>
+                      </li>
+                      <li>
+                        <Link
+                          href="/activity-patterns"
+                          className={`text-sm font-medium transition-colors hover:text-primary ${
+                            pathname === "/activity-patterns" ? "text-primary" : "text-muted-foreground"
+                          }`}
+                          onClick={() => setOpen(false)}
+                          aria-current={pathname === "/activity-patterns" ? "page" : undefined}
+                        >
+                          Activity Patterns
+                        </Link>
+                      </li>
+                    </>
+                  )}
+                </ul>
+              </nav>
+            </SheetContent>
+          </Sheet>
+
+          <nav id={navId} className="hidden md:block" aria-label="Main navigation">
+            <ul className="flex gap-6 list-none p-0 m-0">
+              <li>
                 <Link
                   href="/"
                   className={`text-sm font-medium transition-colors hover:text-primary ${
                     pathname === "/" ? "text-primary" : "text-muted-foreground"
                   }`}
-                  onClick={() => setOpen(false)}
                   aria-current={pathname === "/" ? "page" : undefined}
                 >
                   Home
                 </Link>
-                {isAuthenticated && (
-                  <>
+              </li>
+              {isAuthenticated && (
+                <>
+                  <li>
                     <Link
                       href="/dashboard"
                       className={`text-sm font-medium transition-colors hover:text-primary ${
                         pathname === "/dashboard" ? "text-primary" : "text-muted-foreground"
                       }`}
-                      onClick={() => setOpen(false)}
                       aria-current={pathname === "/dashboard" ? "page" : undefined}
                     >
                       Dashboard
                     </Link>
+                  </li>
+                  <li>
                     <Link
                       href="/profile"
                       className={`text-sm font-medium transition-colors hover:text-primary ${
                         pathname === "/profile" ? "text-primary" : "text-muted-foreground"
                       }`}
-                      onClick={() => setOpen(false)}
                       aria-current={pathname === "/profile" ? "page" : undefined}
                     >
                       Profile
                     </Link>
+                  </li>
+                  <li>
                     <Link
                       href="/activity"
                       className={`text-sm font-medium transition-colors hover:text-primary ${
                         pathname === "/activity" ? "text-primary" : "text-muted-foreground"
                       }`}
-                      onClick={() => setOpen(false)}
                       aria-current={pathname === "/activity" ? "page" : undefined}
                     >
                       Activity
                     </Link>
+                  </li>
+                  <li>
                     <Link
                       href="/categories"
                       className={`text-sm font-medium transition-colors hover:text-primary ${
                         pathname === "/categories" ? "text-primary" : "text-muted-foreground"
                       }`}
-                      onClick={() => setOpen(false)}
                       aria-current={pathname === "/categories" ? "page" : undefined}
                     >
                       Categories
                     </Link>
+                  </li>
+                  <li>
                     <Link
                       href="/activity-patterns"
                       className={`text-sm font-medium transition-colors hover:text-primary ${
                         pathname === "/activity-patterns" ? "text-primary" : "text-muted-foreground"
                       }`}
-                      onClick={() => setOpen(false)}
                       aria-current={pathname === "/activity-patterns" ? "page" : undefined}
                     >
                       Activity Patterns
                     </Link>
-                  </>
-                )}
-              </nav>
-            </SheetContent>
-          </Sheet>
-
-          <nav className="hidden md:flex gap-6">
-            <Link
-              href="/"
-              className={`text-sm font-medium transition-colors hover:text-primary ${
-                pathname === "/" ? "text-primary" : "text-muted-foreground"
-              }`}
-              aria-current={pathname === "/" ? "page" : undefined}
-            >
-              Home
-            </Link>
-            {isAuthenticated && (
-              <>
-                <Link
-                  href="/dashboard"
-                  className={`text-sm font-medium transition-colors hover:text-primary ${
-                    pathname === "/dashboard" ? "text-primary" : "text-muted-foreground"
-                  }`}
-                  aria-current={pathname === "/dashboard" ? "page" : undefined}
-                >
-                  Dashboard
-                </Link>
-                <Link
-                  href="/profile"
-                  className={`text-sm font-medium transition-colors hover:text-primary ${
-                    pathname === "/profile" ? "text-primary" : "text-muted-foreground"
-                  }`}
-                  aria-current={pathname === "/profile" ? "page" : undefined}
-                >
-                  Profile
-                </Link>
-                <Link
-                  href="/activity"
-                  className={`text-sm font-medium transition-colors hover:text-primary ${
-                    pathname === "/activity" ? "text-primary" : "text-muted-foreground"
-                  }`}
-                  aria-current={pathname === "/activity" ? "page" : undefined}
-                >
-                  Activity
-                </Link>
-                <Link
-                  href="/categories"
-                  className={`text-sm font-medium transition-colors hover:text-primary ${
-                    pathname === "/categories" ? "text-primary" : "text-muted-foreground"
-                  }`}
-                  aria-current={pathname === "/categories" ? "page" : undefined}
-                >
-                  Categories
-                </Link>
-                <Link
-                  href="/activity-patterns"
-                  className={`text-sm font-medium transition-colors hover:text-primary ${
-                    pathname === "/activity-patterns" ? "text-primary" : "text-muted-foreground"
-                  }`}
-                  aria-current={pathname === "/activity-patterns" ? "page" : undefined}
-                >
-                  Activity Patterns
-                </Link>
-              </>
-            )}
+                  </li>
+                </>
+              )}
+            </ul>
           </nav>
         </div>
         <div className="flex items-center gap-2">

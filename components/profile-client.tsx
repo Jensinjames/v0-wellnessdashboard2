@@ -94,12 +94,12 @@ export default function ProfileClient({ user, profile }: ProfileClientProps) {
 
             <div className="space-y-2">
               <Label htmlFor="name">Name</Label>
-              <Input id="name" name="name" defaultValue={profile?.name || ""} required />
+              <Input id="name" name="name" defaultValue={profile?.name || ""} required aria-required="true" />
             </div>
 
             <div className="space-y-2">
               <Label htmlFor="phone">Phone</Label>
-              <Input id="phone" name="phone" defaultValue={profile?.phone || ""} />
+              <Input id="phone" name="phone" defaultValue={profile?.phone || ""} type="tel" inputMode="tel" />
             </div>
 
             <div className="space-y-2">
@@ -112,7 +112,7 @@ export default function ProfileClient({ user, profile }: ProfileClientProps) {
                 type="submit"
                 disabled={updating}
                 data-auth-action="update-profile"
-                aria-busy={updating}
+                aria-busy={updating ? "true" : undefined}
                 aria-label={updating ? "Updating profile..." : "Update profile information"}
               >
                 {updating ? "Updating..." : "Update Profile"}
