@@ -1,70 +1,40 @@
 import { createClient } from "@supabase/supabase-js"
-import { createBrowserClient } from "@supabase/ssr"
-import { createServerComponentClient } from "@supabase/auth-helpers-nextjs"
 import { cookies } from "next/headers"
-import { cache } from "react"
 
-// Types for our database
-export type Database = {
-  public: {
-    tables: {
-      users: {
-        Row: {
-          id: string
-          email: string
-          name: string
-          phone: string | null
-          location: string | null
-          avatar_url: string | null
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          email: string
-          name: string
-          phone?: string | null
-          location?: string | null
-          avatar_url?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          email?: string
-          name?: string
-          phone?: string | null
-          location?: string | null
-          avatar_url?: string | null
-          created_at?: string
-          updated_at?: string
-        }
-      }
-    }
-  }
+// Create a single supabase client for the browser
+export const createBrowserSupabaseClient = () => {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
+
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      storageKey: "sb-auth-token",
+    },
+  })
 }
 
-// Server-side Supabase client (using SSR)
-export const createServerSupabaseClient = cache(() => {
-  const cookieStore = cookies()
-  return createServerComponentClient<Database>({ cookies: () => cookieStore })
-})
+// Create a supabase client for server components
+export const createServerSupabaseClient = () => {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string
 
-// Client-side Supabase client (singleton pattern)
-let browserClient: ReturnType<typeof createBrowserClient<Database>> | null = null
-
-export function createBrowserSupabaseClient() {
-  if (browserClient) return browserClient
-
-  browserClient = createBrowserClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-  )
-
-  return browserClient
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      persistSession: false,
+    },
+  })
 }
 
-// For server actions
-export function createActionSupabaseClient() {
-  return createClient<Database>(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!)
+// Create a supabase client for server actions
+export const createActionSupabaseClient = () => {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL as string
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY as string
+
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: false,
+      token: cookies().get("sb-auth-token")?.value,
+    },
+  })
 }

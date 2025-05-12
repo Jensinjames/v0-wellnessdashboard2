@@ -1,14 +1,11 @@
-"use client"
-
 import * as React from "react"
 import { Slot } from "@radix-ui/react-slot"
 import { cva, type VariantProps } from "class-variance-authority"
 
 import { cn } from "@/lib/utils"
-import { useUniqueId } from "@/utils/unique-id"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0",
+  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
   {
     variants: {
       variant: {
@@ -37,101 +34,22 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
-  id?: string
-  isToggle?: boolean
-  isExpanded?: boolean
-  isPressed?: boolean
-  categoryContext?: string
-  formContext?: "activity" | "category" | "entry" | string
-  authAction?: "login" | "register" | "reset-password" | "logout" | "profile" | string
-  onStateChange?: (state: { pressed?: boolean; expanded?: boolean }) => void
+  authAction?: string
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  (
-    {
-      className,
-      variant,
-      size,
-      asChild = false,
-      id,
-      children,
-      isToggle,
-      isPressed,
-      isExpanded,
-      categoryContext,
-      formContext,
-      authAction,
-      onStateChange,
-      ...props
-    },
-    ref,
-  ) => {
+  ({ className, variant, size, asChild = false, authAction, ...props }, ref) => {
     const Comp = asChild ? Slot : "button"
-    const uniqueId = useUniqueId("btn")
-    const buttonId = id || uniqueId
-
-    // Check if the button has only an icon as a child
-    const hasOnlyIconChild =
-      React.Children.count(children) === 1 && React.isValidElement(children) && typeof children.type !== "string"
-
-    // If aria-label is not provided and the button has only an icon, warn in development
-    if (process.env.NODE_ENV !== "production" && !props["aria-label"] && hasOnlyIconChild) {
-      console.warn("Button with only icon child should have an aria-label")
-    }
-
-    // Handle toggle button functionality
-    const ariaProps: Record<string, any> = {}
-
-    if (isToggle) {
-      ariaProps["aria-pressed"] = isPressed
-      ariaProps.role = "button"
-    }
-
-    if (isExpanded !== undefined) {
-      ariaProps["aria-expanded"] = isExpanded
-    }
-
-    // Add form and category context for better integration
-    if (formContext) {
-      ariaProps["data-form-context"] = formContext
-    }
-
-    if (categoryContext) {
-      ariaProps["data-category-context"] = categoryContext
-    }
-
-    // Add auth action for tracking authentication-related interactions
-    if (authAction) {
-      ariaProps["data-auth-action"] = authAction
-    }
-
-    // Handle click events for toggle buttons
-    const handleClick = (e: React.MouseEvent<HTMLButtonElement>) => {
-      if (props.onClick) {
-        props.onClick(e)
-      }
-
-      if (isToggle && onStateChange) {
-        onStateChange({ pressed: !isPressed })
-      }
-
-      if (isExpanded !== undefined && onStateChange) {
-        onStateChange({ expanded: !isExpanded })
-      }
-    }
+    const buttonId = props.id || `button-${Math.random().toString(36).substring(2, 9)}`
 
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         id={buttonId}
-        onClick={handleClick}
-        {...ariaProps}
+        data-auth-action={authAction}
         {...props}
-      >
-        {children}
-      </Comp>
+      />
     )
   },
 )

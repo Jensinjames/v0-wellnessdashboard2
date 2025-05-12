@@ -2,123 +2,196 @@
 
 import { cookies } from "next/headers"
 import { redirect } from "next/navigation"
-import { createActionSupabaseClient } from "@/lib/supabase"
-
-export async function signUp(formData: FormData) {
-  const email = formData.get("email") as string
-  const password = formData.get("password") as string
-  const name = formData.get("name") as string
-
-  const supabase = createActionSupabaseClient()
-
-  const { data, error: signUpError } = await supabase.auth.signUp({
-    email,
-    password,
-    options: {
-      data: {
-        name,
-      },
-    },
-  })
-
-  if (signUpError) {
-    return { error: signUpError.message }
-  }
-
-  // Create user profile in the users table
-  const { error: profileError } = await supabase.from("users").insert({
-    id: data.user?.id,
-    email,
-    name,
-  })
-
-  if (profileError) {
-    return { error: profileError.message }
-  }
-
-  return { success: true }
-}
+import { createServerSupabaseClient } from "@/lib/supabase"
 
 export async function signIn(formData: FormData) {
-  const email = formData.get("email") as string
-  const password = formData.get("password") as string
+  try {
+    const email = formData.get("email") as string
+    const password = formData.get("password") as string
 
-  const supabase = createActionSupabaseClient()
+    if (!email || !password) {
+      return { error: "Email and password are required" }
+    }
 
-  const { error } = await supabase.auth.signInWithPassword({
-    email,
-    password,
-  })
+    const supabase = createServerSupabaseClient()
 
-  if (error) {
-    return { error: error.message }
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
+
+    if (error) {
+      return { error: error.message }
+    }
+
+    // Set auth cookie
+    cookies().set("sb-auth-token", data.session?.access_token || "", {
+      path: "/",
+      maxAge: data.session?.expires_in || 3600,
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+    })
+
+    return { success: true }
+  } catch (error: any) {
+    return { error: error.message || "An error occurred during sign in" }
   }
+}
 
-  return { success: true }
+export async function signUp(formData: FormData) {
+  try {
+    const email = formData.get("email") as string
+    const password = formData.get("password") as string
+    const name = formData.get("name") as string
+
+    if (!email || !password || !name) {
+      return { error: "All fields are required" }
+    }
+
+    const supabase = createServerSupabaseClient()
+
+    const { data: authData, error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          name,
+        },
+      },
+    })
+
+    if (authError) {
+      return { error: authError.message }
+    }
+
+    // Create user profile in the users table
+    if (authData.user) {
+      const { error: profileError } = await supabase.from("users").insert({
+        id: authData.user.id,
+        email,
+        name,
+      })
+
+      if (profileError) {
+        return { error: profileError.message }
+      }
+    }
+
+    // Set auth cookie
+    if (authData.session) {
+      cookies().set("sb-auth-token", authData.session.access_token, {
+        path: "/",
+        maxAge: authData.session.expires_in,
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+      })
+    }
+
+    return { success: true }
+  } catch (error: any) {
+    return { error: error.message || "An error occurred during sign up" }
+  }
 }
 
 export async function signOut() {
-  const supabase = createActionSupabaseClient()
+  const supabase = createServerSupabaseClient()
   await supabase.auth.signOut()
-  cookies().delete("supabase-auth-token")
+
+  // Clear auth cookie
+  cookies().delete("sb-auth-token")
+
   redirect("/auth/login")
 }
 
 export async function resetPassword(formData: FormData) {
-  const email = formData.get("email") as string
+  try {
+    const email = formData.get("email") as string
 
-  const supabase = createActionSupabaseClient()
+    if (!email) {
+      return { error: "Email is required" }
+    }
 
-  const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/update-password`,
-  })
+    const supabase = createServerSupabaseClient()
 
-  if (error) {
-    return { error: error.message }
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/update-password`,
+    })
+
+    if (error) {
+      return { error: error.message }
+    }
+
+    return { success: true }
+  } catch (error: any) {
+    return { error: error.message || "An error occurred during password reset" }
   }
-
-  return { success: true }
 }
 
 export async function updateUserProfile(formData: FormData) {
-  const supabase = createActionSupabaseClient()
+  try {
+    const name = formData.get("name") as string
+    const phone = formData.get("phone") as string
+    const location = formData.get("location") as string
+    const id = formData.get("id") as string
 
-  // Get current user
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
+    if (!id) {
+      return { error: "User ID is required" }
+    }
 
-  if (!user) {
-    return { error: "Not authenticated" }
-  }
+    const supabase = createServerSupabaseClient()
 
-  const name = formData.get("name") as string
-  const phone = formData.get("phone") as string
-  const location = formData.get("location") as string
-
-  // Update auth metadata
-  const { error: authUpdateError } = await supabase.auth.updateUser({
-    data: { name },
-  })
-
-  if (authUpdateError) {
-    return { error: authUpdateError.message }
-  }
-
-  // Update profile in users table
-  const { error: profileUpdateError } = await supabase
-    .from("users")
-    .update({
-      name,
-      phone,
-      location,
-      updated_at: new Date().toISOString(),
+    // Update user metadata in auth
+    const { error: authError } = await supabase.auth.admin.updateUserById(id, {
+      user_metadata: {
+        name,
+      },
     })
-    .eq("id", user.id)
 
-  if (profileUpdateError) {
-    return { error: profileUpdateError.message }
+    if (authError) {
+      return { error: authError.message }
+    }
+
+    // Update user profile in the users table
+    const { error: profileError } = await supabase
+      .from("users")
+      .update({
+        name,
+        phone,
+        location,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+
+    if (profileError) {
+      return { error: profileError.message }
+    }
+
+    return { success: true }
+  } catch (error: any) {
+    return { error: error.message || "An error occurred while updating profile" }
   }
+}
 
-  return { success: true, message: "Profile updated successfully" }
+// Helper function to get the current user
+export async function getCurrentUser() {
+  try {
+    const supabase = createServerSupabaseClient()
+
+    // Get the session from the cookie
+    const token = cookies().get("sb-auth-token")?.value
+
+    if (!token) {
+      return { user: null }
+    }
+
+    const { data, error } = await supabase.auth.getUser(token)
+
+    if (error || !data.user) {
+      return { user: null }
+    }
+
+    return { user: data.user }
+  } catch (error) {
+    return { user: null }
+  }
 }

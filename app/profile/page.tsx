@@ -131,6 +131,7 @@ export default function ProfilePage() {
 
   const handleLogout = async () => {
     await signOut()
+    router.push("/auth/login")
   }
 
   const getInitials = (name: string) => {
