@@ -1,6 +1,6 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
-import { CategoryManagement } from "@/components/category-management"
+import { CategoryManagementWrapper } from "@/components/category-management-wrapper"
 import { ChevronLeft } from "lucide-react"
 
 export default function CategoriesPage() {
@@ -22,7 +22,7 @@ export default function CategoriesPage() {
 
       <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
         <div className="p-6">
-          <CategoryManagement />
+          <CategoryManagementWrapper />
         </div>
       </div>
     </div>
