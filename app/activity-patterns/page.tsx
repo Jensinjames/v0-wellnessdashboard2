@@ -1,7 +1,7 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 import { ChevronLeft } from "lucide-react"
-import { ActivityPatterns } from "@/components/activity-patterns"
+import { ActivityPatternsWrapper } from "@/components/activity-patterns-wrapper"
 
 export default function ActivityPatternsPage() {
   return (
@@ -22,7 +22,7 @@ export default function ActivityPatternsPage() {
 
       <div className="rounded-lg border bg-card text-card-foreground shadow-sm">
         <div className="p-6">
-          <ActivityPatterns />
+          <ActivityPatternsWrapper />
         </div>
       </div>
     </div>
