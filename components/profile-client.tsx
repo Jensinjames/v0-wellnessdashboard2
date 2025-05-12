@@ -21,6 +21,7 @@ export default function ProfileClient({ user, profile }: ProfileClientProps) {
   const router = useRouter()
   const [updating, setUpdating] = useState(false)
   const [message, setMessage] = useState("")
+  const formId = "profile-form"
 
   async function handleUpdateProfile(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -60,7 +61,7 @@ export default function ProfileClient({ user, profile }: ProfileClientProps) {
     <div className="container mx-auto py-10">
       <Card className="max-w-md mx-auto">
         <CardHeader>
-          <CardTitle>User Profile</CardTitle>
+          <CardTitle id="profile-title">User Profile</CardTitle>
         </CardHeader>
         <CardContent>
           {message && (
@@ -68,16 +69,27 @@ export default function ProfileClient({ user, profile }: ProfileClientProps) {
               className={`mb-4 p-2 rounded ${
                 message.includes("Error") ? "bg-red-100 text-red-800" : "bg-green-100 text-green-800"
               }`}
+              aria-live="polite"
+              role="status"
             >
               {message}
             </div>
           )}
 
-          <form onSubmit={handleUpdateProfile} className="space-y-4">
+          <form onSubmit={handleUpdateProfile} className="space-y-4" id={formId} aria-labelledby="profile-title">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" name="email" type="email" defaultValue={user?.email || ""} disabled />
-              <p className="text-sm text-muted-foreground">Email cannot be changed</p>
+              <Input
+                id="email"
+                name="email"
+                type="email"
+                defaultValue={user?.email || ""}
+                disabled
+                aria-describedby="email-hint"
+              />
+              <p className="text-sm text-muted-foreground" id="email-hint">
+                Email cannot be changed
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -96,7 +108,7 @@ export default function ProfileClient({ user, profile }: ProfileClientProps) {
             </div>
 
             <div className="flex justify-between pt-4">
-              <Button type="submit" disabled={updating} data-auth-action="update-profile">
+              <Button type="submit" disabled={updating} data-auth-action="update-profile" aria-busy={updating}>
                 {updating ? "Updating..." : "Update Profile"}
               </Button>
 

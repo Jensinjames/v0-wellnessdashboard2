@@ -47,6 +47,12 @@ export function ActivityPatterns() {
   const categorySelectId = `${baseId}-category-select`
   const timeFrameSelectId = `${baseId}-timeframe-select`
   const viewModeButtonsId = `${baseId}-viewmode-buttons`
+  const activityTrendsId = `${baseId}-activity-trends`
+  const categoryDistributionId = `${baseId}-category-distribution`
+  const timeOfDayId = `${baseId}-time-of-day`
+  const activityStreaksId = `${baseId}-activity-streaks`
+  const activityHeatmapId = `${baseId}-activity-heatmap`
+  const activityCorrelationsId = `${baseId}-activity-correlations`
 
   // Get data based on selected filters
   const activityTimeData = getActivityTimeData(timeFrame, selectedCategory, viewMode)
@@ -92,10 +98,6 @@ export function ActivityPatterns() {
   const handleViewModeChange = (mode: "frequency" | "duration" | "value") => {
     setViewMode(mode)
     announce(`View mode changed to ${mode}`, "polite")
-  }
-
-  const uniqueId = () => {
-    return Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15)
   }
 
   // Get activity intensity class
@@ -154,7 +156,7 @@ export function ActivityPatterns() {
         <Card className="col-span-full">
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <div className="space-y-1">
-              <CardTitle>Activity Trends</CardTitle>
+              <CardTitle id={activityTrendsId}>Activity Trends</CardTitle>
               <CardDescription>
                 {viewMode === "frequency" && "Number of activities over time"}
                 {viewMode === "duration" && "Duration of activities over time"}
@@ -193,6 +195,14 @@ export function ActivityPatterns() {
           </CardHeader>
           <CardContent>
             <LiveRegion>
+              <div className="sr-only" id={`${activityTrendsId}-description`}>
+                {viewMode === "frequency" &&
+                  `Activity frequency over time for ${selectedCategory === "all" ? "all categories" : selectedCategory}`}
+                {viewMode === "duration" &&
+                  `Activity duration over time for ${selectedCategory === "all" ? "all categories" : selectedCategory}`}
+                {viewMode === "value" &&
+                  `Activity value over time for ${selectedCategory === "all" ? "all categories" : selectedCategory}`}
+              </div>
               <ChartContainer
                 config={{
                   activity: {
@@ -201,6 +211,7 @@ export function ActivityPatterns() {
                   },
                 }}
                 className="aspect-[4/2] w-full"
+                aria-labelledby={`${activityTrendsId}-description`}
               >
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={activityTimeData} margin={{ top: 10, right: 30, left: 0, bottom: 0 }}>
@@ -227,7 +238,7 @@ export function ActivityPatterns() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Category Distribution</CardTitle>
+            <CardTitle id={categoryDistributionId}>Category Distribution</CardTitle>
             <CardDescription>
               {viewMode === "frequency" && "Activity frequency by category"}
               {viewMode === "duration" && "Time spent by category"}
@@ -235,7 +246,7 @@ export function ActivityPatterns() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="aspect-[4/3] w-full">
+            <div className="aspect-[4/3] w-full" aria-labelledby={categoryDistributionId}>
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
                   <Pie
@@ -263,11 +274,11 @@ export function ActivityPatterns() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Time of Day</CardTitle>
+            <CardTitle id={timeOfDayId}>Time of Day</CardTitle>
             <CardDescription>When you're most active</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="aspect-[4/3] w-full">
+            <div className="aspect-[4/3] w-full" aria-labelledby={timeOfDayId}>
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={timeOfDayData} margin={{ top: 10, right: 30, left: 0, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" />
@@ -283,11 +294,11 @@ export function ActivityPatterns() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Activity Streaks</CardTitle>
+            <CardTitle id={activityStreaksId}>Activity Streaks</CardTitle>
             <CardDescription>Your consistency over time</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="space-y-4">
+            <div className="space-y-4" aria-labelledby={activityStreaksId}>
               <div className="flex items-center justify-between">
                 <div>
                   <div className="text-2xl font-bold">{streakData.currentStreak}</div>
@@ -304,8 +315,10 @@ export function ActivityPatterns() {
               </div>
 
               <div className="space-y-2">
-                <div className="text-sm font-medium">Last 10 Days</div>
-                <div className="flex gap-1" role="group" aria-label="Activity streak for last 10 days">
+                <div className="text-sm font-medium" id="last-ten-days-label">
+                  Last 10 Days
+                </div>
+                <div className="flex gap-1" role="group" aria-labelledby="last-ten-days-label">
                   {streakData.lastTenDays.map((active, i) => {
                     const dayId = generateUniqueId(`streak-day-${i + 1}`)
                     return (
@@ -334,11 +347,11 @@ export function ActivityPatterns() {
 
         <Card className="md:col-span-2">
           <CardHeader>
-            <CardTitle>Activity Heatmap</CardTitle>
+            <CardTitle id={activityHeatmapId}>Activity Heatmap</CardTitle>
             <CardDescription>Your activity intensity throughout the period</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-7 gap-1" role="table" aria-label="Activity heatmap">
+            <div className="grid grid-cols-7 gap-1" role="table" aria-labelledby={activityHeatmapId}>
               <div className="sr-only" role="row">
                 <span role="columnheader">Sunday</span>
                 <span role="columnheader">Monday</span>
@@ -375,11 +388,11 @@ export function ActivityPatterns() {
 
         <Card className="md:col-span-2 lg:col-span-3">
           <CardHeader>
-            <CardTitle>Activity Correlations</CardTitle>
+            <CardTitle id={activityCorrelationsId}>Activity Correlations</CardTitle>
             <CardDescription>How different activities relate to each other</CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="flex flex-wrap gap-2">
+            <div className="flex flex-wrap gap-2" aria-labelledby={activityCorrelationsId}>
               {correlationData.map((item, i) => {
                 const badgeId = generateUniqueId(`correlation-${i}`)
                 // Use high contrast badges for better accessibility

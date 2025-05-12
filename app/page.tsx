@@ -24,7 +24,10 @@ export default function HomePage() {
         </div>
       </div>
 
-      <div className="mt-16 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-16 grid grid-cols-1 gap-8 sm:grid-cols-2 lg:grid-cols-4" aria-labelledby="features-heading">
+        <h2 id="features-heading" className="sr-only">
+          Key features
+        </h2>
         <FeatureCard title="Faith" description="Track spiritual practices and growth" />
         <FeatureCard title="Life" description="Balance personal relationships and activities" />
         <FeatureCard title="Work" description="Monitor productivity and career goals" />
@@ -38,7 +41,7 @@ function FeatureCard({ title, description }: { title: string; description: strin
   return (
     <div className="rounded-lg border bg-white p-6 text-gray-800 shadow-sm hover:shadow-md transition-shadow">
       <h3 className="mb-2 text-lg font-medium text-gray-900">{title}</h3>
-      <p className="text-sm text-gray-600">{description}</p>
+      <p className="text-sm text-gray-700">{description}</p>
     </div>
   )
 }

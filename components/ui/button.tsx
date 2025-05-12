@@ -41,6 +41,17 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant, size, asChild = false, buttonId, ...props }, ref) => {
     const Comp = asChild ? Slot : "button"
 
+    // Check if the button has only an icon as a child
+    const hasOnlyIconChild =
+      React.Children.count(props.children) === 1 &&
+      React.isValidElement(props.children) &&
+      typeof props.children.type !== "string"
+
+    // Warn in development if an icon-only button doesn't have an aria-label
+    if (process.env.NODE_ENV !== "production" && hasOnlyIconChild && !props["aria-label"]) {
+      console.warn("Accessibility warning: Button with only an icon child should have an aria-label attribute")
+    }
+
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
