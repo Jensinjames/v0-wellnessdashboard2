@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { z } from "zod"
@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { Eye, EyeOff, Lock, AlertCircle, CheckCircle } from "lucide-react"
+import { Eye, EyeOff, Lock, AlertCircle, CheckCircle, Loader2 } from "lucide-react"
 import { usePasswordUpdate } from "@/hooks/auth"
 import { useToast } from "@/hooks/use-toast"
 
@@ -31,10 +31,12 @@ type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>
 export default function ResetPasswordConfirmPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const { updatePassword, loading, error } = usePasswordUpdate()
+  const { updatePassword, validateSession, loading, error, success, sessionValid } = usePasswordUpdate()
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [resetSuccess, setResetSuccess] = useState(false)
+  const [sessionChecked, setSessionChecked] = useState(false)
+  const statusRef = useRef<HTMLDivElement>(null)
 
   // Initialize form with react-hook-form
   const form = useForm<ResetPasswordFormValues>({
@@ -44,6 +46,16 @@ export default function ResetPasswordConfirmPage() {
       confirmPassword: "",
     },
   })
+
+  // Validate session on component mount
+  useEffect(() => {
+    const checkSession = async () => {
+      await validateSession()
+      setSessionChecked(true)
+    }
+
+    checkSession()
+  }, [validateSession])
 
   // Handle form submission
   const onSubmit = async (values: ResetPasswordFormValues) => {
@@ -56,12 +68,22 @@ export default function ResetPasswordConfirmPage() {
           description: error.message || "Please try again",
           variant: "destructive",
         })
+
+        // Focus the status message for screen readers
+        if (statusRef.current) {
+          statusRef.current.focus()
+        }
       } else if (success) {
         setResetSuccess(true)
         toast({
           title: "Password reset successful",
           description: "Your password has been updated. You can now log in with your new password.",
         })
+
+        // Focus the status message for screen readers
+        if (statusRef.current) {
+          statusRef.current.focus()
+        }
 
         // Redirect to login after a short delay
         setTimeout(() => {
@@ -86,39 +108,67 @@ export default function ResetPasswordConfirmPage() {
           <CardDescription className="text-center">Enter your new password below</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {error && (
-            <Alert variant="destructive">
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription>{error.message}</AlertDescription>
+          {/* Session validation status */}
+          {!sessionChecked && (
+            <div className="flex items-center justify-center p-4" aria-live="polite">
+              <Loader2 className="h-6 w-6 animate-spin text-primary mr-2" aria-hidden="true" />
+              <span>Validating your session...</span>
+            </div>
+          )}
+
+          {/* Session error */}
+          {sessionChecked && error && !sessionValid && (
+            <Alert variant="destructive" ref={statusRef} tabIndex={-1} aria-live="assertive" role="alert">
+              <AlertCircle className="h-4 w-4" aria-hidden="true" />
+              <AlertDescription>
+                {error.message ||
+                  "Your password reset link is invalid or has expired. Please request a new password reset."}
+              </AlertDescription>
+              <div className="mt-4">
+                <Button asChild>
+                  <Link href="/auth/reset-password">Request new reset link</Link>
+                </Button>
+              </div>
             </Alert>
           )}
 
+          {/* Success message */}
           {resetSuccess && (
-            <Alert className="bg-green-50 border-green-200">
-              <CheckCircle className="h-4 w-4 text-green-600" />
+            <Alert
+              className="bg-green-50 border-green-200"
+              ref={statusRef}
+              tabIndex={-1}
+              aria-live="assertive"
+              role="status"
+            >
+              <CheckCircle className="h-4 w-4 text-green-600" aria-hidden="true" />
               <AlertDescription className="text-green-600">
                 Your password has been reset successfully. Redirecting to login...
               </AlertDescription>
             </Alert>
           )}
 
-          {!resetSuccess && (
+          {/* Password reset form */}
+          {sessionChecked && sessionValid && !resetSuccess && (
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" aria-labelledby="reset-password-title">
                 <FormField
                   control={form.control}
                   name="password"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>New Password</FormLabel>
+                      <FormLabel id="password-label">New Password</FormLabel>
                       <div className="relative">
-                        <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                         <FormControl>
                           <Input
                             type={showPassword ? "text" : "password"}
                             placeholder="••••••••"
                             className="pl-10 pr-10"
                             disabled={loading}
+                            aria-labelledby="password-label"
+                            aria-invalid={!!form.formState.errors.password}
+                            aria-describedby={form.formState.errors.password ? "password-error" : undefined}
                             {...field}
                           />
                         </FormControl>
@@ -129,11 +179,16 @@ export default function ResetPasswordConfirmPage() {
                           className="absolute right-0 top-0 h-10 w-10"
                           onClick={() => setShowPassword(!showPassword)}
                           aria-label={showPassword ? "Hide password" : "Show password"}
+                          aria-pressed={showPassword}
                         >
-                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          {showPassword ? (
+                            <EyeOff className="h-4 w-4" aria-hidden="true" />
+                          ) : (
+                            <Eye className="h-4 w-4" aria-hidden="true" />
+                          )}
                         </Button>
                       </div>
-                      <FormMessage />
+                      <FormMessage id="password-error" aria-live="polite" />
                     </FormItem>
                   )}
                 />
@@ -143,15 +198,20 @@ export default function ResetPasswordConfirmPage() {
                   name="confirmPassword"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Confirm Password</FormLabel>
+                      <FormLabel id="confirm-password-label">Confirm Password</FormLabel>
                       <div className="relative">
-                        <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" aria-hidden="true" />
                         <FormControl>
                           <Input
                             type={showConfirmPassword ? "text" : "password"}
                             placeholder="••••••••"
                             className="pl-10 pr-10"
                             disabled={loading}
+                            aria-labelledby="confirm-password-label"
+                            aria-invalid={!!form.formState.errors.confirmPassword}
+                            aria-describedby={
+                              form.formState.errors.confirmPassword ? "confirm-password-error" : undefined
+                            }
                             {...field}
                           />
                         </FormControl>
@@ -161,18 +221,30 @@ export default function ResetPasswordConfirmPage() {
                           size="icon"
                           className="absolute right-0 top-0 h-10 w-10"
                           onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                          aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                          aria-label={showConfirmPassword ? "Hide confirm password" : "Show confirm password"}
+                          aria-pressed={showConfirmPassword}
                         >
-                          {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          {showConfirmPassword ? (
+                            <EyeOff className="h-4 w-4" aria-hidden="true" />
+                          ) : (
+                            <Eye className="h-4 w-4" aria-hidden="true" />
+                          )}
                         </Button>
                       </div>
-                      <FormMessage />
+                      <FormMessage id="confirm-password-error" aria-live="polite" />
                     </FormItem>
                   )}
                 />
 
-                <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "Resetting password..." : "Reset password"}
+                <Button type="submit" className="w-full" disabled={loading} aria-busy={loading}>
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" aria-hidden="true" />
+                      <span>Resetting password...</span>
+                    </>
+                  ) : (
+                    "Reset password"
+                  )}
                 </Button>
               </form>
             </Form>

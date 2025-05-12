@@ -74,6 +74,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           logDebug(`No active session found: ${sessionError.message}`)
           setUser(null)
           setSession(null)
+
+          // Announce session error to screen readers if needed
+          if (typeof window !== "undefined" && window.document) {
+            const statusElement = document.getElementById("auth-status")
+            if (statusElement) {
+              statusElement.setAttribute("aria-live", "polite")
+              statusElement.textContent = "Authentication session error. Please sign in again."
+            }
+          }
         } else if (session) {
           logDebug(`Session found for user: ${session.user.email}`)
 
@@ -91,6 +100,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             setSession(session)
             setUser(userData)
             logDebug("User data retrieved", userData)
+
+            // Announce successful authentication to screen readers if needed
+            if (typeof window !== "undefined" && window.document) {
+              const statusElement = document.getElementById("auth-status")
+              if (statusElement) {
+                statusElement.setAttribute("aria-live", "polite")
+                statusElement.textContent = "Authentication successful."
+              }
+            }
           }
         } else {
           logDebug("No session found")
@@ -139,11 +157,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             id: userData.id,
             email: userData.email,
           })
+
+          // Announce auth state change to screen readers
+          if (typeof window !== "undefined" && window.document) {
+            const statusElement = document.getElementById("auth-status")
+            if (statusElement) {
+              statusElement.setAttribute("aria-live", "polite")
+              statusElement.textContent =
+                event === "SIGNED_IN" ? "You have successfully signed in." : "Your authentication has been updated."
+            }
+          }
         }
       } else {
         setSession(null)
         setUser(null)
         logDebug("User signed out or session expired")
+
+        // Announce sign out to screen readers
+        if (event === "SIGNED_OUT" && typeof window !== "undefined" && window.document) {
+          const statusElement = document.getElementById("auth-status")
+          if (statusElement) {
+            statusElement.setAttribute("aria-live", "polite")
+            statusElement.textContent = "You have been signed out."
+          }
+        }
       }
 
       setIsLoading(false)
@@ -165,5 +202,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Compute authentication status
   const isAuthenticated = !!user && !!session
 
-  return <AuthContext.Provider value={{ user, session, isLoading, isAuthenticated }}>{children}</AuthContext.Provider>
+  return (
+    <AuthContext.Provider value={{ user, session, isLoading, isAuthenticated }}>
+      <div id="auth-status" className="sr-only" aria-live="polite"></div>
+      {children}
+    </AuthContext.Provider>
+  )
 }

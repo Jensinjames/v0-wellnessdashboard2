@@ -4,78 +4,135 @@ import { useState } from "react"
 import { createClient } from "@/lib/supabase-client"
 import type { AuthError } from "@supabase/supabase-js"
 
-// Hook for requesting a password reset
-export function usePasswordResetRequest() {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<AuthError | null>(null)
+export type PasswordResetState = {
+  loading: boolean
+  success: boolean
+  error: AuthError | null
+  sessionValid: boolean
+}
 
-  const requestPasswordReset = async (email: string) => {
-    setLoading(true)
-    setError(null)
+export function usePasswordReset() {
+  const [state, setState] = useState<PasswordResetState>({
+    loading: false,
+    success: false,
+    error: null,
+    sessionValid: false,
+  })
 
+  // Request password reset email
+  const requestReset = async (email: string) => {
     try {
+      setState({ ...state, loading: true, error: null })
       const supabase = createClient()
 
-      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+      const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/auth/reset-password/confirm`,
       })
 
-      if (resetError) {
-        setError(resetError)
-        return { error: resetError, sent: false }
+      if (error) {
+        setState({ ...state, loading: false, error, success: false })
+        return { success: false, error }
       }
 
-      return { error: null, sent: true }
+      setState({ ...state, loading: false, success: true, error: null })
+      return { success: true, error: null }
     } catch (err) {
-      const authError = err as AuthError
-      setError(authError)
-      return { error: authError, sent: false }
-    } finally {
-      setLoading(false)
+      console.error("Password reset request error:", err)
+      const error = err as AuthError
+      setState({ ...state, loading: false, error, success: false })
+      return { success: false, error }
     }
   }
 
   return {
-    requestPasswordReset,
-    loading,
-    error,
+    requestReset,
+    loading: state.loading,
+    success: state.success,
+    error: state.error,
   }
 }
 
-// Hook for updating password after reset
 export function usePasswordUpdate() {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<AuthError | null>(null)
+  const [state, setState] = useState<PasswordResetState>({
+    loading: false,
+    success: false,
+    error: null,
+    sessionValid: false,
+  })
 
-  const updatePassword = async (newPassword: string) => {
-    setLoading(true)
-    setError(null)
-
+  // Validate the current session for password reset
+  const validateSession = async () => {
     try {
+      setState((prev) => ({ ...prev, loading: true }))
       const supabase = createClient()
 
-      const { error: updateError } = await supabase.auth.updateUser({
+      // Check if we have an active session
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+
+      if (sessionError || !sessionData.session) {
+        setState((prev) => ({
+          ...prev,
+          loading: false,
+          sessionValid: false,
+          error:
+            sessionError ||
+            ({
+              message: "No active session found. Your password reset link may have expired.",
+              name: "SessionError",
+              status: 401,
+            } as AuthError),
+        }))
+        return { valid: false, error: sessionError }
+      }
+
+      setState((prev) => ({ ...prev, loading: false, sessionValid: true, error: null }))
+      return { valid: true, error: null }
+    } catch (err) {
+      console.error("Session validation error:", err)
+      const error = err as AuthError
+      setState((prev) => ({ ...prev, loading: false, sessionValid: false, error }))
+      return { valid: false, error }
+    }
+  }
+
+  // Update password with the new one
+  const updatePassword = async (newPassword: string) => {
+    try {
+      setState((prev) => ({ ...prev, loading: true, error: null }))
+      const supabase = createClient()
+
+      // First validate the session
+      const { valid, error: validationError } = await validateSession()
+
+      if (!valid) {
+        return { success: false, error: validationError }
+      }
+
+      const { error } = await supabase.auth.updateUser({
         password: newPassword,
       })
 
-      if (updateError) {
-        setError(updateError)
-        return { success: false, error: updateError }
+      if (error) {
+        setState((prev) => ({ ...prev, loading: false, error, success: false }))
+        return { success: false, error }
       }
 
+      setState((prev) => ({ ...prev, loading: false, success: true, error: null }))
       return { success: true, error: null }
     } catch (err) {
-      const authError = err as AuthError
-      setError(authError)
-      return { success: false, error: authError }
-    } finally {
-      setLoading(false)
+      console.error("Password update error:", err)
+      const error = err as AuthError
+      setState((prev) => ({ ...prev, loading: false, error, success: false }))
+      return { success: false, error }
     }
   }
 
   return {
     updatePassword,
-    loading,
-    error,
+    validateSession,
+    loading: state.loading,
+    success: state.success,
+    error: state.error,
+    sessionValid: state.sessionValid,
   }
 }
