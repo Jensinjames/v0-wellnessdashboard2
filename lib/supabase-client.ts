@@ -1,55 +1,26 @@
 "use client"
 
 import { createBrowserClient } from "@supabase/ssr"
-import type { Database } from "@/types/supabase"
-import { clientEnv } from "@/lib/env"
+import type { Database } from "@/types/database"
 
-// Environment variables validation
-const supabaseUrl = clientEnv.SUPABASE_URL
-const supabaseAnonKey = clientEnv.SUPABASE_ANON_KEY
+// Ensure we're using environment variables correctly
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error("Missing Supabase environment variables")
+  console.error("Missing Supabase environment variables. Check your .env file.")
 }
 
-// Validate URL format
-try {
-  new URL(supabaseUrl)
-} catch (error) {
-  throw new Error(`Invalid Supabase URL: ${supabaseUrl}`)
-}
+// Create a singleton instance to avoid multiple instances
+let supabaseClient: ReturnType<typeof createBrowserClient<Database>> | null = null
 
-// SINGLETON PATTERN: Create a single instance of the Supabase client for the browser
-let browserClient: ReturnType<typeof createBrowserClient<Database>> | null = null
+export const createClient = () => {
+  if (supabaseClient) return supabaseClient
 
-// Client-side Supabase client (browser)
-export function createClient() {
-  // For SSR, create a client that won't persist anything
-  if (typeof window === "undefined") {
-    return createBrowserClient<Database>(supabaseUrl, supabaseAnonKey, {
-      auth: {
-        persistSession: false,
-        autoRefreshToken: false,
-        detectSessionInUrl: false,
-      },
-    })
-  }
+  // Create a new client if one doesn't exist
+  supabaseClient = createBrowserClient<Database>(supabaseUrl!, supabaseAnonKey!)
 
-  // Return the existing instance if it exists
-  if (browserClient) return browserClient
-
-  // Create a new instance if it doesn't exist
-  browserClient = createBrowserClient<Database>(supabaseUrl, supabaseAnonKey, {
-    auth: {
-      persistSession: true,
-      autoRefreshToken: true,
-      detectSessionInUrl: true,
-      storageKey: "sb-auth-token",
-      flowType: "pkce",
-    },
-  })
-
-  return browserClient
+  return supabaseClient
 }
 
 // Helper function to get the current user (client-side)

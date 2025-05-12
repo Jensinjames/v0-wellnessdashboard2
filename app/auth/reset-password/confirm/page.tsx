@@ -12,8 +12,9 @@ import { Input } from "@/components/ui/input"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Lock, AlertCircle, CheckCircle, Loader2 } from "lucide-react"
-import { usePasswordUpdate } from "@/hooks/auth"
+import { usePasswordUpdate } from "@/hooks/auth/use-password-reset" // Fixed import path
 import { useToast } from "@/hooks/use-toast"
+import { createClient } from "@/lib/supabase-client"
 
 // Form validation schema
 const resetPasswordSchema = z
@@ -36,6 +37,7 @@ export default function ResetPasswordConfirmPage() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [resetSuccess, setResetSuccess] = useState(false)
   const [sessionChecked, setSessionChecked] = useState(false)
+  const [sessionCheckError, setSessionCheckError] = useState<string | null>(null)
   const statusRef = useRef<HTMLDivElement>(null)
 
   // Initialize form with react-hook-form
@@ -50,8 +52,33 @@ export default function ResetPasswordConfirmPage() {
   // Validate session on component mount
   useEffect(() => {
     const checkSession = async () => {
-      await validateSession()
-      setSessionChecked(true)
+      try {
+        // First check if we have a session directly
+        const supabase = createClient()
+        const { data, error: sessionError } = await supabase.auth.getSession()
+
+        if (sessionError) {
+          console.error("Session check error:", sessionError.message)
+          setSessionCheckError(sessionError.message)
+          setSessionChecked(true)
+          return
+        }
+
+        if (!data || !data.session) {
+          console.log("No active session found")
+          setSessionCheckError("No active session found. Your password reset link may have expired.")
+          setSessionChecked(true)
+          return
+        }
+
+        // If we have a session, validate it
+        await validateSession()
+        setSessionChecked(true)
+      } catch (err) {
+        console.error("Error checking session:", err)
+        setSessionCheckError("Failed to validate your session. Please try again.")
+        setSessionChecked(true)
+      }
     }
 
     checkSession()
@@ -60,6 +87,19 @@ export default function ResetPasswordConfirmPage() {
   // Handle form submission
   const onSubmit = async (values: ResetPasswordFormValues) => {
     try {
+      // Double-check session before attempting password update
+      const supabase = createClient()
+      const { data } = await supabase.auth.getSession()
+
+      if (!data || !data.session) {
+        toast({
+          title: "Session expired",
+          description: "Your session has expired. Please request a new password reset link.",
+          variant: "destructive",
+        })
+        return
+      }
+
       const { success, error } = await updatePassword(values.password)
 
       if (error) {
@@ -117,11 +157,12 @@ export default function ResetPasswordConfirmPage() {
           )}
 
           {/* Session error */}
-          {sessionChecked && error && !sessionValid && (
+          {sessionChecked && (sessionCheckError || (error && !sessionValid)) && (
             <Alert variant="destructive" ref={statusRef} tabIndex={-1} aria-live="assertive" role="alert">
               <AlertCircle className="h-4 w-4" aria-hidden="true" />
               <AlertDescription>
-                {error.message ||
+                {sessionCheckError ||
+                  error?.message ||
                   "Your password reset link is invalid or has expired. Please request a new password reset."}
               </AlertDescription>
               <div className="mt-4">
@@ -149,7 +190,7 @@ export default function ResetPasswordConfirmPage() {
           )}
 
           {/* Password reset form */}
-          {sessionChecked && sessionValid && !resetSuccess && (
+          {sessionChecked && !sessionCheckError && sessionValid && !resetSuccess && (
             <Form {...form}>
               <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4" aria-labelledby="reset-password-title">
                 <FormField

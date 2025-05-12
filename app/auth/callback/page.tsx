@@ -37,11 +37,16 @@ export default async function AuthCallbackPage({
     const code = searchParams.code
 
     if (code) {
-      const { error } = await supabase.auth.exchangeCodeForSession(code)
+      try {
+        const { error } = await supabase.auth.exchangeCodeForSession(code)
 
-      if (error) {
-        console.error("Error exchanging code for session:", error.message)
-        return redirect(`/auth/error?message=${encodeURIComponent(error.message)}`)
+        if (error) {
+          console.error("Error exchanging code for session:", error.message)
+          return redirect(`/auth/error?message=${encodeURIComponent(error.message)}`)
+        }
+      } catch (exchangeError) {
+        console.error("Exception during code exchange:", exchangeError)
+        return redirect(`/auth/error?message=${encodeURIComponent("Failed to process authentication")}`)
       }
     }
 
