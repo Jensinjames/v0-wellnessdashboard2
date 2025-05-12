@@ -1,91 +1,91 @@
 "use client"
 
-import { useCallback } from "react"
-import { resetPassword, updatePassword } from "@/app/actions/auth-actions"
-import { useAuthState } from "./use-auth-state"
+import { useState } from "react"
+import { createClient } from "@/lib/supabase-client"
+import type { AuthError } from "@supabase/supabase-js"
 
-interface ResetPasswordResponse {
-  success: boolean
-  error?: string
+export type PasswordResetRequestState = {
+  requestPasswordReset: (email: string) => Promise<{ error: AuthError | null }>
+  loading: boolean
+  error: AuthError | null
 }
 
-export function usePasswordReset() {
-  const [resetState, { setLoading: setResetLoading, setSuccess: setResetSuccess, setError: setResetError }] =
-    useAuthState<ResetPasswordResponse>()
+export type PasswordUpdateState = {
+  updatePassword: (newPassword: string) => Promise<{ error: AuthError | null }>
+  loading: boolean
+  error: AuthError | null
+}
 
-  const [updateState, { setLoading: setUpdateLoading, setSuccess: setUpdateSuccess, setError: setUpdateError }] =
-    useAuthState<ResetPasswordResponse>()
+/**
+ * Hook for requesting a password reset
+ * @returns Password reset request function and state
+ */
+export function usePasswordResetRequest(): PasswordResetRequestState {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<AuthError | null>(null)
 
-  const sendResetLink = useCallback(
-    async (email: string) => {
-      setResetLoading()
+  const requestPasswordReset = async (email: string): Promise<{ error: AuthError | null }> => {
+    setLoading(true)
+    setError(null)
 
-      try {
-        // Create form data for the server action
-        const formData = new FormData()
-        formData.append("email", email)
+    try {
+      const supabase = createClient()
 
-        // Call the server action
-        const result = await resetPassword(formData)
+      const { error: resetError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/auth/reset-password/confirm`,
+      })
 
-        if (result.success) {
-          setResetSuccess(result)
-        } else {
-          setResetError(result.error || "An unknown error occurred")
-        }
-
-        return result
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
-        setResetError(errorMessage)
-        return { success: false, error: errorMessage }
+      if (resetError) {
+        setError(resetError)
+        return { error: resetError }
       }
-    },
-    [setResetLoading, setResetSuccess, setResetError],
-  )
 
-  const updateUserPassword = useCallback(
-    async (newPassword: string) => {
-      setUpdateLoading()
-
-      try {
-        // Create form data for the server action
-        const formData = new FormData()
-        formData.append("password", newPassword)
-
-        // Call the server action
-        const result = await updatePassword(formData)
-
-        if (result.success) {
-          setUpdateSuccess(result)
-        } else {
-          setUpdateError(result.error || "An unknown error occurred")
-        }
-
-        return result
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
-        setUpdateError(errorMessage)
-        return { success: false, error: errorMessage }
-      }
-    },
-    [setUpdateLoading, setUpdateSuccess, setUpdateError],
-  )
-
-  return {
-    sendResetLink,
-    updateUserPassword,
-    resetState: {
-      isLoading: resetState.isLoading,
-      isSuccess: resetState.isSuccess,
-      isError: resetState.isError,
-      error: resetState.error,
-    },
-    updateState: {
-      isLoading: updateState.isLoading,
-      isSuccess: updateState.isSuccess,
-      isError: updateState.isError,
-      error: updateState.error,
-    },
+      return { error: null }
+    } catch (err) {
+      const authError = err as AuthError
+      setError(authError)
+      return { error: authError }
+    } finally {
+      setLoading(false)
+    }
   }
+
+  return { requestPasswordReset, loading, error }
+}
+
+/**
+ * Hook for updating password after reset
+ * @returns Password update function and state
+ */
+export function usePasswordUpdate(): PasswordUpdateState {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<AuthError | null>(null)
+
+  const updatePassword = async (newPassword: string): Promise<{ error: AuthError | null }> => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      const supabase = createClient()
+
+      const { error: updateError } = await supabase.auth.updateUser({
+        password: newPassword,
+      })
+
+      if (updateError) {
+        setError(updateError)
+        return { error: updateError }
+      }
+
+      return { error: null }
+    } catch (err) {
+      const authError = err as AuthError
+      setError(authError)
+      return { error: authError }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return { updatePassword, loading, error }
 }

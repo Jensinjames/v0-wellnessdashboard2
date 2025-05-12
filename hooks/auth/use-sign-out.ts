@@ -1,45 +1,65 @@
 "use client"
 
-import { useCallback } from "react"
+import { useState } from "react"
+import { createClient } from "@/lib/supabase-client"
+import type { AuthError } from "@supabase/supabase-js"
 import { useRouter } from "next/navigation"
-import { signOut } from "@/app/actions/auth-actions"
-import { useAuthState } from "./use-auth-state"
 
-interface SignOutResponse {
-  success: boolean
-  error?: string
+export type SignOutOptions = {
+  redirectTo?: string
+  immediate?: boolean
 }
 
-export function useSignOut() {
-  const router = useRouter()
-  const [state, { setLoading, setSuccess, setError }] = useAuthState<SignOutResponse>()
+export type SignOutState = {
+  signOut: (options?: SignOutOptions) => Promise<{ error: AuthError | null }>
+  loading: boolean
+  error: AuthError | null
+}
 
-  const logout = useCallback(async () => {
-    setLoading()
+/**
+ * Hook for handling sign-out operations
+ * @returns Sign-out function and state
+ */
+export function useSignOut(): SignOutState {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<AuthError | null>(null)
+  const router = useRouter()
+
+  const signOut = async (options?: SignOutOptions): Promise<{ error: AuthError | null }> => {
+    setLoading(true)
+    setError(null)
 
     try {
-      // Call the server action
-      await signOut()
+      const supabase = createClient()
 
-      // The server action redirects, but we'll set success state just in case
-      setSuccess({ success: true })
+      const { error: signOutError } = await supabase.auth.signOut()
 
-      // Force a refresh of the router
-      router.refresh()
+      if (signOutError) {
+        setError(signOutError)
+        return { error: signOutError }
+      }
 
-      return { success: true }
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
-      setError(errorMessage)
-      return { success: false, error: errorMessage }
+      // Handle redirect if specified
+      if (options?.redirectTo) {
+        if (options.immediate) {
+          router.push(options.redirectTo)
+        } else {
+          // Small delay to allow state to update
+          setTimeout(() => {
+            router.push(options.redirectTo!)
+          }, 300)
+        }
+      }
+
+      return { error: null }
+    } catch (err) {
+      const authError = err as AuthError
+      setError(authError)
+      return { error: authError }
+    } finally {
+      setLoading(false)
     }
-  }, [router, setLoading, setSuccess, setError])
-
-  return {
-    logout,
-    isLoading: state.isLoading,
-    isSuccess: state.isSuccess,
-    isError: state.isError,
-    error: state.error,
   }
+
+  return { signOut, loading, error }
 }

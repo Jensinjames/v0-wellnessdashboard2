@@ -6,11 +6,13 @@ import { createContext, useContext, useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { createClient } from "@/lib/supabase-client"
 import type { User, Session } from "@supabase/supabase-js"
-import { clientEnv } from "@/lib/env"
+
+// Check if we're in development mode
+const isDevelopment = process.env.NEXT_PUBLIC_APP_ENV === "development"
 
 // Helper for conditional logging
 const logDebug = (message: string, data?: any) => {
-  if (clientEnv.IS_DEVELOPMENT) {
+  if (isDevelopment) {
     if (data) {
       console.log(`[Auth] ${message}`, data)
     } else {

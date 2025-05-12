@@ -1,81 +1,113 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
+import { createClient } from "@/lib/supabase-client"
+import type { User, Session } from "@supabase/supabase-js"
 
-export type AuthStatus = "idle" | "loading" | "success" | "error"
-
-export interface AuthState<T = any> {
-  status: AuthStatus
-  data: T | null
-  error: string | null
-  isLoading: boolean
-  isSuccess: boolean
-  isError: boolean
+export type AuthState = {
+  user: User | null
+  session: Session | null
+  loading: boolean
+  error: Error | null
+  isAuthenticated: boolean
 }
 
-export function useAuthState<T = any>(
-  initialData: T | null = null,
-): [
-  AuthState<T>,
-  {
-    setLoading: () => void
-    setSuccess: (data: T) => void
-    setError: (error: string) => void
-    reset: () => void
-  },
-] {
-  const [state, setState] = useState<AuthState<T>>({
-    status: "idle",
-    data: initialData,
-    error: null,
-    isLoading: false,
-    isSuccess: false,
-    isError: false,
-  })
+/**
+ * Hook to track authentication state
+ * @returns Current authentication state
+ */
+export function useAuthState(): AuthState {
+  const [user, setUser] = useState<User | null>(null)
+  const [session, setSession] = useState<Session | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<Error | null>(null)
 
-  const setLoading = () => {
-    setState({
-      status: "loading",
-      data: null,
-      error: null,
-      isLoading: true,
-      isSuccess: false,
-      isError: false,
+  useEffect(() => {
+    // Skip on server
+    if (typeof window === "undefined") {
+      setLoading(false)
+      return
+    }
+
+    const supabase = createClient()
+    let mounted = true
+
+    // Get initial session
+    const getInitialSession = async () => {
+      try {
+        setLoading(true)
+
+        // Get current session
+        const {
+          data: { session: currentSession },
+          error: sessionError,
+        } = await supabase.auth.getSession()
+
+        if (sessionError) {
+          throw sessionError
+        }
+
+        // If we have a session, get the user
+        if (currentSession) {
+          const {
+            data: { user: currentUser },
+            error: userError,
+          } = await supabase.auth.getUser()
+
+          if (userError) {
+            throw userError
+          }
+
+          if (mounted) {
+            setSession(currentSession)
+            setUser(currentUser)
+          }
+        }
+      } catch (err) {
+        if (mounted) {
+          setError(err instanceof Error ? err : new Error(String(err)))
+        }
+      } finally {
+        if (mounted) {
+          setLoading(false)
+        }
+      }
+    }
+
+    getInitialSession()
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange(async (event, currentSession) => {
+      if (mounted) {
+        setSession(currentSession)
+
+        if (currentSession) {
+          const {
+            data: { user: currentUser },
+          } = await supabase.auth.getUser()
+          setUser(currentUser)
+        } else {
+          setUser(null)
+        }
+
+        setLoading(false)
+      }
     })
-  }
 
-  const setSuccess = (data: T) => {
-    setState({
-      status: "success",
-      data,
-      error: null,
-      isLoading: false,
-      isSuccess: true,
-      isError: false,
-    })
-  }
+    // Cleanup
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
+  }, [])
 
-  const setError = (error: string) => {
-    setState({
-      status: "error",
-      data: null,
-      error,
-      isLoading: false,
-      isSuccess: false,
-      isError: true,
-    })
+  return {
+    user,
+    session,
+    loading,
+    error,
+    isAuthenticated: !!user && !!session,
   }
-
-  const reset = () => {
-    setState({
-      status: "idle",
-      data: initialData,
-      error: null,
-      isLoading: false,
-      isSuccess: false,
-      isError: false,
-    })
-  }
-
-  return [state, { setLoading, setSuccess, setError, reset }]
 }

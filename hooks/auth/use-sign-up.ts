@@ -1,79 +1,91 @@
 "use client"
 
-import { useCallback } from "react"
-import { useRouter } from "next/navigation"
-import { signUp } from "@/app/actions/auth-actions"
-import { useAuthState } from "./use-auth-state"
+import { useState } from "react"
+import { createClient } from "@/lib/supabase-client"
+import type { User, AuthError } from "@supabase/supabase-js"
 
-interface SignUpCredentials {
+export type SignUpCredentials = {
   email: string
   password: string
-  name: string
-  redirectTo?: string
+  name?: string
+  metadata?: Record<string, any>
 }
 
-interface SignUpResponse {
-  success: boolean
-  error?: string
-  message?: string
+export type SignUpResult = {
+  user: User | null
+  error: AuthError | null
+  emailConfirmationSent: boolean
 }
 
-export function useSignUp() {
-  const router = useRouter()
-  const [state, { setLoading, setSuccess, setError }] = useAuthState<SignUpResponse>()
+export type SignUpState = {
+  signUp: (credentials: SignUpCredentials) => Promise<SignUpResult>
+  loading: boolean
+  error: AuthError | null
+}
 
-  const register = useCallback(
-    async (credentials: SignUpCredentials) => {
-      setLoading()
+/**
+ * Hook for handling sign-up operations
+ * @returns Sign-up function and state
+ */
+export function useSignUp(): SignUpState {
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<AuthError | null>(null)
 
-      try {
-        // Create form data for the server action
-        const formData = new FormData()
-        formData.append("email", credentials.email)
-        formData.append("password", credentials.password)
-        formData.append("name", credentials.name)
+  const signUp = async (credentials: SignUpCredentials): Promise<SignUpResult> => {
+    setLoading(true)
+    setError(null)
 
-        if (credentials.redirectTo) {
-          formData.append("redirectTo", credentials.redirectTo)
-        }
+    try {
+      const supabase = createClient()
 
-        // Call the server action
-        const result = await signUp(formData)
-
-        if (result.success) {
-          setSuccess(result)
-
-          // If there's a message, we're likely in email confirmation mode
-          if (result.message) {
-            // Stay on the page and show success message
-            return result
-          }
-
-          // Otherwise, redirect to the profile page
-          setTimeout(() => {
-            router.push("/profile")
-            router.refresh()
-          }, 300)
-        } else {
-          setError(result.error || "An unknown error occurred")
-        }
-
-        return result
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : "An unknown error occurred"
-        setError(errorMessage)
-        return { success: false, error: errorMessage }
+      // Prepare user metadata
+      const metadata: Record<string, any> = {
+        ...(credentials.metadata || {}),
       }
-    },
-    [router, setLoading, setSuccess, setError],
-  )
 
-  return {
-    register,
-    isLoading: state.isLoading,
-    isSuccess: state.isSuccess,
-    isError: state.isError,
-    error: state.error,
-    message: state.data?.message,
+      // Add name to metadata if provided
+      if (credentials.name) {
+        metadata.name = credentials.name
+      }
+
+      const { data, error: signUpError } = await supabase.auth.signUp({
+        email: credentials.email,
+        password: credentials.password,
+        options: {
+          data: Object.keys(metadata).length > 0 ? metadata : undefined,
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
+
+      if (signUpError) {
+        setError(signUpError)
+        return {
+          user: null,
+          error: signUpError,
+          emailConfirmationSent: false,
+        }
+      }
+
+      // Check if email confirmation was sent
+      const emailConfirmationSent = !data.session
+
+      return {
+        user: data.user,
+        error: null,
+        emailConfirmationSent,
+      }
+    } catch (err) {
+      const authError = err as AuthError
+      setError(authError)
+      return {
+        user: null,
+        error: authError,
+        emailConfirmationSent: false,
+      }
+    } finally {
+      setLoading(false)
+    }
   }
+
+  return { signUp, loading, error }
 }
