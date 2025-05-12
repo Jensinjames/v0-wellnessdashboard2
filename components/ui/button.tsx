@@ -34,20 +34,19 @@ export interface ButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement>,
     VariantProps<typeof buttonVariants> {
   asChild?: boolean
-  authAction?: string
+  buttonId?: string
 }
 
 const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  ({ className, variant, size, asChild = false, authAction, ...props }, ref) => {
+  ({ className, variant, size, asChild = false, buttonId, ...props }, ref) => {
     const Comp = asChild ? Slot : "button"
-    const buttonId = props.id || `button-${Math.random().toString(36).substring(2, 9)}`
 
     return (
       <Comp
         className={cn(buttonVariants({ variant, size, className }))}
         ref={ref}
         id={buttonId}
-        data-auth-action={authAction}
+        data-auth-action={props["data-auth-action"] || undefined}
         {...props}
       />
     )

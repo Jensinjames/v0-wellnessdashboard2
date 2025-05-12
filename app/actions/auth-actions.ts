@@ -1,16 +1,12 @@
 "use server"
-import { createServerSupabaseClient } from "@/lib/supabase"
+
+import { supabase } from "@/lib/supabase"
+import { revalidatePath } from "next/cache"
 
 export async function signIn(formData: FormData) {
   try {
     const email = formData.get("email") as string
     const password = formData.get("password") as string
-
-    if (!email || !password) {
-      return { error: "Email and password are required" }
-    }
-
-    const supabase = createServerSupabaseClient()
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -18,12 +14,16 @@ export async function signIn(formData: FormData) {
     })
 
     if (error) {
-      return { error: error.message }
+      return { success: false, error: error.message }
     }
 
-    return { success: true }
-  } catch (error: any) {
-    return { error: error.message || "An error occurred during sign in" }
+    return { success: true, data }
+  } catch (error) {
+    console.error("Sign in error:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unknown error occurred",
+    }
   }
 }
 
@@ -32,12 +32,6 @@ export async function signUp(formData: FormData) {
     const email = formData.get("email") as string
     const password = formData.get("password") as string
     const name = formData.get("name") as string
-
-    if (!email || !password || !name) {
-      return { error: "All fields are required" }
-    }
-
-    const supabase = createServerSupabaseClient()
 
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
@@ -50,10 +44,10 @@ export async function signUp(formData: FormData) {
     })
 
     if (authError) {
-      return { error: authError.message }
+      return { success: false, error: authError.message }
     }
 
-    // Create user profile in the users table
+    // If sign up is successful and we have a user, create a profile in the users table
     if (authData.user) {
       const { error: profileError } = await supabase.from("users").insert({
         id: authData.user.id,
@@ -62,23 +56,37 @@ export async function signUp(formData: FormData) {
       })
 
       if (profileError) {
-        return { error: profileError.message }
+        console.error("Error creating user profile:", profileError)
+        // We don't want to fail the sign up if profile creation fails
+        // The user can create their profile later
       }
     }
 
-    return { success: true }
-  } catch (error: any) {
-    return { error: error.message || "An error occurred during sign up" }
+    return { success: true, data: authData }
+  } catch (error) {
+    console.error("Sign up error:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unknown error occurred",
+    }
   }
 }
 
 export async function signOut() {
   try {
-    const supabase = createServerSupabaseClient()
-    await supabase.auth.signOut()
+    const { error } = await supabase.auth.signOut()
+
+    if (error) {
+      return { success: false, error: error.message }
+    }
+
     return { success: true }
   } catch (error) {
-    return { error: "Failed to sign out" }
+    console.error("Sign out error:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unknown error occurred",
+    }
   }
 }
 
@@ -86,48 +94,47 @@ export async function resetPassword(formData: FormData) {
   try {
     const email = formData.get("email") as string
 
-    if (!email) {
-      return { error: "Email is required" }
-    }
-
-    const supabase = createServerSupabaseClient()
-
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
       redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/update-password`,
     })
 
     if (error) {
-      return { error: error.message }
+      return { success: false, error: error.message }
     }
 
     return { success: true }
-  } catch (error: any) {
-    return { error: error.message || "An error occurred during password reset" }
+  } catch (error) {
+    console.error("Reset password error:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unknown error occurred",
+    }
   }
 }
 
 export async function updateUserProfile(formData: FormData) {
   try {
+    // Get current user
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser()
+
+    if (userError || !user) {
+      return { success: false, error: userError?.message || "User not authenticated" }
+    }
+
     const name = formData.get("name") as string
     const phone = formData.get("phone") as string
     const location = formData.get("location") as string
-    const id = formData.get("id") as string
 
-    if (!id) {
-      return { error: "User ID is required" }
-    }
-
-    const supabase = createServerSupabaseClient()
-
-    // Update user metadata in auth
-    const { error: authError } = await supabase.auth.admin.updateUserById(id, {
-      user_metadata: {
-        name,
-      },
+    // Update user metadata
+    const { error: updateError } = await supabase.auth.updateUser({
+      data: { name },
     })
 
-    if (authError) {
-      return { error: authError.message }
+    if (updateError) {
+      return { success: false, error: updateError.message }
     }
 
     // Update user profile in the users table
@@ -139,14 +146,21 @@ export async function updateUserProfile(formData: FormData) {
         location,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", id)
+      .eq("id", user.id)
 
     if (profileError) {
-      return { error: profileError.message }
+      return { success: false, error: profileError.message }
     }
 
+    // Revalidate the profile page to show updated data
+    revalidatePath("/profile")
+
     return { success: true }
-  } catch (error: any) {
-    return { error: error.message || "An error occurred while updating profile" }
+  } catch (error) {
+    console.error("Update profile error:", error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "An unknown error occurred",
+    }
   }
 }

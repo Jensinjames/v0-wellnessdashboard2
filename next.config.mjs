@@ -9,6 +9,10 @@ const nextConfig = {
   images: {
     unoptimized: true,
   },
+  // Add experimental features to support Supabase auth
+  experimental: {
+    serverActions: true,
+  },
 }
 
 export default nextConfig
