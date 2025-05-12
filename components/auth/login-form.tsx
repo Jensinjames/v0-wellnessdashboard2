@@ -9,36 +9,44 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Eye, EyeOff, Mail, Lock } from "lucide-react"
-import { useSignIn } from "@/hooks/auth"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Eye, EyeOff, Mail, Lock, AlertCircle, Info } from "lucide-react"
+import { useSignIn, useSignUp } from "@/hooks/auth"
 import { useToast } from "@/hooks/use-toast"
 
 export function LoginForm() {
   const router = useRouter()
   const { toast } = useToast()
-  const { signIn, loading, error } = useSignIn()
+  const { signIn, loading, error, isEmailVerificationError } = useSignIn()
+  const { resendVerificationEmail } = useSignUp()
+  const [email, setEmail] = useState("")
+  const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
-  const [formError, setFormError] = useState("")
+  const [resendLoading, setResendLoading] = useState(false)
+  const [resendSuccess, setResendSuccess] = useState(false)
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setFormError("")
-
-    const formData = new FormData(event.currentTarget)
-    const email = formData.get("email") as string
-    const password = formData.get("password") as string
-    const rememberMe = formData.get("remember") === "on"
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setResendSuccess(false)
 
     try {
-      const result = await signIn({ email, password, rememberMe }, "/dashboard")
+      const result = await signIn({ email, password }, "/dashboard")
 
       if (result.error) {
-        setFormError(result.error.message)
-        toast({
-          title: "Login failed",
-          description: result.error.message || "Please check your credentials and try again",
-          variant: "destructive",
-        })
+        if (result.emailVerificationRequired) {
+          // Show special message for unverified email
+          toast({
+            title: "Email verification required",
+            description: "Please verify your email before signing in",
+            variant: "default",
+          })
+        } else {
+          toast({
+            title: "Login failed",
+            description: result.error.message || "Please check your credentials and try again",
+            variant: "destructive",
+          })
+        }
       } else {
         toast({
           title: "Login successful",
@@ -50,12 +58,52 @@ export function LoginForm() {
       }
     } catch (err) {
       console.error("Login error:", err)
-      setFormError("An unexpected error occurred")
       toast({
         title: "Login failed",
         description: "An unexpected error occurred. Please try again later.",
         variant: "destructive",
       })
+    }
+  }
+
+  const handleResendVerification = async () => {
+    if (!email) {
+      toast({
+        title: "Email required",
+        description: "Please enter your email address",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setResendLoading(true)
+    setResendSuccess(false)
+
+    try {
+      const { error } = await resendVerificationEmail(email)
+
+      if (error) {
+        toast({
+          title: "Failed to resend verification email",
+          description: error.message,
+          variant: "destructive",
+        })
+      } else {
+        setResendSuccess(true)
+        toast({
+          title: "Verification email sent",
+          description: "Please check your inbox and follow the link to verify your email",
+        })
+      }
+    } catch (err) {
+      console.error("Resend verification error:", err)
+      toast({
+        title: "Failed to resend verification email",
+        description: "An unexpected error occurred",
+        variant: "destructive",
+      })
+    } finally {
+      setResendLoading(false)
     }
   }
 
@@ -66,7 +114,38 @@ export function LoginForm() {
         <CardDescription>Enter your email and password to sign in</CardDescription>
       </CardHeader>
       <CardContent>
-        {formError && <div className="mb-4 rounded bg-red-100 p-2 text-red-800">{formError}</div>}
+        {error && !isEmailVerificationError && (
+          <Alert variant="destructive" className="mb-4">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>{error.message}</AlertDescription>
+          </Alert>
+        )}
+
+        {isEmailVerificationError && (
+          <Alert className="mb-4 border-amber-200 bg-amber-50">
+            <Info className="h-4 w-4 text-amber-600" />
+            <AlertDescription className="text-amber-800">
+              Your email has not been verified. Please check your inbox or click below to resend the verification email.
+              <Button
+                variant="link"
+                className="h-auto p-0 pl-1 text-amber-600 hover:text-amber-800"
+                onClick={handleResendVerification}
+                disabled={resendLoading}
+              >
+                {resendLoading ? "Sending..." : "Resend verification email"}
+              </Button>
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {resendSuccess && (
+          <Alert className="mb-4 border-green-200 bg-green-50">
+            <Info className="h-4 w-4 text-green-600" />
+            <AlertDescription className="text-green-800">
+              Verification email has been sent. Please check your inbox.
+            </AlertDescription>
+          </Alert>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -75,12 +154,13 @@ export function LoginForm() {
               <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 id="email"
-                name="email"
                 type="email"
-                autoComplete="email"
-                required
-                className="pl-10"
                 placeholder="you@example.com"
+                className="pl-10"
+                required
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                disabled={loading}
               />
             </div>
           </div>
@@ -96,11 +176,13 @@ export function LoginForm() {
               <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
               <Input
                 id="password"
-                name="password"
                 type={showPassword ? "text" : "password"}
-                autoComplete="current-password"
-                required
+                placeholder="••••••••"
                 className="pl-10 pr-10"
+                required
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                disabled={loading}
               />
               <Button
                 type="button"
@@ -119,7 +201,6 @@ export function LoginForm() {
             <input
               type="checkbox"
               id="remember"
-              name="remember"
               className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
             />
             <Label htmlFor="remember" className="text-sm font-normal">
@@ -127,7 +208,7 @@ export function LoginForm() {
             </Label>
           </div>
 
-          <Button type="submit" className="w-full" disabled={loading} data-auth-action="sign-in">
+          <Button type="submit" className="w-full" disabled={loading}>
             {loading ? "Signing in..." : "Sign in"}
           </Button>
         </form>

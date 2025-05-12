@@ -1,113 +1,189 @@
 "use client"
 
-import type React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
+import Link from "next/link"
+import { z } from "zod"
+import { useForm } from "react-hook-form"
+import { zodResolver } from "@hookform/resolvers/zod"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { Label } from "@/components/ui/label"
-import { updatePassword } from "@/app/actions/auth-actions"
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Eye, EyeOff, Lock, AlertCircle, CheckCircle } from "lucide-react"
+import { usePasswordUpdate } from "@/hooks/auth"
 import { useToast } from "@/hooks/use-toast"
+
+// Form validation schema
+const resetPasswordSchema = z
+  .object({
+    password: z.string().min(8, { message: "Password must be at least 8 characters" }),
+    confirmPassword: z.string(),
+  })
+  .refine((data) => data.password === data.confirmPassword, {
+    message: "Passwords do not match",
+    path: ["confirmPassword"],
+  })
+
+type ResetPasswordFormValues = z.infer<typeof resetPasswordSchema>
 
 export default function ResetPasswordConfirmPage() {
   const router = useRouter()
   const { toast } = useToast()
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState(false)
+  const { updatePassword, loading, error } = usePasswordUpdate()
+  const [showPassword, setShowPassword] = useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false)
+  const [resetSuccess, setResetSuccess] = useState(false)
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setLoading(true)
-    setError("")
-    setSuccess(false)
+  // Initialize form with react-hook-form
+  const form = useForm<ResetPasswordFormValues>({
+    resolver: zodResolver(resetPasswordSchema),
+    defaultValues: {
+      password: "",
+      confirmPassword: "",
+    },
+  })
 
-    const formData = new FormData(event.currentTarget)
-    const password = formData.get("password") as string
-    const confirmPassword = formData.get("confirmPassword") as string
-
-    // Validate passwords
-    if (password !== confirmPassword) {
-      setError("Passwords do not match")
-      setLoading(false)
-      return
-    }
-
+  // Handle form submission
+  const onSubmit = async (values: ResetPasswordFormValues) => {
     try {
-      const result = await updatePassword(formData)
+      const { success, error } = await updatePassword(values.password)
 
-      if (result.success) {
-        setSuccess(true)
+      if (error) {
         toast({
-          title: "Password updated",
-          description: "Your password has been successfully updated.",
+          title: "Password reset failed",
+          description: error.message || "Please try again",
+          variant: "destructive",
+        })
+      } else if (success) {
+        setResetSuccess(true)
+        toast({
+          title: "Password reset successful",
+          description: "Your password has been updated. You can now log in with your new password.",
         })
 
         // Redirect to login after a short delay
         setTimeout(() => {
           router.push("/auth/login")
-        }, 2000)
-      } else {
-        setError(result.error || "An error occurred during password update")
-        toast({
-          title: "Password update failed",
-          description: result.error || "Please try again",
-          variant: "destructive",
-        })
+        }, 3000)
       }
-    } catch (error) {
-      console.error("Update password error:", error)
-      setError("An unexpected error occurred")
+    } catch (err) {
+      console.error("Password update error:", err)
       toast({
-        title: "Password update failed",
+        title: "Password reset failed",
         description: "An unexpected error occurred. Please try again later.",
         variant: "destructive",
       })
-    } finally {
-      setLoading(false)
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">
-      <Card className="w-full max-w-md">
+    <div className="container flex h-screen items-center justify-center">
+      <Card className="mx-auto w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold">Reset your password</CardTitle>
-          <CardDescription>Enter your new password below</CardDescription>
+          <CardTitle className="text-2xl font-bold text-center">Reset your password</CardTitle>
+          <CardDescription className="text-center">Enter your new password below</CardDescription>
         </CardHeader>
-        <CardContent>
-          {error && <div className="mb-4 rounded bg-red-100 p-2 text-red-800">{error}</div>}
-
-          {success && (
-            <div className="mb-4 rounded bg-green-100 p-2 text-green-800">
-              Password updated successfully! Redirecting to login...
-            </div>
+        <CardContent className="space-y-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error.message}</AlertDescription>
+            </Alert>
           )}
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="password">New Password</Label>
-              <Input id="password" name="password" type="password" required />
-            </div>
+          {resetSuccess && (
+            <Alert className="bg-green-50 border-green-200">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-600">
+                Your password has been reset successfully. Redirecting to login...
+              </AlertDescription>
+            </Alert>
+          )}
 
-            <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm New Password</Label>
-              <Input id="confirmPassword" name="confirmPassword" type="password" required />
-            </div>
+          {!resetSuccess && (
+            <Form {...form}>
+              <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>New Password</FormLabel>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <FormControl>
+                          <Input
+                            type={showPassword ? "text" : "password"}
+                            placeholder="••••••••"
+                            className="pl-10 pr-10"
+                            disabled={loading}
+                            {...field}
+                          />
+                        </FormControl>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-10 w-10"
+                          onClick={() => setShowPassword(!showPassword)}
+                          aria-label={showPassword ? "Hide password" : "Show password"}
+                        >
+                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
 
-            <Button type="submit" className="w-full" disabled={loading || success}>
-              {loading ? "Updating password..." : "Update password"}
-            </Button>
-          </form>
+                <FormField
+                  control={form.control}
+                  name="confirmPassword"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Confirm Password</FormLabel>
+                      <div className="relative">
+                        <Lock className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                        <FormControl>
+                          <Input
+                            type={showConfirmPassword ? "text" : "password"}
+                            placeholder="••••••••"
+                            className="pl-10 pr-10"
+                            disabled={loading}
+                            {...field}
+                          />
+                        </FormControl>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="absolute right-0 top-0 h-10 w-10"
+                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                          aria-label={showConfirmPassword ? "Hide password" : "Show password"}
+                        >
+                          {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                        </Button>
+                      </div>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <Button type="submit" className="w-full" disabled={loading}>
+                  {loading ? "Resetting password..." : "Reset password"}
+                </Button>
+              </form>
+            </Form>
+          )}
         </CardContent>
         <CardFooter className="flex justify-center">
           <div className="text-sm text-muted-foreground">
             Remember your password?{" "}
-            <Button variant="link" className="p-0" onClick={() => router.push("/auth/login")}>
+            <Link href="/auth/login" className="text-primary hover:underline">
               Back to login
-            </Button>
+            </Link>
           </div>
         </CardFooter>
       </Card>

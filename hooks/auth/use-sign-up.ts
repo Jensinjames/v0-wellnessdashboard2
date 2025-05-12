@@ -2,32 +2,23 @@
 
 import { useState } from "react"
 import { createClient } from "@/lib/supabase-client"
-import type { User, AuthError } from "@supabase/supabase-js"
+import type { AuthError } from "@supabase/supabase-js"
 
-export type SignUpCredentials = {
+type SignUpCredentials = {
   email: string
   password: string
   name?: string
-  metadata?: Record<string, any>
+  redirectTo?: string
 }
 
-export type SignUpResult = {
-  user: User | null
+type SignUpResult = {
+  success: boolean
   error: AuthError | null
   emailConfirmationSent: boolean
+  user: any | null
 }
 
-export type SignUpState = {
-  signUp: (credentials: SignUpCredentials) => Promise<SignUpResult>
-  loading: boolean
-  error: AuthError | null
-}
-
-/**
- * Hook for handling sign-up operations
- * @returns Sign-up function and state
- */
-export function useSignUp(): SignUpState {
+export function useSignUp() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<AuthError | null>(null)
 
@@ -38,54 +29,87 @@ export function useSignUp(): SignUpState {
     try {
       const supabase = createClient()
 
-      // Prepare user metadata
-      const metadata: Record<string, any> = {
-        ...(credentials.metadata || {}),
-      }
-
-      // Add name to metadata if provided
-      if (credentials.name) {
-        metadata.name = credentials.name
-      }
+      // Determine the redirect URL for email confirmation
+      const redirectTo = credentials.redirectTo || `${window.location.origin}/auth/callback`
 
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: credentials.email,
         password: credentials.password,
         options: {
-          data: Object.keys(metadata).length > 0 ? metadata : undefined,
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          data: {
+            name: credentials.name || "",
+          },
+          emailRedirectTo: redirectTo,
         },
       })
 
       if (signUpError) {
         setError(signUpError)
         return {
-          user: null,
+          success: false,
           error: signUpError,
           emailConfirmationSent: false,
+          user: null,
         }
       }
 
-      // Check if email confirmation was sent
+      // Check if email confirmation is required
       const emailConfirmationSent = !data.session
 
       return {
-        user: data.user,
+        success: true,
         error: null,
         emailConfirmationSent,
+        user: data.user,
       }
     } catch (err) {
       const authError = err as AuthError
       setError(authError)
       return {
-        user: null,
+        success: false,
         error: authError,
         emailConfirmationSent: false,
+        user: null,
       }
     } finally {
       setLoading(false)
     }
   }
 
-  return { signUp, loading, error }
+  const resendVerificationEmail = async (email: string) => {
+    setLoading(true)
+    setError(null)
+
+    try {
+      const supabase = createClient()
+
+      const { error: resendError } = await supabase.auth.resend({
+        type: "signup",
+        email,
+        options: {
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
+
+      if (resendError) {
+        setError(resendError)
+        return { error: resendError }
+      }
+
+      return { error: null }
+    } catch (err) {
+      const authError = err as AuthError
+      setError(authError)
+      return { error: authError }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return {
+    signUp,
+    resendVerificationEmail,
+    loading,
+    error,
+  }
 }

@@ -2,25 +2,60 @@
 
 import { useState, useEffect } from "react"
 import { createClient } from "@/lib/supabase-client"
-import type { User, Session } from "@supabase/supabase-js"
+import type { User, Session, AuthError } from "@supabase/supabase-js"
 
 export type AuthState = {
   user: User | null
   session: Session | null
   loading: boolean
-  error: Error | null
+  error: AuthError | null
   isAuthenticated: boolean
+  isEmailVerified: boolean
+  refreshSession: () => Promise<void>
 }
 
 /**
- * Hook to track authentication state
+ * Hook to track authentication state including email verification status
  * @returns Current authentication state
  */
 export function useAuthState(): AuthState {
   const [user, setUser] = useState<User | null>(null)
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<Error | null>(null)
+  const [error, setError] = useState<AuthError | null>(null)
+
+  // Function to refresh the session data
+  const refreshSession = async () => {
+    try {
+      setLoading(true)
+      const supabase = createClient()
+
+      const { data: sessionData, error: sessionError } = await supabase.auth.getSession()
+
+      if (sessionError) {
+        throw sessionError
+      }
+
+      if (sessionData.session) {
+        const { data: userData, error: userError } = await supabase.auth.getUser()
+
+        if (userError) {
+          throw userError
+        }
+
+        setSession(sessionData.session)
+        setUser(userData.user)
+      } else {
+        setSession(null)
+        setUser(null)
+      }
+    } catch (err) {
+      console.error("Error refreshing session:", err)
+      setError(err as AuthError)
+    } finally {
+      setLoading(false)
+    }
+  }
 
   useEffect(() => {
     // Skip on server
@@ -65,7 +100,7 @@ export function useAuthState(): AuthState {
         }
       } catch (err) {
         if (mounted) {
-          setError(err instanceof Error ? err : new Error(String(err)))
+          setError(err as AuthError)
         }
       } finally {
         if (mounted) {
@@ -103,11 +138,16 @@ export function useAuthState(): AuthState {
     }
   }, [])
 
+  // Check if email is verified
+  const isEmailVerified = !!user?.email_confirmed_at || !!user?.confirmed_at
+
   return {
     user,
     session,
     loading,
     error,
     isAuthenticated: !!user && !!session,
+    isEmailVerified,
+    refreshSession,
   }
 }

@@ -4,27 +4,12 @@ import { useState } from "react"
 import { createClient } from "@/lib/supabase-client"
 import type { AuthError } from "@supabase/supabase-js"
 
-export type PasswordResetRequestState = {
-  requestPasswordReset: (email: string) => Promise<{ error: AuthError | null }>
-  loading: boolean
-  error: AuthError | null
-}
-
-export type PasswordUpdateState = {
-  updatePassword: (newPassword: string) => Promise<{ error: AuthError | null }>
-  loading: boolean
-  error: AuthError | null
-}
-
-/**
- * Hook for requesting a password reset
- * @returns Password reset request function and state
- */
-export function usePasswordResetRequest(): PasswordResetRequestState {
+// Hook for requesting a password reset
+export function usePasswordResetRequest() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<AuthError | null>(null)
 
-  const requestPasswordReset = async (email: string): Promise<{ error: AuthError | null }> => {
+  const requestPasswordReset = async (email: string) => {
     setLoading(true)
     setError(null)
 
@@ -37,31 +22,32 @@ export function usePasswordResetRequest(): PasswordResetRequestState {
 
       if (resetError) {
         setError(resetError)
-        return { error: resetError }
+        return { error: resetError, sent: false }
       }
 
-      return { error: null }
+      return { error: null, sent: true }
     } catch (err) {
       const authError = err as AuthError
       setError(authError)
-      return { error: authError }
+      return { error: authError, sent: false }
     } finally {
       setLoading(false)
     }
   }
 
-  return { requestPasswordReset, loading, error }
+  return {
+    requestPasswordReset,
+    loading,
+    error,
+  }
 }
 
-/**
- * Hook for updating password after reset
- * @returns Password update function and state
- */
-export function usePasswordUpdate(): PasswordUpdateState {
+// Hook for updating password after reset
+export function usePasswordUpdate() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<AuthError | null>(null)
 
-  const updatePassword = async (newPassword: string): Promise<{ error: AuthError | null }> => {
+  const updatePassword = async (newPassword: string) => {
     setLoading(true)
     setError(null)
 
@@ -74,18 +60,22 @@ export function usePasswordUpdate(): PasswordUpdateState {
 
       if (updateError) {
         setError(updateError)
-        return { error: updateError }
+        return { success: false, error: updateError }
       }
 
-      return { error: null }
+      return { success: true, error: null }
     } catch (err) {
       const authError = err as AuthError
       setError(authError)
-      return { error: authError }
+      return { success: false, error: authError }
     } finally {
       setLoading(false)
     }
   }
 
-  return { updatePassword, loading, error }
+  return {
+    updatePassword,
+    loading,
+    error,
+  }
 }

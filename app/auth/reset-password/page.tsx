@@ -8,61 +8,92 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { resetPassword } from "@/app/actions/auth-actions"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Mail, AlertCircle, CheckCircle } from "lucide-react"
+import { usePasswordResetRequest } from "@/hooks/auth"
+import { useToast } from "@/hooks/use-toast"
 
 export default function ResetPasswordPage() {
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState("")
-  const [success, setSuccess] = useState(false)
+  const { toast } = useToast()
+  const { requestPasswordReset, loading, error } = usePasswordResetRequest()
+  const [email, setEmail] = useState("")
+  const [resetSent, setResetSent] = useState(false)
 
-  async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setLoading(true)
-    setError("")
-    setSuccess(false)
+  const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault()
+    setResetSent(false)
 
     try {
-      const formData = new FormData(event.currentTarget)
-      const result = await resetPassword(formData)
+      const { error, sent } = await requestPasswordReset(email)
 
-      if (result.success) {
-        setSuccess(true)
-        // Clear the form
-        event.currentTarget.reset()
-      } else {
-        setError(result.error || "An error occurred during password reset")
+      if (error) {
+        toast({
+          title: "Password reset failed",
+          description: error.message || "Please check your email and try again",
+          variant: "destructive",
+        })
+      } else if (sent) {
+        setResetSent(true)
+        toast({
+          title: "Password reset email sent",
+          description: "Please check your inbox for instructions to reset your password",
+        })
       }
-    } catch (error) {
-      console.error("Reset password error:", error)
-      setError("An unexpected error occurred")
-    } finally {
-      setLoading(false)
+    } catch (err) {
+      console.error("Password reset error:", err)
+      toast({
+        title: "Password reset failed",
+        description: "An unexpected error occurred. Please try again later.",
+        variant: "destructive",
+      })
     }
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4 py-12 sm:px-6 lg:px-8">
-      <Card className="w-full max-w-md">
+    <div className="container flex h-screen items-center justify-center">
+      <Card className="mx-auto w-full max-w-md">
         <CardHeader className="space-y-1">
-          <CardTitle className="text-2xl font-bold">Reset your password</CardTitle>
-          <CardDescription>Enter your email address and we'll send you a link to reset your password</CardDescription>
+          <CardTitle className="text-2xl font-bold text-center">Reset your password</CardTitle>
+          <CardDescription className="text-center">
+            Enter your email address and we'll send you a link to reset your password
+          </CardDescription>
         </CardHeader>
-        <CardContent>
-          {error && <div className="mb-4 rounded bg-red-100 p-2 text-red-800">{error}</div>}
+        <CardContent className="space-y-4">
+          {error && (
+            <Alert variant="destructive">
+              <AlertCircle className="h-4 w-4" />
+              <AlertDescription>{error.message}</AlertDescription>
+            </Alert>
+          )}
 
-          {success && (
-            <div className="mb-4 rounded bg-green-100 p-2 text-green-800">
-              Password reset link sent! Check your email.
-            </div>
+          {resetSent && (
+            <Alert className="bg-green-50 border-green-200">
+              <CheckCircle className="h-4 w-4 text-green-600" />
+              <AlertDescription className="text-green-600">
+                Password reset email has been sent. Please check your inbox.
+              </AlertDescription>
+            </Alert>
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
-              <Input id="email" name="email" type="email" autoComplete="email" required />
+              <div className="relative">
+                <Mail className="absolute left-3 top-2.5 h-4 w-4 text-muted-foreground" />
+                <Input
+                  id="email"
+                  type="email"
+                  placeholder="you@example.com"
+                  className="pl-10"
+                  required
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  disabled={loading || resetSent}
+                />
+              </div>
             </div>
 
-            <Button type="submit" className="w-full" disabled={loading} data-auth-action="reset-password">
+            <Button type="submit" className="w-full" disabled={loading || resetSent}>
               {loading ? "Sending reset link..." : "Send reset link"}
             </Button>
           </form>
