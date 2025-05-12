@@ -92,10 +92,7 @@ export async function getUserProfile(userId: string) {
   }
 }
 
+// Server-side Supabase client (for Server Actions)
 export function createActionSupabaseClient() {
-  return createBrowserClient()
-}
-
-export function createServerClient() {
   return createBrowserClient()
 }
