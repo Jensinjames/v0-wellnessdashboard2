@@ -1,7 +1,4 @@
 "use server"
-
-import { cookies } from "next/headers"
-import { redirect } from "next/navigation"
 import { createServerSupabaseClient } from "@/lib/supabase"
 
 export async function signIn(formData: FormData) {
@@ -23,14 +20,6 @@ export async function signIn(formData: FormData) {
     if (error) {
       return { error: error.message }
     }
-
-    // Set auth cookie
-    cookies().set("sb-auth-token", data.session?.access_token || "", {
-      path: "/",
-      maxAge: data.session?.expires_in || 3600,
-      httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
-    })
 
     return { success: true }
   } catch (error: any) {
@@ -77,16 +66,6 @@ export async function signUp(formData: FormData) {
       }
     }
 
-    // Set auth cookie
-    if (authData.session) {
-      cookies().set("sb-auth-token", authData.session.access_token, {
-        path: "/",
-        maxAge: authData.session.expires_in,
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-      })
-    }
-
     return { success: true }
   } catch (error: any) {
     return { error: error.message || "An error occurred during sign up" }
@@ -94,13 +73,13 @@ export async function signUp(formData: FormData) {
 }
 
 export async function signOut() {
-  const supabase = createServerSupabaseClient()
-  await supabase.auth.signOut()
-
-  // Clear auth cookie
-  cookies().delete("sb-auth-token")
-
-  redirect("/auth/login")
+  try {
+    const supabase = createServerSupabaseClient()
+    await supabase.auth.signOut()
+    return { success: true }
+  } catch (error) {
+    return { error: "Failed to sign out" }
+  }
 }
 
 export async function resetPassword(formData: FormData) {
@@ -169,29 +148,5 @@ export async function updateUserProfile(formData: FormData) {
     return { success: true }
   } catch (error: any) {
     return { error: error.message || "An error occurred while updating profile" }
-  }
-}
-
-// Helper function to get the current user
-export async function getCurrentUser() {
-  try {
-    const supabase = createServerSupabaseClient()
-
-    // Get the session from the cookie
-    const token = cookies().get("sb-auth-token")?.value
-
-    if (!token) {
-      return { user: null }
-    }
-
-    const { data, error } = await supabase.auth.getUser(token)
-
-    if (error || !data.user) {
-      return { user: null }
-    }
-
-    return { user: data.user }
-  } catch (error) {
-    return { user: null }
   }
 }

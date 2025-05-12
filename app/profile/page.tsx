@@ -130,8 +130,12 @@ export default function ProfilePage() {
   }
 
   const handleLogout = async () => {
-    await signOut()
-    router.push("/auth/login")
+    const result = await signOut()
+    if (result.success) {
+      // Clear client-side auth state
+      await supabase.auth.signOut()
+      router.push("/auth/login")
+    }
   }
 
   const getInitials = (name: string) => {
