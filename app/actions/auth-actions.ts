@@ -1,12 +1,23 @@
 "use server"
 
-import { supabase } from "@/lib/supabase"
+import { createActionClient } from "@/lib/supabase"
 import { revalidatePath } from "next/cache"
+import { cookies } from "next/headers"
+
+// Get the app URL for redirects
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "http://localhost:3000"
 
 export async function signIn(formData: FormData) {
+  const supabase = createActionClient()
+
   try {
     const email = formData.get("email") as string
     const password = formData.get("password") as string
+    const redirectTo = (formData.get("redirectTo") as string) || "/profile"
+
+    if (!email || !password) {
+      return { success: false, error: "Email and password are required" }
+    }
 
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -17,7 +28,10 @@ export async function signIn(formData: FormData) {
       return { success: false, error: error.message }
     }
 
-    return { success: true, data }
+    // Revalidate the profile page
+    revalidatePath("/profile")
+
+    return { success: true, data, redirectTo }
   } catch (error) {
     console.error("Sign in error:", error)
     return {
@@ -28,11 +42,18 @@ export async function signIn(formData: FormData) {
 }
 
 export async function signUp(formData: FormData) {
+  const supabase = createActionClient()
+
   try {
     const email = formData.get("email") as string
     const password = formData.get("password") as string
     const name = formData.get("name") as string
 
+    if (!email || !password || !name) {
+      return { success: false, error: "All fields are required" }
+    }
+
+    // Use the explicit redirectTo to ensure it matches what's in the Supabase dashboard
     const { data: authData, error: authError } = await supabase.auth.signUp({
       email,
       password,
@@ -40,6 +61,7 @@ export async function signUp(formData: FormData) {
         data: {
           name,
         },
+        emailRedirectTo: `${appUrl}/auth/callback`,
       },
     })
 
@@ -62,7 +84,11 @@ export async function signUp(formData: FormData) {
       }
     }
 
-    return { success: true, data: authData }
+    return {
+      success: true,
+      data: authData,
+      message: authData.session ? "Sign up successful!" : "Please check your email to confirm your account.",
+    }
   } catch (error) {
     console.error("Sign up error:", error)
     return {
@@ -73,12 +99,18 @@ export async function signUp(formData: FormData) {
 }
 
 export async function signOut() {
+  const supabase = createActionClient()
+
   try {
     const { error } = await supabase.auth.signOut()
 
     if (error) {
       return { success: false, error: error.message }
     }
+
+    // Clear cookies and redirect to login page
+    cookies().delete("sb-access-token")
+    cookies().delete("sb-refresh-token")
 
     return { success: true }
   } catch (error) {
@@ -91,18 +123,25 @@ export async function signOut() {
 }
 
 export async function resetPassword(formData: FormData) {
+  const supabase = createActionClient()
+
   try {
     const email = formData.get("email") as string
 
+    if (!email) {
+      return { success: false, error: "Email is required" }
+    }
+
+    // Use the explicit redirectTo to ensure it matches what's in the Supabase dashboard
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/update-password`,
+      redirectTo: `${appUrl}/auth/callback?next=/auth/update-password`,
     })
 
     if (error) {
       return { success: false, error: error.message }
     }
 
-    return { success: true }
+    return { success: true, message: "Password reset instructions sent to your email" }
   } catch (error) {
     console.error("Reset password error:", error)
     return {
@@ -113,6 +152,8 @@ export async function resetPassword(formData: FormData) {
 }
 
 export async function updateUserProfile(formData: FormData) {
+  const supabase = createActionClient()
+
   try {
     // Get current user
     const {
@@ -155,7 +196,7 @@ export async function updateUserProfile(formData: FormData) {
     // Revalidate the profile page to show updated data
     revalidatePath("/profile")
 
-    return { success: true }
+    return { success: true, message: "Profile updated successfully" }
   } catch (error) {
     console.error("Update profile error:", error)
     return {

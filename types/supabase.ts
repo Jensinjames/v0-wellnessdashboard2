@@ -15,7 +15,7 @@ export interface Database {
           updated_at: string
         }
         Insert: {
-          id: string
+          id?: string
           email: string
           name: string
           phone?: string | null
@@ -43,6 +43,9 @@ export interface Database {
       [_ in never]: never
     }
     Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
       [_ in never]: never
     }
   }
