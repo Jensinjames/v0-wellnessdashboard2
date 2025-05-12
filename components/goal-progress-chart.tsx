@@ -5,7 +5,7 @@ import { RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, Legend, 
 
 interface GoalProgressChartProps {
   categoryId: string
-  activities: Array<{
+  activities?: Array<{
     id: string
     date: Date
     categoryId: string
@@ -22,27 +22,31 @@ interface GoalProgressChartProps {
   }>
 }
 
-export function GoalProgressChart({ categoryId, activities }: GoalProgressChartProps) {
+export function GoalProgressChart({ categoryId, activities = [] }: GoalProgressChartProps) {
   // Get the most recent activity for this category
   const latestActivity = useMemo(() => {
+    if (!activities || activities.length === 0) return undefined
+
     return activities
       .filter((activity) => activity.categoryId === categoryId)
-      .sort((a, b) => b.date.getTime() - a.date.getTime())[0]
+      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())[0]
   }, [activities, categoryId])
 
   // Process data for the radar chart
   const chartData = useMemo(() => {
-    if (!latestActivity) return []
+    if (!latestActivity || !latestActivity.subcategories) return []
 
     // Flatten parameters from all subcategories
-    return latestActivity.subcategories.flatMap((subcategory) =>
-      subcategory.parameters.map((parameter) => ({
-        name: parameter.name,
-        value: parameter.value,
+    return latestActivity.subcategories.flatMap((subcategory) => {
+      if (!subcategory || !subcategory.parameters) return []
+
+      return subcategory.parameters.map((parameter) => ({
+        name: parameter.name || "Unnamed",
+        value: parameter.value || 0,
         goal: parameter.goal || 0,
         fullMark: 10,
-      })),
-    )
+      }))
+    })
   }, [latestActivity])
 
   // No data message

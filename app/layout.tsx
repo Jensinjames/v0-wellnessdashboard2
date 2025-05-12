@@ -3,12 +3,15 @@ import "@/app/globals.css"
 import type { Metadata } from "next"
 import { Inter } from "next/font/google"
 import { ThemeProvider } from "@/components/theme-provider"
-import { EnhancedThemeProvider, ThemeToggle } from "@/components/enhanced-theme-provider"
+import { EnhancedThemeProvider } from "@/components/enhanced-theme-provider"
 import { IconProvider } from "@/context/icon-context"
 import { ScreenReaderAnnouncerProvider } from "@/components/accessibility/screen-reader-announcer"
 import { StatusAnnouncerProvider } from "@/components/accessibility/status-announcer"
 import { SkipLink } from "@/components/accessibility/skip-link"
 import { Toaster } from "@/components/ui/toaster"
+import { NavigationHeader } from "@/components/navigation-header"
+import { WellnessProvider } from "@/context/wellness-context"
+import { TrackingProvider } from "@/context/tracking-context"
 
 const inter = Inter({ subsets: ["latin"] })
 
@@ -27,14 +30,16 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
             <IconProvider>
               <StatusAnnouncerProvider>
                 <ScreenReaderAnnouncerProvider>
-                  <SkipLink />
-                  <div className="fixed top-4 right-4 z-50">
-                    <ThemeToggle />
-                  </div>
-                  <main id="main-content" className="min-h-screen bg-white dark:bg-slate-950">
-                    {children}
-                  </main>
-                  <Toaster />
+                  <WellnessProvider>
+                    <TrackingProvider>
+                      <SkipLink />
+                      <NavigationHeader />
+                      <main id="main-content" className="min-h-[calc(100vh-3.5rem)] bg-white dark:bg-slate-950 pt-4">
+                        {children}
+                      </main>
+                      <Toaster />
+                    </TrackingProvider>
+                  </WellnessProvider>
                 </ScreenReaderAnnouncerProvider>
               </StatusAnnouncerProvider>
             </IconProvider>

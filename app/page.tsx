@@ -1,124 +1,25 @@
 "use client"
-
-import { useState } from "react"
-import { DailyMetrics } from "@/components/daily-metrics"
-import { CategoryOverview } from "@/components/category-overview"
-import { CategoryDetails } from "@/components/category-details"
-import { AddEntryForm } from "@/components/add-entry-form"
-import { EntriesList } from "@/components/entries-list"
-import { DashboardHeader } from "@/components/dashboard-header"
-import { WellnessTrends } from "@/components/wellness-trends"
-import { ActiveTracking } from "@/components/active-tracking"
+import { EnhancedCategoryPerformance } from "@/components/enhanced-category-performance"
 import { WellnessProvider } from "@/context/wellness-context"
-import { TrackingProvider } from "@/context/tracking-context"
-import type { WellnessEntryData } from "@/types/wellness"
-import { Button } from "@/components/ui/button"
-import { BarChart3, Grid2X2 } from "lucide-react"
+import { IconProvider } from "@/context/icon-context"
 
-export default function Dashboard() {
-  const [isAddEntryOpen, setIsAddEntryOpen] = useState(false)
-  const [entryToEdit, setEntryToEdit] = useState<WellnessEntryData | null>(null)
-  const [comparisonMode, setComparisonMode] = useState(false)
-
-  // Open the form for a new entry
-  const handleAddNewEntry = () => {
-    setEntryToEdit(null)
-    setIsAddEntryOpen(true)
-  }
-
-  // Handle editing an entry
-  const handleEditEntry = (entry: WellnessEntryData) => {
-    setEntryToEdit(entry)
-    setIsAddEntryOpen(true)
-  }
-
-  // Toggle comparison mode
-  const toggleComparisonMode = () => {
-    setComparisonMode(!comparisonMode)
-  }
-
+export default function Home() {
   return (
     <WellnessProvider>
-      <TrackingProvider>
-        <div className="min-h-screen bg-gray-50">
-          <div className="mx-auto max-w-7xl px-4 py-4 sm:px-6 lg:px-8">
-            <div className="space-y-6">
-              <DashboardHeader onAddEntry={handleAddNewEntry} />
+      <IconProvider>
+        <main className="container mx-auto px-4 py-8">
+          <h1 className="text-3xl font-bold mb-6">Wellness Dashboard</h1>
 
-              <div className="grid gap-6">
-                <section>
-                  <h2 className="mb-3 text-sm font-medium">Daily Overview</h2>
-                  <DailyMetrics />
-                </section>
+          <div className="space-y-8">
+            {/* Category Performance Section */}
+            <section>
+              <EnhancedCategoryPerformance />
+            </section>
 
-                <section aria-labelledby="category-performance-heading">
-                  <div className="flex items-center justify-between mb-3">
-                    <h2 id="category-performance-heading" className="text-sm font-medium">
-                      Category Performance
-                    </h2>
-                    <div className="flex items-center gap-2">
-                      <div className="text-xs text-muted-foreground mr-2">
-                        {comparisonMode ? "Comparison Mode" : "Daily Progress"}
-                      </div>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="h-8 gap-1"
-                        onClick={toggleComparisonMode}
-                        aria-pressed={comparisonMode}
-                      >
-                        {comparisonMode ? (
-                          <>
-                            <Grid2X2 className="h-4 w-4" />
-                            <span className="sr-only">Switch to </span>
-                            <span className="hidden sm:inline">Standard View</span>
-                            <span className="inline sm:hidden">Standard</span>
-                          </>
-                        ) : (
-                          <>
-                            <BarChart3 className="h-4 w-4" />
-                            <span className="sr-only">Switch to </span>
-                            <span className="hidden sm:inline">Compare Categories</span>
-                            <span className="inline sm:hidden">Compare</span>
-                          </>
-                        )}
-                      </Button>
-                    </div>
-                  </div>
-                  <CategoryOverview
-                    showGoals={true}
-                    showTimeAllocations={true}
-                    showSubcategoryProgress={true}
-                    interactive={!comparisonMode}
-                    maxCategories={7}
-                    comparisonMode={comparisonMode}
-                  />
-                </section>
-
-                <section>
-                  <ActiveTracking />
-                </section>
-
-                <section>
-                  <h2 className="mb-3 text-sm font-medium">Detailed Analysis</h2>
-                  <CategoryDetails />
-                </section>
-
-                <section>
-                  <h2 className="mb-3 text-sm font-medium">Wellness Trends</h2>
-                  <WellnessTrends />
-                </section>
-
-                <section>
-                  <EntriesList onEdit={handleEditEntry} />
-                </section>
-              </div>
-            </div>
+            {/* Other dashboard sections can be added here */}
           </div>
-
-          <AddEntryForm open={isAddEntryOpen} onOpenChange={setIsAddEntryOpen} entryToEdit={entryToEdit} />
-        </div>
-      </TrackingProvider>
+        </main>
+      </IconProvider>
     </WellnessProvider>
   )
 }

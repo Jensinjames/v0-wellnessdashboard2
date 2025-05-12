@@ -15,7 +15,7 @@ export function DashboardHeader({ onAddEntry }: DashboardHeaderProps) {
   const activityButtonId = useUniqueId("activity-button")
 
   return (
-    <div className="relative overflow-hidden rounded-xl bg-blue-700 p-4 text-white shadow-lg">
+    <div className="relative overflow-hidden rounded-xl bg-blue-700 p-4 text-white shadow-lg mb-6">
       <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 id={headerId} className="text-xl font-bold tracking-tight sm:text-2xl">

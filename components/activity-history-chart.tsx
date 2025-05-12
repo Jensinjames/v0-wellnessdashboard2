@@ -4,7 +4,7 @@ import { useMemo } from "react"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts"
 
 interface ActivityHistoryChartProps {
-  activityHistory: {
+  activityHistory?: {
     id: string
     date: Date
     categoryId: string
@@ -12,20 +12,29 @@ interface ActivityHistoryChartProps {
   }[]
 }
 
-export function ActivityHistoryChart({ activityHistory }: ActivityHistoryChartProps) {
+export function ActivityHistoryChart({ activityHistory = [] }: ActivityHistoryChartProps) {
   // Process data for the chart
   const chartData = useMemo(() => {
+    // If no activity history, return empty array
+    if (!activityHistory || activityHistory.length === 0) {
+      return []
+    }
+
     // Group activities by date and category
     const groupedData: Record<string, Record<string, number>> = {}
 
     activityHistory.forEach((activity) => {
+      if (!activity || !activity.date) return
+
       const dateStr = new Date(activity.date).toLocaleDateString()
 
       if (!groupedData[dateStr]) {
         groupedData[dateStr] = {}
       }
 
-      groupedData[dateStr][activity.categoryId] = activity.overallScore
+      if (activity.categoryId) {
+        groupedData[dateStr][activity.categoryId] = activity.overallScore
+      }
     })
 
     // Convert to array format for chart
@@ -43,8 +52,25 @@ export function ActivityHistoryChart({ activityHistory }: ActivityHistoryChartPr
     life: "#f59e0b",
   }
 
+  // Get unique categories from the data
+  const uniqueCategories = useMemo(() => {
+    const categories = new Set<string>()
+
+    if (chartData) {
+      chartData.forEach((dataPoint) => {
+        Object.keys(dataPoint).forEach((key) => {
+          if (key !== "date" && categoryColors[key]) {
+            categories.add(key)
+          }
+        })
+      })
+    }
+
+    return Array.from(categories)
+  }, [chartData])
+
   // No data message
-  if (chartData.length === 0) {
+  if (!chartData || chartData.length === 0) {
     return (
       <div className="h-full flex items-center justify-center text-muted-foreground">No activity data available</div>
     )
@@ -58,7 +84,7 @@ export function ActivityHistoryChart({ activityHistory }: ActivityHistoryChartPr
         <YAxis domain={[0, 10]} />
         <Tooltip />
         <Legend />
-        {Object.keys(categoryColors).map((category) => (
+        {uniqueCategories.map((category) => (
           <Line
             key={category}
             type="monotone"

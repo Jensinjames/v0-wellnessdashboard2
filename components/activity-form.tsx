@@ -93,7 +93,7 @@ export function ActivityForm() {
       </CardHeader>
       <CardContent>
         <form onSubmit={handleSubmit} className="space-y-6" id="activity-form">
-          {Object.keys(errors).length > 0 && <FormErrorSummary errors={errors} />}
+          {Object.keys(errors).length > 0 && <FormErrorSummary errors={Object.values(errors)} />}
 
           <div className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

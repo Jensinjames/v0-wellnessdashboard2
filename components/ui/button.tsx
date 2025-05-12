@@ -43,6 +43,7 @@ export interface ButtonProps
   isPressed?: boolean
   categoryContext?: string
   formContext?: "activity" | "category" | "entry" | string
+  authAction?: "login" | "register" | "reset-password" | "logout" | "profile" | string
   onStateChange?: (state: { pressed?: boolean; expanded?: boolean }) => void
 }
 
@@ -60,6 +61,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       isExpanded,
       categoryContext,
       formContext,
+      authAction,
       onStateChange,
       ...props
     },
@@ -97,6 +99,11 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     if (categoryContext) {
       ariaProps["data-category-context"] = categoryContext
+    }
+
+    // Add auth action for tracking authentication-related interactions
+    if (authAction) {
+      ariaProps["data-auth-action"] = authAction
     }
 
     // Handle click events for toggle buttons
